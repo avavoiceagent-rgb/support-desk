@@ -1,0 +1,12 @@
+{
+  "name": "support-desk",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "cd backend && npm ci && npm run build && cd ../frontend && npm ci && npm run build",
+    "start": "cd backend && npm run start"
+  }
+}

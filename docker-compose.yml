@@ -1,0 +1,21 @@
+# Local development database only. Not used in production — Railway (see
+# docs/DEPLOY_RAILWAY.md) provisions its own managed Postgres.
+#
+# Usage: docker compose up -d
+# Then set DATABASE_URL in backend/.env to:
+#   postgresql://postgres:postgres@localhost:5432/ticketing
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ticketing
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:
