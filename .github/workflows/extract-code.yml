@@ -1,0 +1,25 @@
+name: Unpack uploaded code archive
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  unpack:
+    if: ${{ github.event.head_commit.message != 'Unpack code archive' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract archive if present
+        run: |
+          if [ -f code.tar.gz ]; then
+            tar -xzf code.tar.gz
+            rm code.tar.gz
+            git config user.name "support-desk-setup"
+            git config user.email "actions@github.com"
+            git add -A
+            git commit -m "Unpack code archive" || echo "nothing to commit"
+            git push
+          else
+            echo "no archive found; nothing to do"
+          fi
