@@ -13,7 +13,9 @@ export function usePolling(callback: () => void, intervalMs: number) {
     const tick = () => {
       if (document.visibilityState === "visible") callbackRef.current();
     };
-    tick();
+    // Initial load always runs, even in a background tab; only the recurring
+    // polls pause while the tab is hidden.
+    callbackRef.current();
     const id = setInterval(tick, intervalMs);
     document.addEventListener("visibilitychange", tick);
     return () => {

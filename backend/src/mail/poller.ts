@@ -13,7 +13,14 @@ export async function pollAllAccounts(): Promise<void> {
   if (polling) return; // avoid overlapping runs if one poll takes longer than the interval
   polling = true;
   try {
-    const accounts = await db.select().from(emailAccounts);
+    let accounts;
+    try {
+      accounts = await db.select().from(emailAccounts);
+    } catch (err) {
+      // A transient DB outage must never crash the app — skip this poll.
+      console.error("[mail-poller] could not load accounts, skipping poll:", err);
+      return;
+    }
     for (const account of accounts) {
       try {
         const provider = getProvider(account.provider);
