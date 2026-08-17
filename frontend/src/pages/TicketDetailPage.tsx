@@ -8,7 +8,9 @@ import { AssigneeSelect } from "../components/AssigneeSelect";
 import { ConversationTimeline } from "../components/ConversationTimeline";
 import { ReplyComposer } from "../components/ReplyComposer";
 import { NotesPanel } from "../components/NotesPanel";
+import { Avatar } from "../components/Avatar";
 import { usePolling } from "../hooks/usePolling";
+import { formatDateTime } from "../lib/ui";
 
 export function TicketDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -52,41 +54,68 @@ export function TicketDetailPage() {
 
   return (
     <div>
-      <Link to="/tickets" className="text-sm text-gray-500 hover:underline">
-        ← Back to tickets
+      <Link
+        to="/tickets"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition-colors hover:text-indigo-600"
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="m12 19-7-7 7-7" />
+          <path d="M19 12H5" />
+        </svg>
+        Back to tickets
       </Link>
 
-      <div className="mt-2 mb-4 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">{ticket.subject}</h1>
+      <div className="mt-3 mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="truncate text-xl font-bold tracking-tight text-gray-900">{ticket.subject}</h1>
+            <StatusBadge status={ticket.status} />
+          </div>
           <p className="mt-1 text-sm text-gray-500">
-            #{ticket.ticketNumber} · {ticket.requesterName ? `${ticket.requesterName} · ` : ""}
-            {ticket.requesterEmail}
+            Ticket #{ticket.ticketNumber} · opened {formatDateTime(ticket.createdAt)}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <StatusBadge status={ticket.status} />
-        </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-4 rounded-lg border border-gray-200 bg-white p-3 text-sm">
-        <label className="flex items-center gap-2">
-          <span className="text-gray-500">Status</span>
-          <StatusSelect value={ticket.status} onChange={handleStatusChange} />
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="text-gray-500">Assigned to</span>
-          <AssigneeSelect users={users} value={ticket.assigneeId} onChange={handleAssigneeChange} />
-        </label>
-        <span className="ml-auto self-center text-gray-400">via {ticket.emailAccount.email}</span>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="min-w-0 space-y-5">
           <ConversationTimeline ticketId={ticket.id} messages={ticket.messages} />
           <ReplyComposer ticketId={ticket.id} onSent={load} />
         </div>
-        <div>
+
+        <div className="space-y-5">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-100 px-4 py-2.5">
+              <h3 className="text-sm font-semibold text-gray-900">Details</h3>
+            </div>
+            <div className="space-y-4 p-4">
+              <div>
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Requester</p>
+                <div className="flex items-center gap-2.5">
+                  <Avatar name={ticket.requesterName ?? ticket.requesterEmail} size={8} />
+                  <div className="min-w-0">
+                    {ticket.requesterName && (
+                      <p className="truncate text-sm font-medium text-gray-900">{ticket.requesterName}</p>
+                    )}
+                    <p className="truncate text-xs text-gray-500">{ticket.requesterEmail}</p>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Status</p>
+                <StatusSelect value={ticket.status} onChange={handleStatusChange} />
+              </div>
+              <div>
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Assigned to</p>
+                <AssigneeSelect users={users} value={ticket.assigneeId} onChange={handleAssigneeChange} />
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-400">Mailbox</p>
+                <p className="truncate text-sm text-gray-700">{ticket.emailAccount.email}</p>
+              </div>
+            </div>
+          </div>
+
           <NotesPanel ticketId={ticket.id} notes={ticket.notes} onAdded={load} />
         </div>
       </div>

@@ -1,21 +1,19 @@
 import type { TicketStatus } from "../api/types";
 
-const STYLES: Record<TicketStatus, string> = {
-  OPEN: "bg-emerald-100 text-emerald-800",
-  IN_PROGRESS: "bg-amber-100 text-amber-800",
-  CLOSED: "bg-gray-200 text-gray-700",
-};
-
-const LABELS: Record<TicketStatus, string> = {
-  OPEN: "Open",
-  IN_PROGRESS: "In Progress",
-  CLOSED: "Closed",
+const STYLES: Record<TicketStatus, { pill: string; dot: string; label: string }> = {
+  OPEN: { pill: "bg-emerald-50 text-emerald-700 ring-emerald-600/20", dot: "bg-emerald-500", label: "Open" },
+  IN_PROGRESS: { pill: "bg-amber-50 text-amber-700 ring-amber-600/20", dot: "bg-amber-500", label: "In Progress" },
+  CLOSED: { pill: "bg-gray-100 text-gray-600 ring-gray-500/20", dot: "bg-gray-400", label: "Closed" },
 };
 
 export function StatusBadge({ status }: { status: TicketStatus }) {
+  const s = STYLES[status];
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STYLES[status]}`}>
-      {LABELS[status]}
+    <span
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${s.pill}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+      {s.label}
     </span>
   );
 }

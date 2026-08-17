@@ -3,6 +3,19 @@ import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { EmailAccountStatus, PublicUser } from "../api/types";
 import { useAuth } from "../hooks/useAuth";
+import { Avatar } from "../components/Avatar";
+
+function SectionCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-100 px-5 py-3.5">
+        <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+        {subtitle && <p className="mt-0.5 text-sm text-gray-500">{subtitle}</p>}
+      </div>
+      <div className="p-5">{children}</div>
+    </section>
+  );
+}
 
 function ConnectedMailboxes() {
   const [accounts, setAccounts] = useState<EmailAccountStatus[]>([]);
@@ -35,42 +48,45 @@ function ConnectedMailboxes() {
   const status = params.get("status");
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h2 className="mb-1 text-base font-semibold text-gray-900">Connected mailboxes</h2>
-      <p className="mb-4 text-sm text-gray-500">
-        Emails sent to a connected mailbox automatically become tickets.
-      </p>
-
+    <SectionCard title="Connected mailboxes" subtitle="Emails sent to a connected mailbox automatically become tickets.">
       {status === "success" && (
-        <div className="mb-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm text-emerald-800">
           Connected {params.get("email")}. New mail will start appearing shortly.
         </div>
       )}
       {status === "error" && (
-        <div className="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-800">
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-800">
           Couldn't connect: {params.get("message")}
         </div>
       )}
 
-      <div className="mb-4 space-y-2">
+      <div className="mb-4 space-y-2.5">
         {accounts.length === 0 && <p className="text-sm text-gray-500">No mailbox connected yet.</p>}
         {accounts.map((a) => (
-          <div key={a.id} className="flex items-center justify-between rounded-md border border-gray-200 p-3">
-            <div>
-              <p className="text-sm font-medium text-gray-900">{a.email}</p>
-              <p className="text-xs text-gray-500">
-                {a.provider} ·{" "}
-                {a.status === "connected" ? (
-                  <span className="text-emerald-600">Connected</span>
-                ) : (
-                  <span className="text-red-600">{a.lastError ?? "Disconnected"} — reconnect below</span>
-                )}
-              </p>
+          <div key={a.id} className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50">
+                <svg className="h-4.5 w-4.5" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ea4335" strokeWidth="2">
+                  <rect x="2" y="4" width="20" height="16" rx="2" />
+                  <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                </svg>
+              </span>
+              <div>
+                <p className="text-sm font-medium text-gray-900">{a.email}</p>
+                <p className="text-xs text-gray-500">
+                  {a.provider === "GMAIL" ? "Gmail" : "Outlook"} ·{" "}
+                  {a.status === "connected" ? (
+                    <span className="font-medium text-emerald-600">Connected</span>
+                  ) : (
+                    <span className="font-medium text-red-600">{a.lastError ?? "Disconnected"}</span>
+                  )}
+                </p>
+              </div>
             </div>
             {user?.role === "ADMIN" && (
               <button
                 onClick={() => void disconnect(a.id)}
-                className="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
               >
                 Disconnect
               </button>
@@ -83,21 +99,19 @@ function ConnectedMailboxes() {
         gmailConfigured ? (
           <button
             onClick={() => void connectGmail()}
-            className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700"
           >
             Connect Gmail
           </button>
         ) : (
-          <p className="rounded-md bg-gray-50 p-3 text-sm text-gray-600">
-            Gmail isn't configured on the server yet. See <code>docs/GOOGLE_OAUTH_SETUP.md</code> for the setup
-            steps, then set the <code>GOOGLE_CLIENT_ID</code>/<code>GOOGLE_CLIENT_SECRET</code> environment
-            variables and restart the app.
+          <p className="rounded-lg bg-gray-50 px-3.5 py-2.5 text-sm text-gray-600">
+            Gmail isn't configured on the server yet — the GOOGLE_* environment variables need to be set.
           </p>
         )
       ) : (
         <p className="text-sm text-gray-500">Ask an admin to connect a mailbox.</p>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -133,36 +147,38 @@ function TeamMembers() {
     }
   }
 
-  return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <h2 className="mb-1 text-base font-semibold text-gray-900">Team members</h2>
-      <p className="mb-4 text-sm text-gray-500">Anyone here can be assigned tickets.</p>
+  const inputClass =
+    "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
 
+  return (
+    <SectionCard title="Team members" subtitle="Anyone here can be assigned tickets.">
       <ul className="mb-4 divide-y divide-gray-100">
         {users.map((u) => (
-          <li key={u.id} className="flex items-center justify-between py-2 text-sm">
-            <span>
-              {u.name} <span className="text-gray-400">· {u.email}</span>
+          <li key={u.id} className="flex items-center gap-3 py-2.5">
+            <Avatar name={u.name} size={8} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-gray-900">{u.name}</p>
+              <p className="truncate text-xs text-gray-500">{u.email}</p>
+            </div>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+                u.role === "ADMIN" ? "bg-indigo-50 text-indigo-700" : "bg-gray-100 text-gray-500"
+              }`}
+            >
+              {u.role}
             </span>
-            <span className="text-xs uppercase text-gray-400">{u.role}</span>
           </li>
         ))}
       </ul>
 
       {user?.role === "ADMIN" &&
         (showForm ? (
-          <form onSubmit={handleAdd} className="space-y-2 rounded-md border border-gray-200 p-3">
-            <input
-              placeholder="Name"
-              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+          <form onSubmit={handleAdd} className="space-y-3 rounded-lg border border-gray-200 bg-gray-50/60 p-4">
+            <input placeholder="Name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
             <input
               type="email"
               placeholder="Email"
-              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+              className={inputClass}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -171,28 +187,28 @@ function TeamMembers() {
               type="password"
               placeholder="Temporary password (min 8 chars)"
               minLength={8}
-              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+              className={inputClass}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
-            <select
-              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
-              value={role}
-              onChange={(e) => setRole(e.target.value as "ADMIN" | "AGENT")}
-            >
+            <select className={inputClass} value={role} onChange={(e) => setRole(e.target.value as "ADMIN" | "AGENT")}>
               <option value="AGENT">Agent</option>
               <option value="ADMIN">Admin</option>
             </select>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
             <div className="flex gap-2">
               <button
                 type="submit"
-                className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
+                className="rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700"
               >
-                Add
+                Add member
               </button>
-              <button type="button" onClick={() => setShowForm(false)} className="text-sm text-gray-500">
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100"
+              >
                 Cancel
               </button>
             </div>
@@ -200,19 +216,22 @@ function TeamMembers() {
         ) : (
           <button
             onClick={() => setShowForm(true)}
-            className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700"
           >
             Add team member
           </button>
         ))}
-    </section>
+    </SectionCard>
   );
 }
 
 export function SettingsPage() {
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-gray-900">Settings</h1>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900">Settings</h1>
+        <p className="mt-0.5 text-sm text-gray-500">Mailboxes and team access.</p>
+      </div>
       <ConnectedMailboxes />
       <TeamMembers />
     </div>
