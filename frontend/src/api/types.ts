@@ -125,6 +125,53 @@ export interface DashboardStats {
   volume: { day: string; count: number }[];
 }
 
+export interface ReportsData {
+  rangeDays: number;
+  totals: {
+    created: number;
+    resolved: number;
+    openNow: number;
+    unassignedOpen: number;
+    slaBreaches: number;
+    avgFirstReplyMs: number | null;
+    avgResolutionMs: number | null;
+    repeatCustomerPct: number | null;
+  };
+  trend: { bucket: string; created: number; resolved: number }[];
+  byStatus: Record<string, number>;
+  byQueue: Record<string, number>;
+  byChannel: Record<string, number>;
+  oldestOpen: {
+    id: string;
+    ticketNumber: number;
+    subject: string;
+    status: TicketStatus;
+    ageMs: number;
+    assigneeId: string | null;
+  }[];
+  agents: {
+    id: string;
+    name: string;
+    assigned: number;
+    open: number;
+    closed: number;
+    repliesSent: number;
+    notesAdded: number;
+    avgFirstReplyMs: number | null;
+    slaMetPct: number | null;
+    avgResolutionMs: number | null;
+  }[];
+  customers: {
+    label: string;
+    email: string | null;
+    tickets: number;
+    open: number;
+    closed: number;
+    lastContact: string;
+    avgFirstReplyMs: number | null;
+  }[];
+}
+
 export interface EmailAccountStatus {
   id: string;
   provider: "GMAIL" | "OUTLOOK";

@@ -12,6 +12,7 @@ import {
   listEmailAccountRow,
 } from "../services/ticket.service";
 import { getStats } from "../services/stats.service";
+import { getReports } from "../services/reports.service";
 import { ALL_STATUSES, ALL_QUEUES } from "../types";
 import type { TicketStatus, TicketQueue } from "../types";
 import { sendTicketReply, ReplyError } from "../services/reply.service";
@@ -48,6 +49,12 @@ ticketsRouter.get("/", async (req, res) => {
 // Dashboard aggregates. Registered before "/:id" so "stats" isn't taken as an id.
 ticketsRouter.get("/stats/overview", async (_req, res) => {
   res.json({ stats: await getStats() });
+});
+
+// Analytical reports over a date range (days=0 → all time).
+ticketsRouter.get("/reports/overview", async (req, res) => {
+  const days = Math.max(0, Math.min(3650, Number(req.query.days ?? 30) || 0));
+  res.json({ reports: await getReports(days) });
 });
 
 const createSchema = z.object({
