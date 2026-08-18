@@ -41,7 +41,14 @@ export async function sendTicketReply(params: {
   const [author] = await db.select().from(users).where(eq(users.id, params.authorId)).limit(1);
   if (!author) throw new ReplyError("Author not found");
 
-  const signedBody = `${params.bodyHtml}<br/><br/><span style="color:#888">— ${author.name}</span>`;
+  // Replies are attributed to (and signed as) the ticket's current assignee,
+  // falling back to whoever actually sent them if the ticket is unassigned.
+  const [assignee] = ticket.assigneeId
+    ? await db.select().from(users).where(eq(users.id, ticket.assigneeId)).limit(1)
+    : [];
+  const attributedTo = assignee ?? author;
+
+  const signedBody = `${params.bodyHtml}<br/><br/><span style="color:#888">— ${attributedTo.name}</span>`;
 
   // Manual (e.g. phone) tickets have a synthetic thread id until the first
   // email goes out; sending without a threadId starts a fresh email thread.
@@ -76,7 +83,7 @@ export async function sendTicketReply(params: {
     .values({
       ticketId: params.ticketId,
       direction: "OUTBOUND",
-      authorId: params.authorId,
+      authorId: attributedTo.id,
       fromAddress: emailAccount.email,
       toAddresses: to,
       ccAddresses: cc,
