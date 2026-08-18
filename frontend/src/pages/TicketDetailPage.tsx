@@ -53,7 +53,7 @@ export function TicketDetailPage() {
   }
 
   return (
-    <div>
+    <div className="mx-auto max-w-7xl">
       <Link
         to="/tickets"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition-colors hover:text-indigo-600"

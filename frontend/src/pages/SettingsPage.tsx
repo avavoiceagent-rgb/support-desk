@@ -227,7 +227,7 @@ function TeamMembers() {
 
 export function SettingsPage() {
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-gray-900">Settings</h1>
         <p className="mt-0.5 text-sm text-gray-500">Mailboxes and team access.</p>

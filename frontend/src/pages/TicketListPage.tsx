@@ -211,9 +211,13 @@ export function TicketListPage() {
         </div>
       )}
 
-      <div className={paneOpen ? "grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]" : ""}>
-        {/* Ticket list */}
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div
+        className={
+          paneOpen ? "grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_clamp(480px,42%,760px)]" : ""
+        }
+      >
+        {/* Ticket list — columns adapt to the space this card actually has */}
+        <div className="@container overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           {loading ? (
             <div className="p-12 text-center text-sm text-gray-500">Loading…</div>
           ) : visible.length === 0 ? (
@@ -229,80 +233,11 @@ export function TicketListPage() {
                 {search ? "Try a different search." : "New emails to the connected mailbox appear automatically."}
               </p>
             </div>
-          ) : paneOpen ? (
-            /* Compact list next to the reading pane */
-            <div>
-              <div className="flex items-center gap-3 border-b border-gray-200 bg-gray-50/70 px-4 py-2.5">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                  checked={allVisibleSelected}
-                  onChange={toggleAll}
-                />
-                <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  {visible.length} ticket{visible.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-              <div className="max-h-[calc(100vh-16rem)] divide-y divide-gray-100 overflow-y-auto">
-                {visible.map((t) => (
-                  <div
-                    key={t.id}
-                    onClick={() => openTicket(t.id)}
-                    className={`flex cursor-pointer gap-3 px-4 py-3 transition-colors ${
-                      openId === t.id ? "bg-indigo-50/80" : "hover:bg-gray-50"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      checked={selected.has(t.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={() => toggleOne(t.id)}
-                    />
-                    <Avatar name={t.requesterName ?? t.requesterEmail} size={8} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span
-                          className={`truncate text-sm font-semibold ${
-                            openId === t.id ? "text-indigo-900" : "text-gray-900"
-                          }`}
-                        >
-                          {t.subject}
-                        </span>
-                        <span className="shrink-0 text-[11px] text-gray-400">{timeAgo(t.updatedAt)}</span>
-                      </div>
-                      <p className="mt-0.5 truncate text-xs text-gray-500">
-                        {t.requesterName ?? t.requesterEmail}
-                        {t.lastMessagePreview && (
-                          <>
-                            {" · "}
-                            {t.lastMessagePreview.direction === "OUTBOUND" && (
-                              <span className="font-medium text-indigo-500">You: </span>
-                            )}
-                            {t.lastMessagePreview.snippet}
-                          </>
-                        )}
-                      </p>
-                      <div className="mt-1.5 flex items-center gap-2">
-                        <StatusBadge status={t.status} />
-                        {t.assignee && (
-                          <span className="flex items-center gap-1 text-[11px] text-gray-500">
-                            <Avatar name={t.assignee.name} size={6} />
-                            {t.assignee.name}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           ) : (
-            /* Full-width table */
-            <table className="w-full text-left text-sm">
+            <table className="w-full table-fixed text-left text-sm">
               <thead className="border-b border-gray-200 bg-gray-50/70 text-xs font-medium uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="w-10 px-4 py-2.5">
+                  <th className="w-12 px-4 py-2.5">
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
@@ -311,10 +246,10 @@ export function TicketListPage() {
                     />
                   </th>
                   <th className="px-2 py-2.5">Ticket</th>
-                  <th className="hidden px-2 py-2.5 md:table-cell">Requester</th>
-                  <th className="px-2 py-2.5">Status</th>
-                  <th className="hidden px-2 py-2.5 lg:table-cell">Assignee</th>
-                  <th className="px-4 py-2.5 text-right">Updated</th>
+                  <th className="hidden w-44 px-2 py-2.5 @3xl:table-cell">Requester</th>
+                  <th className="w-28 px-2 py-2.5">Status</th>
+                  <th className="hidden w-36 px-2 py-2.5 @4xl:table-cell">Assignee</th>
+                  <th className="hidden w-24 px-4 py-2.5 text-right @2xl:table-cell">Updated</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -322,7 +257,9 @@ export function TicketListPage() {
                   <tr
                     key={t.id}
                     onClick={() => openTicket(t.id)}
-                    className="cursor-pointer transition-colors hover:bg-indigo-50/40"
+                    className={`cursor-pointer transition-colors ${
+                      openId === t.id ? "bg-indigo-50/80" : "hover:bg-indigo-50/40"
+                    }`}
                   >
                     <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                       <input
@@ -332,21 +269,33 @@ export function TicketListPage() {
                         onChange={() => toggleOne(t.id)}
                       />
                     </td>
-                    <td className="max-w-md px-2 py-3.5">
+                    <td className="px-2 py-3.5">
                       <div className="flex items-baseline gap-2">
                         <span className="shrink-0 text-xs tabular-nums text-gray-400">#{t.ticketNumber}</span>
-                        <span className="truncate font-semibold text-gray-900">{t.subject}</span>
+                        <span
+                          className={`truncate font-semibold ${
+                            openId === t.id ? "text-indigo-900" : "text-gray-900"
+                          }`}
+                        >
+                          {t.subject}
+                        </span>
+                        <span className="ml-auto shrink-0 text-[11px] text-gray-400 @2xl:hidden">
+                          {timeAgo(t.updatedAt)}
+                        </span>
                       </div>
-                      {t.lastMessagePreview && (
-                        <p className="mt-0.5 truncate text-[13px] text-gray-500">
-                          {t.lastMessagePreview.direction === "OUTBOUND" && (
-                            <span className="font-medium text-indigo-500">You: </span>
-                          )}
-                          {t.lastMessagePreview.snippet}
-                        </p>
-                      )}
+                      <p className="mt-0.5 truncate text-[13px] text-gray-500">
+                        <span className="@3xl:hidden">{t.requesterName ?? t.requesterEmail} · </span>
+                        {t.lastMessagePreview && (
+                          <>
+                            {t.lastMessagePreview.direction === "OUTBOUND" && (
+                              <span className="font-medium text-indigo-500">You: </span>
+                            )}
+                            {t.lastMessagePreview.snippet}
+                          </>
+                        )}
+                      </p>
                     </td>
-                    <td className="hidden px-2 py-3.5 md:table-cell">
+                    <td className="hidden px-2 py-3.5 @3xl:table-cell">
                       <span className="flex items-center gap-2">
                         <Avatar name={t.requesterName ?? t.requesterEmail} size={7} />
                         <span className="max-w-[10rem] truncate text-gray-700">
@@ -357,7 +306,7 @@ export function TicketListPage() {
                     <td className="px-2 py-3.5">
                       <StatusBadge status={t.status} />
                     </td>
-                    <td className="hidden px-2 py-3.5 lg:table-cell">
+                    <td className="hidden px-2 py-3.5 @4xl:table-cell">
                       {t.assignee ? (
                         <span className="flex items-center gap-2">
                           <Avatar name={t.assignee.name} size={6} />
@@ -367,7 +316,7 @@ export function TicketListPage() {
                         <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Unassigned</span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3.5 text-right text-[13px] text-gray-400">
+                    <td className="hidden whitespace-nowrap px-4 py-3.5 text-right text-[13px] text-gray-400 @2xl:table-cell">
                       {timeAgo(t.updatedAt)}
                     </td>
                   </tr>
