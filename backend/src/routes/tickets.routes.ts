@@ -5,6 +5,7 @@ import { requireAuth } from "../middleware/auth";
 import {
   listTickets,
   getTicketDetail,
+  listRequesterHistory,
   updateTicket,
   assertUserExists,
   listEmailAccountRow,
@@ -35,6 +36,13 @@ ticketsRouter.get("/", async (req, res) => {
     assigneeId: assigneeId === "unassigned" ? null : assigneeId,
   });
   res.json({ tickets });
+});
+
+// Other tickets from the same requester (by email or display name).
+ticketsRouter.get("/:id/history", async (req, res) => {
+  const history = await listRequesterHistory(param(req, "id"));
+  if (history === null) return res.status(404).json({ error: "Ticket not found" });
+  res.json({ history });
 });
 
 ticketsRouter.get("/:id", async (req, res) => {

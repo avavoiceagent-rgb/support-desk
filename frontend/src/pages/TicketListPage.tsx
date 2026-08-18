@@ -329,7 +329,13 @@ export function TicketListPage() {
         {/* Reading pane */}
         {paneOpen && (
           <div className="hidden lg:block">
-            <TicketPane ticketId={openId!} users={users} onClose={() => setOpenId(null)} onChanged={load} />
+            <TicketPane
+              ticketId={openId!}
+              users={users}
+              onClose={() => setOpenId(null)}
+              onChanged={load}
+              onOpenTicket={(id) => setOpenId(id)}
+            />
           </div>
         )}
       </div>

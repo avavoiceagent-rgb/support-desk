@@ -6,8 +6,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { StatusSelect } from "../components/StatusSelect";
 import { AssigneeSelect } from "../components/AssigneeSelect";
 import { ConversationTimeline } from "../components/ConversationTimeline";
-import { ReplyComposer } from "../components/ReplyComposer";
-import { NotesPanel } from "../components/NotesPanel";
+import { Composer } from "../components/Composer";
 import { Avatar } from "../components/Avatar";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime } from "../lib/ui";
@@ -79,8 +78,8 @@ export function TicketDetailPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-5">
-          <ConversationTimeline ticketId={ticket.id} messages={ticket.messages} />
-          <ReplyComposer ticketId={ticket.id} onSent={load} />
+          <ConversationTimeline ticketId={ticket.id} messages={ticket.messages} notes={ticket.notes} />
+          <Composer ticketId={ticket.id} onSent={load} />
         </div>
 
         <div className="space-y-5">
@@ -115,8 +114,6 @@ export function TicketDetailPage() {
               </div>
             </div>
           </div>
-
-          <NotesPanel ticketId={ticket.id} notes={ticket.notes} onAdded={load} />
         </div>
       </div>
     </div>

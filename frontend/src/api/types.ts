@@ -75,6 +75,17 @@ export interface TicketDetail {
   notes: TicketNote[];
 }
 
+export interface TicketHistoryItem {
+  id: string;
+  ticketNumber: number;
+  subject: string;
+  status: TicketStatus;
+  requesterEmail: string;
+  requesterName: string | null;
+  updatedAt: string;
+  snippet: string;
+}
+
 export interface EmailAccountStatus {
   id: string;
   provider: "GMAIL" | "OUTLOOK";

@@ -1,9 +1,30 @@
-import type { TicketMessage } from "../api/types";
+import type { TicketMessage, TicketNote } from "../api/types";
 import { Avatar } from "./Avatar";
 import { displayName, formatDateTime } from "../lib/ui";
 
-export function ConversationTimeline({ ticketId, messages }: { ticketId: string; messages: TicketMessage[] }) {
-  if (messages.length === 0) {
+type TimelineItem =
+  | { kind: "message"; at: string; message: TicketMessage }
+  | { kind: "note"; at: string; note: TicketNote };
+
+/**
+ * Conversation timeline: emails and internal notes interleaved in time order.
+ * Notes are amber and clearly marked as not visible to the customer.
+ */
+export function ConversationTimeline({
+  ticketId,
+  messages,
+  notes = [],
+}: {
+  ticketId: string;
+  messages: TicketMessage[];
+  notes?: TicketNote[];
+}) {
+  const items: TimelineItem[] = [
+    ...messages.map((m) => ({ kind: "message" as const, at: m.sentAt, message: m })),
+    ...notes.map((n) => ({ kind: "note" as const, at: n.createdAt, note: n })),
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+  if (items.length === 0) {
     return (
       <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
         No messages yet.
@@ -13,7 +34,29 @@ export function ConversationTimeline({ ticketId, messages }: { ticketId: string;
 
   return (
     <div className="space-y-4">
-      {messages.map((m) => {
+      {items.map((item) => {
+        if (item.kind === "note") {
+          const n = item.note;
+          return (
+            <div key={`note-${n.id}`} className="flex gap-3">
+              <Avatar name={n.author.name} size={9} />
+              <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-amber-200/80 bg-amber-50/70 shadow-sm">
+                <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-amber-200/60 px-4 py-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-semibold text-gray-900">{n.author.name}</span>
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                      Internal note
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-400">{formatDateTime(n.createdAt)}</span>
+                </div>
+                <p className="whitespace-pre-wrap px-4 py-3 text-[14px] leading-relaxed text-gray-800">{n.body}</p>
+              </div>
+            </div>
+          );
+        }
+
+        const m = item.message;
         const outbound = m.direction === "OUTBOUND";
         const who = outbound ? m.author?.name ?? "Support" : displayName(m.fromAddress);
         return (

@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { tickets, messages, notes, users, emailAccounts } from "../db/schema";
 import type { TicketStatus } from "../types";
@@ -62,6 +62,38 @@ export async function getTicketDetail(ticketId: string) {
     },
   });
   return ticket ?? null;
+}
+
+/**
+ * Other tickets from the same requester (matched by email, case-insensitive,
+ * or by exact display name) — newest first, excluding the ticket itself.
+ */
+export async function listRequesterHistory(ticketId: string) {
+  const [current] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1);
+  if (!current) return null;
+
+  const emailMatch = sql`lower(${tickets.requesterEmail}) = lower(${current.requesterEmail})`;
+  const nameMatch = current.requesterName
+    ? eq(tickets.requesterName, current.requesterName)
+    : sql`false`;
+
+  const rows = await db.query.tickets.findMany({
+    where: and(sql`${tickets.id} <> ${ticketId}`, or(emailMatch, nameMatch)),
+    orderBy: desc(tickets.updatedAt),
+    limit: 50,
+    with: { messages: { orderBy: desc(messages.sentAt), limit: 1 } },
+  });
+
+  return rows.map((t) => ({
+    id: t.id,
+    ticketNumber: t.ticketNumber,
+    subject: t.subject,
+    status: t.status,
+    requesterEmail: t.requesterEmail,
+    requesterName: t.requesterName,
+    updatedAt: t.updatedAt,
+    snippet: t.messages[0]?.bodyText?.slice(0, 120) ?? "",
+  }));
 }
 
 export async function updateTicket(

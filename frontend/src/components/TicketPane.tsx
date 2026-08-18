@@ -6,28 +6,31 @@ import { StatusBadge } from "./StatusBadge";
 import { StatusSelect } from "./StatusSelect";
 import { AssigneeSelect } from "./AssigneeSelect";
 import { ConversationTimeline } from "./ConversationTimeline";
-import { ReplyComposer } from "./ReplyComposer";
-import { NotesPanel } from "./NotesPanel";
+import { Composer } from "./Composer";
+import { HistoryDrawer } from "./HistoryDrawer";
 import { usePolling } from "../hooks/usePolling";
 
 /**
  * Reading pane: shows a ticket's conversation and actions inline next to the
- * ticket list. All actions (status, assignee, reply, notes) work here too.
+ * ticket list. Emails and internal notes share one timeline; the composer
+ * below switches between replying to the customer and adding a note.
  */
 export function TicketPane({
   ticketId,
   users,
   onClose,
   onChanged,
+  onOpenTicket,
 }: {
   ticketId: string;
   users: PublicUser[];
   onClose: () => void;
   onChanged: () => void;
+  onOpenTicket?: (id: string) => void;
 }) {
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
-  const [tab, setTab] = useState<"conversation" | "notes">("conversation");
   const [error, setError] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const load = useCallback(() => {
     api
@@ -40,7 +43,7 @@ export function TicketPane({
   useEffect(() => {
     setTicket(null);
     setError(false);
-    setTab("conversation");
+    setHistoryOpen(false);
     load();
   }, [load]);
 
@@ -59,7 +62,7 @@ export function TicketPane({
     onChanged();
   }
 
-  function afterReplyOrNote() {
+  function afterSend() {
     load();
     onChanged();
   }
@@ -83,6 +86,18 @@ export function TicketPane({
               </p>
             </div>
             <StatusBadge status={ticket.status} />
+            <button
+              onClick={() => setHistoryOpen(true)}
+              title="Previous tickets from this sender"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-indigo-600"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+                <path d="M12 7v5l4 2" />
+              </svg>
+              History
+            </button>
             <Link
               to={`/tickets/${ticket.id}`}
               title="Open full view"
@@ -124,34 +139,25 @@ export function TicketPane({
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1 border-b border-gray-100 px-3 pt-2">
-            {(["conversation", "notes"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`rounded-t-lg px-3.5 py-2 text-sm font-medium transition-colors ${
-                  tab === t
-                    ? "border-b-2 border-indigo-600 text-indigo-700"
-                    : "text-gray-500 hover:text-gray-800"
-                }`}
-              >
-                {t === "conversation" ? "Conversation" : `Notes${ticket.notes.length ? ` (${ticket.notes.length})` : ""}`}
-              </button>
-            ))}
+          {/* Conversation (emails + notes) and composer */}
+          <div className="flex-1 overflow-y-auto bg-gray-50/40 p-4">
+            <div className="space-y-4">
+              <ConversationTimeline ticketId={ticket.id} messages={ticket.messages} notes={ticket.notes} />
+              <Composer ticketId={ticket.id} onSent={afterSend} />
+            </div>
           </div>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto bg-gray-50/40 p-4">
-            {tab === "conversation" ? (
-              <div className="space-y-4">
-                <ConversationTimeline ticketId={ticket.id} messages={ticket.messages} />
-                <ReplyComposer ticketId={ticket.id} onSent={afterReplyOrNote} />
-              </div>
-            ) : (
-              <NotesPanel ticketId={ticket.id} notes={ticket.notes} onAdded={afterReplyOrNote} />
-            )}
-          </div>
+          {historyOpen && (
+            <HistoryDrawer
+              ticketId={ticket.id}
+              requesterLabel={ticket.requesterName ?? ticket.requesterEmail}
+              onClose={() => setHistoryOpen(false)}
+              onSelect={(id) => {
+                setHistoryOpen(false);
+                if (onOpenTicket) onOpenTicket(id);
+              }}
+            />
+          )}
         </>
       )}
     </div>
