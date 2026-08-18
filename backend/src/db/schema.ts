@@ -18,8 +18,9 @@ import {
 import { relations } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 
+import type { TicketStatus, TicketQueue, TicketChannel } from "../types";
+
 export const userRoleEnum = pgEnum("user_role", ["ADMIN", "AGENT"]);
-export const ticketStatusEnum = pgEnum("ticket_status", ["OPEN", "IN_PROGRESS", "CLOSED"]);
 export const mailProviderEnum = pgEnum("mail_provider_type", ["GMAIL", "OUTLOOK"]);
 export const messageDirectionEnum = pgEnum("message_direction", ["INBOUND", "OUTBOUND"]);
 
@@ -55,9 +56,14 @@ export const tickets = pgTable(
     id: cuid(),
     ticketNumber: serial("ticket_number").notNull(),
     subject: text("subject").notNull(),
-    requesterEmail: text("requester_email").notNull(),
+    requesterEmail: text("requester_email"),
     requesterName: text("requester_name"),
-    status: ticketStatusEnum("status").notNull().default("OPEN"),
+    requesterPhone: text("requester_phone"),
+    // Status is a plain text column (validated in the API layer) so new
+    // statuses can be added without a Postgres enum migration.
+    status: text("status").$type<TicketStatus>().notNull().default("OPEN"),
+    queue: text("queue").$type<TicketQueue>(),
+    channel: text("channel").$type<TicketChannel>().notNull().default("EMAIL"),
     providerThreadId: text("provider_thread_id").notNull(),
     emailAccountId: text("email_account_id")
       .notNull()

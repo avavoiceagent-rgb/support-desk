@@ -6,6 +6,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { TicketListPage } from "./pages/TicketListPage";
 import { TicketDetailPage } from "./pages/TicketDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { DashboardPage } from "./pages/DashboardPage";
 
 function Gate() {
   const { user, loading, needsSetup } = useAuth();
@@ -38,6 +39,7 @@ function Gate() {
         <Route path="/" element={<Navigate to="/tickets" replace />} />
         <Route path="/tickets" element={<TicketListPage />} />
         <Route path="/tickets/:id" element={<TicketDetailPage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/tickets" replace />} />
       </Route>

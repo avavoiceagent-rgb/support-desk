@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { PublicUser, TicketDetail, TicketStatus } from "../api/types";
+import type { PublicUser, TicketChannel, TicketDetail, TicketQueue, TicketStatus } from "../api/types";
+import { CHANNELS, QUEUES } from "../lib/statuses";
 import { StatusBadge } from "./StatusBadge";
 import { StatusSelect } from "./StatusSelect";
 import { AssigneeSelect } from "./AssigneeSelect";
@@ -62,6 +63,20 @@ export function TicketPane({
     onChanged();
   }
 
+  async function handleQueueChange(queue: TicketQueue | null) {
+    setTicket((t) => (t ? { ...t, queue } : t));
+    await api.patch(`/tickets/${ticketId}`, { queue });
+    load();
+    onChanged();
+  }
+
+  async function handleChannelChange(channel: TicketChannel) {
+    setTicket((t) => (t ? { ...t, channel } : t));
+    await api.patch(`/tickets/${ticketId}`, { channel });
+    load();
+    onChanged();
+  }
+
   function afterSend() {
     load();
     onChanged();
@@ -82,7 +97,7 @@ export function TicketPane({
               </div>
               <p className="mt-0.5 truncate text-xs text-gray-500">
                 {ticket.requesterName ? `${ticket.requesterName} · ` : ""}
-                {ticket.requesterEmail}
+                {ticket.requesterEmail ?? ticket.requesterPhone ?? ""}
               </p>
             </div>
             <StatusBadge status={ticket.status} />
@@ -127,15 +142,40 @@ export function TicketPane({
 
       {ticket && (
         <>
-          {/* Actions */}
-          <div className="grid grid-cols-2 gap-2.5 border-b border-gray-100 bg-gray-50/60 px-4 py-3">
-            <div>
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">Status</p>
-              <StatusSelect value={ticket.status} onChange={handleStatusChange} />
-            </div>
-            <div>
+          {/* Actions — status itself is changed down in the composer */}
+          <div className="grid grid-cols-3 gap-2.5 border-b border-gray-100 bg-gray-50/60 px-4 py-3">
+            <div className="min-w-0">
               <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">Assigned to</p>
               <AssigneeSelect users={users} value={ticket.assigneeId} onChange={handleAssigneeChange} />
+            </div>
+            <div className="min-w-0">
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">Queue</p>
+              <select
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                value={ticket.queue ?? ""}
+                onChange={(e) => void handleQueueChange((e.target.value || null) as TicketQueue | null)}
+              >
+                <option value="">No queue</option>
+                {QUEUES.map((q) => (
+                  <option key={q.value} value={q.value}>
+                    {q.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-0">
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">Channel</p>
+              <select
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                value={ticket.channel}
+                onChange={(e) => void handleChannelChange(e.target.value as TicketChannel)}
+              >
+                {CHANNELS.map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -143,14 +183,18 @@ export function TicketPane({
           <div className="flex-1 overflow-y-auto bg-gray-50/40 p-4">
             <div className="space-y-4">
               <ConversationTimeline ticketId={ticket.id} messages={ticket.messages} notes={ticket.notes} />
-              <Composer ticketId={ticket.id} onSent={afterSend} />
+              <Composer
+                ticketId={ticket.id}
+                onSent={afterSend}
+                statusSlot={<StatusSelect compact value={ticket.status} onChange={handleStatusChange} />}
+              />
             </div>
           </div>
 
           {historyOpen && (
             <HistoryDrawer
               ticketId={ticket.id}
-              requesterLabel={ticket.requesterName ?? ticket.requesterEmail}
+              requesterLabel={ticket.requesterName ?? ticket.requesterEmail ?? ticket.requesterPhone ?? "Unknown"}
               onClose={() => setHistoryOpen(false)}
               onSelect={(id) => {
                 setHistoryOpen(false);

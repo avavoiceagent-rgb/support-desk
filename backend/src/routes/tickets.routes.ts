@@ -7,9 +7,13 @@ import {
   getTicketDetail,
   listRequesterHistory,
   updateTicket,
+  createManualTicket,
   assertUserExists,
   listEmailAccountRow,
 } from "../services/ticket.service";
+import { getStats } from "../services/stats.service";
+import { ALL_STATUSES, ALL_QUEUES } from "../types";
+import type { TicketStatus, TicketQueue } from "../types";
 import { sendTicketReply, ReplyError } from "../services/reply.service";
 import { addNote } from "../services/note.service";
 import { decryptToken } from "../crypto/token-encryption";
@@ -22,8 +26,11 @@ import { param } from "../utils/params";
 export const ticketsRouter = Router();
 ticketsRouter.use(requireAuth);
 
+const statusEnum = z.enum(ALL_STATUSES as [TicketStatus, ...TicketStatus[]]);
+const queueEnum = z.enum(ALL_QUEUES as [TicketQueue, ...TicketQueue[]]);
+
 const listQuerySchema = z.object({
-  status: z.enum(["OPEN", "IN_PROGRESS", "CLOSED"]).optional(),
+  status: statusEnum.optional(),
   assigneeId: z.string().optional(), // "unassigned" is a special value
 });
 
@@ -36,6 +43,49 @@ ticketsRouter.get("/", async (req, res) => {
     assigneeId: assigneeId === "unassigned" ? null : assigneeId,
   });
   res.json({ tickets });
+});
+
+// Dashboard aggregates. Registered before "/:id" so "stats" isn't taken as an id.
+ticketsRouter.get("/stats/overview", async (_req, res) => {
+  res.json({ stats: await getStats() });
+});
+
+const createSchema = z.object({
+  subject: z.string().min(1, "Subject is required"),
+  body: z.string().optional(),
+  requesterName: z.string().optional(),
+  requesterEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  requesterPhone: z.string().optional(),
+  channel: z.enum(["EMAIL", "PHONE"]),
+  queue: queueEnum.nullable().optional(),
+  assigneeId: z.string().nullable().optional(),
+  status: statusEnum.optional(),
+});
+
+// Create a ticket by hand (e.g. from a phone call).
+ticketsRouter.post("/", async (req, res) => {
+  const parsed = createSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+  const d = parsed.data;
+  if (!d.requesterName?.trim() && !d.requesterEmail?.trim() && !d.requesterPhone?.trim()) {
+    return res.status(400).json({ error: "Add a requester name, email, or phone number." });
+  }
+  try {
+    const ticket = await createManualTicket({
+      subject: d.subject,
+      body: d.body,
+      requesterName: d.requesterName?.trim() || undefined,
+      requesterEmail: d.requesterEmail?.trim() || undefined,
+      requesterPhone: d.requesterPhone?.trim() || undefined,
+      channel: d.channel,
+      queue: d.queue ?? null,
+      assigneeId: d.assigneeId ?? null,
+      status: d.status,
+    });
+    res.status(201).json({ ticket });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Failed to create ticket" });
+  }
 });
 
 // Other tickets from the same requester (by email or display name).
@@ -52,8 +102,10 @@ ticketsRouter.get("/:id", async (req, res) => {
 });
 
 const updateSchema = z.object({
-  status: z.enum(["OPEN", "IN_PROGRESS", "CLOSED"]).optional(),
+  status: statusEnum.optional(),
   assigneeId: z.string().nullable().optional(),
+  queue: queueEnum.nullable().optional(),
+  channel: z.enum(["EMAIL", "PHONE"]).optional(),
 });
 
 ticketsRouter.patch("/:id", async (req, res) => {

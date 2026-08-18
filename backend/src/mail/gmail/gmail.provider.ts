@@ -184,7 +184,7 @@ export class GmailProvider implements MailProvider {
 
     return {
       providerMessageId: sent.data.id!,
-      providerThreadId: sent.data.threadId ?? params.threadId,
+      providerThreadId: sent.data.threadId ?? params.threadId ?? "",
       messageIdHeader: header(sentFull.data.payload?.headers, "Message-ID") ?? "",
       sentAt: new Date(),
     };

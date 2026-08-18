@@ -80,7 +80,7 @@ describe("ingestEmail", () => {
 
   it("reopens a closed ticket when a genuine reply arrives on its thread", async () => {
     const { ticketId } = await ingestEmail(accountId, makeEmail({ providerThreadId: "thread-3" }));
-    await db.update(tickets).set({ status: "CLOSED" }).where(eq(tickets.id, ticketId));
+    await db.update(tickets).set({ status: "RESOLVED_CLOSED" }).where(eq(tickets.id, ticketId));
 
     await ingestEmail(accountId, makeEmail({ providerThreadId: "thread-3", isAutoReply: false }));
 
@@ -90,7 +90,7 @@ describe("ingestEmail", () => {
 
   it("does NOT reopen a closed ticket for an auto-reply", async () => {
     const { ticketId } = await ingestEmail(accountId, makeEmail({ providerThreadId: "thread-4" }));
-    await db.update(tickets).set({ status: "CLOSED" }).where(eq(tickets.id, ticketId));
+    await db.update(tickets).set({ status: "RESOLVED_CLOSED" }).where(eq(tickets.id, ticketId));
 
     await ingestEmail(
       accountId,
@@ -98,7 +98,7 @@ describe("ingestEmail", () => {
     );
 
     const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
-    expect(ticket.status).toBe("CLOSED");
+    expect(ticket.status).toBe("RESOLVED_CLOSED");
 
     const msgs = await db.select().from(messages).where(eq(messages.ticketId, ticketId));
     expect(msgs).toHaveLength(2); // the auto-reply is still logged, just doesn't reopen

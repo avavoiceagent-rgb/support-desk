@@ -8,7 +8,16 @@ type Mode = "reply" | "note";
  * an internal note only the team can see. Note mode turns the box amber so
  * it's always obvious which one is about to happen.
  */
-export function Composer({ ticketId, onSent }: { ticketId: string; onSent: () => void }) {
+export function Composer({
+  ticketId,
+  onSent,
+  statusSlot,
+}: {
+  ticketId: string;
+  onSent: () => void;
+  /** Optional control (e.g. the status dropdown) shown to the right of the Reply/Note toggle. */
+  statusSlot?: React.ReactNode;
+}) {
   const [mode, setMode] = useState<Mode>("reply");
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
@@ -57,7 +66,7 @@ export function Composer({ ticketId, onSent }: { ticketId: string; onSent: () =>
       }`}
     >
       <div
-        className={`flex items-center gap-1 border-b px-3 py-2 ${
+        className={`flex flex-wrap items-center gap-1 border-b px-3 py-2 ${
           isNote ? "border-amber-200/60" : "border-gray-100"
         }`}
       >
@@ -67,7 +76,14 @@ export function Composer({ ticketId, onSent }: { ticketId: string; onSent: () =>
         <button onClick={() => setMode("note")} className={tabClass(isNote, true)}>
           Internal note
         </button>
-        {isNote && <span className="ml-auto text-[11px] text-amber-600">not visible to customer</span>}
+        {statusSlot ? (
+          <span className="ml-auto flex items-center gap-1.5">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Status</span>
+            {statusSlot}
+          </span>
+        ) : (
+          isNote && <span className="ml-auto text-[11px] text-amber-600">not visible to customer</span>
+        )}
       </div>
       <div className="p-4">
         <textarea
@@ -88,7 +104,9 @@ export function Composer({ ticketId, onSent }: { ticketId: string; onSent: () =>
         />
         {error && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         <div className="mt-3 flex items-center justify-between">
-          <span className={`text-xs ${isNote ? "text-amber-600/80" : "text-gray-400"}`}>Ctrl+Enter to send</span>
+          <span className={`text-xs ${isNote ? "text-amber-600/80" : "text-gray-400"}`}>
+            Ctrl+Enter to send{isNote ? " · not visible to customer" : ""}
+          </span>
           <button
             onClick={() => void handleSubmit()}
             disabled={sending || !body.trim()}

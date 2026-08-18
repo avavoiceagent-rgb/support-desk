@@ -1,4 +1,18 @@
-export type TicketStatus = "OPEN" | "IN_PROGRESS" | "CLOSED";
+export type TicketStatus =
+  | "OPEN"
+  | "IN_PROGRESS"
+  | "AWAITING_CUSTOMER"
+  | "AWAITING_DISPATCH"
+  | "NO_RESPONSE"
+  | "FOLLOW_UP"
+  | "ESCALATED"
+  | "FEEDBACK"
+  | "AFFILIATE"
+  | "RESOLVED_CLOSED"
+  | "UNRESOLVED_CLOSED";
+
+export type TicketQueue = "RESERVATION" | "DISPATCH" | "ACCOUNTING";
+export type TicketChannel = "EMAIL" | "PHONE";
 export type UserRole = "ADMIN" | "AGENT";
 
 export interface PublicUser {
@@ -12,13 +26,18 @@ export interface TicketListItem {
   id: string;
   ticketNumber: number;
   subject: string;
-  requesterEmail: string;
+  requesterEmail: string | null;
   requesterName: string | null;
+  requesterPhone: string | null;
   status: TicketStatus;
+  queue: TicketQueue | null;
+  channel: TicketChannel;
   assignee: { id: string; name: string; email: string } | null;
   mailbox: string;
   createdAt: string;
   updatedAt: string;
+  receivedAt: string;
+  firstReplyAt: string | null;
   lastMessagePreview: { direction: "INBOUND" | "OUTBOUND"; snippet: string; sentAt: string } | null;
 }
 
@@ -61,9 +80,12 @@ export interface TicketDetail {
   id: string;
   ticketNumber: number;
   subject: string;
-  requesterEmail: string;
+  requesterEmail: string | null;
   requesterName: string | null;
+  requesterPhone: string | null;
   status: TicketStatus;
+  queue: TicketQueue | null;
+  channel: TicketChannel;
   providerThreadId: string;
   emailAccountId: string;
   assigneeId: string | null;
@@ -80,10 +102,27 @@ export interface TicketHistoryItem {
   ticketNumber: number;
   subject: string;
   status: TicketStatus;
-  requesterEmail: string;
+  requesterEmail: string | null;
   requesterName: string | null;
   updatedAt: string;
   snippet: string;
+}
+
+export interface DashboardStats {
+  totalTickets: number;
+  byStatus: Record<string, number>;
+  byQueue: Record<string, number>;
+  byChannel: Record<string, number>;
+  agents: { id: string | null; name: string; open: number; closed: number; total: number }[];
+  sla: {
+    targetHours: number;
+    repliedCount: number;
+    repliedWithinTarget: number;
+    avgFirstReplyMs: number | null;
+    awaitingReply: number;
+    awaitingOverdue: number;
+  };
+  volume: { day: string; count: number }[];
 }
 
 export interface EmailAccountStatus {

@@ -57,7 +57,7 @@ async function main() {
       requesterName: "Sam Lee",
       providerThreadId: "demo-thread-2",
       emailAccountId: account.id,
-      status: "CLOSED",
+      status: "RESOLVED_CLOSED",
     })
     .returning();
 

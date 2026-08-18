@@ -8,6 +8,7 @@ import { db } from "../db/client";
 import { tickets, messages, attachments, emailAccounts } from "../db/schema";
 import type { NormalizedEmail } from "./provider.interface";
 import { resolveParentMessageId } from "./threading";
+import { CLOSED_STATUSES } from "../types";
 
 const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
@@ -91,7 +92,7 @@ export async function ingestEmail(emailAccountId: string, email: NormalizedEmail
       // A genuine (non-auto) reply on an existing thread reopens it if it
       // had been closed, rather than forking a new ticket.
       const [ticket] = await tx.select({ status: tickets.status }).from(tickets).where(eq(tickets.id, ticketId)).limit(1);
-      if (ticket?.status === "CLOSED") {
+      if (ticket && CLOSED_STATUSES.includes(ticket.status)) {
         await tx.update(tickets).set({ status: "OPEN", updatedAt: new Date() }).where(eq(tickets.id, ticketId));
       } else {
         await tx.update(tickets).set({ updatedAt: new Date() }).where(eq(tickets.id, ticketId));

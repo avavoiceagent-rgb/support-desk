@@ -33,7 +33,8 @@ export interface NormalizedEmail {
 }
 
 export interface SendReplyParams {
-  threadId: string;
+  /** Omit to start a brand-new thread (e.g. first email on a phone ticket). */
+  threadId?: string;
   inReplyToMessageIdHeader?: string;
   referencesHeader?: string;
   to: string[];

@@ -24,6 +24,9 @@ export function Layout() {
               <NavLink to="/tickets" className={linkClass}>
                 Tickets
               </NavLink>
+              <NavLink to="/dashboard" className={linkClass}>
+                Dashboard
+              </NavLink>
               <NavLink to="/settings" className={linkClass}>
                 Settings
               </NavLink>

@@ -43,8 +43,16 @@ export async function sendTicketReply(params: {
 
   const signedBody = `${params.bodyHtml}<br/><br/><span style="color:#888">— ${author.name}</span>`;
 
-  const to = lastInbound ? [lastInbound.fromAddress] : [ticket.requesterEmail];
-  const cc = params.ccOverride ?? (lastInbound ? (lastInbound.ccAddresses as string[]) : []);
+  // Manual (e.g. phone) tickets have a synthetic thread id until the first
+  // email goes out; sending without a threadId starts a fresh email thread.
+  const isManualThread = ticket.providerThreadId.startsWith("manual-");
+  const hasEmailInbound = lastInbound && !lastInbound.providerMessageId.startsWith("manual-");
+
+  const to = hasEmailInbound ? [lastInbound.fromAddress] : ticket.requesterEmail ? [ticket.requesterEmail] : [];
+  if (to.length === 0) {
+    throw new ReplyError("This ticket has no email address to reply to. Add one or use an internal note.");
+  }
+  const cc = params.ccOverride ?? (hasEmailInbound ? (lastInbound.ccAddresses as string[]) : []);
 
   const provider = getProvider(emailAccount.provider);
   const refreshToken = decryptToken({
@@ -54,9 +62,9 @@ export async function sendTicketReply(params: {
   });
 
   const result = await provider.sendReply(refreshToken, {
-    threadId: ticket.providerThreadId,
-    inReplyToMessageIdHeader: lastInbound?.messageIdHeader ?? undefined,
-    referencesHeader: lastInbound?.referencesHeader ?? undefined,
+    threadId: isManualThread ? undefined : ticket.providerThreadId,
+    inReplyToMessageIdHeader: hasEmailInbound ? lastInbound.messageIdHeader ?? undefined : undefined,
+    referencesHeader: hasEmailInbound ? lastInbound.referencesHeader ?? undefined : undefined,
     to,
     cc,
     subject: ticket.subject.startsWith("Re:") ? ticket.subject : `Re: ${ticket.subject}`,
@@ -82,11 +90,12 @@ export async function sendTicketReply(params: {
     .returning();
 
   // A reply is the agent taking action on the ticket; auto-advance OPEN -> IN_PROGRESS.
-  if (ticket.status === "OPEN") {
-    await db.update(tickets).set({ status: "IN_PROGRESS", updatedAt: new Date() }).where(eq(tickets.id, ticket.id));
-  } else {
-    await db.update(tickets).set({ updatedAt: new Date() }).where(eq(tickets.id, ticket.id));
-  }
+  // For manual tickets, adopt the real email thread id so future replies (and
+  // the customer's responses) thread onto this conversation.
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (ticket.status === "OPEN") updates.status = "IN_PROGRESS";
+  if (isManualThread && result.providerThreadId) updates.providerThreadId = result.providerThreadId;
+  await db.update(tickets).set(updates).where(eq(tickets.id, ticket.id));
 
   return message;
 }

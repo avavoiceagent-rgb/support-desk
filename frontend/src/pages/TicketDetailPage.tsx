@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { PublicUser, TicketDetail, TicketStatus } from "../api/types";
+import type { PublicUser, TicketChannel, TicketDetail, TicketQueue, TicketStatus } from "../api/types";
+import { CHANNELS, QUEUES } from "../lib/statuses";
 import { StatusBadge } from "../components/StatusBadge";
 import { StatusSelect } from "../components/StatusSelect";
 import { AssigneeSelect } from "../components/AssigneeSelect";
@@ -44,6 +45,20 @@ export function TicketDetailPage() {
     load();
   }
 
+  async function handleQueueChange(queue: TicketQueue | null) {
+    if (!id) return;
+    setTicket((t) => (t ? { ...t, queue } : t));
+    await api.patch(`/tickets/${id}`, { queue });
+    load();
+  }
+
+  async function handleChannelChange(channel: TicketChannel) {
+    if (!id) return;
+    setTicket((t) => (t ? { ...t, channel } : t));
+    await api.patch(`/tickets/${id}`, { channel });
+    load();
+  }
+
   if (notFound) {
     return <p className="text-sm text-gray-500">Ticket not found.</p>;
   }
@@ -79,7 +94,11 @@ export function TicketDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-5">
           <ConversationTimeline ticketId={ticket.id} messages={ticket.messages} notes={ticket.notes} />
-          <Composer ticketId={ticket.id} onSent={load} />
+          <Composer
+            ticketId={ticket.id}
+            onSent={load}
+            statusSlot={<StatusSelect compact value={ticket.status} onChange={handleStatusChange} />}
+          />
         </div>
 
         <div className="space-y-5">
@@ -91,22 +110,49 @@ export function TicketDetailPage() {
               <div>
                 <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Requester</p>
                 <div className="flex items-center gap-2.5">
-                  <Avatar name={ticket.requesterName ?? ticket.requesterEmail} size={8} />
+                  <Avatar name={ticket.requesterName ?? ticket.requesterEmail ?? ticket.requesterPhone ?? "?"} size={8} />
                   <div className="min-w-0">
                     {ticket.requesterName && (
                       <p className="truncate text-sm font-medium text-gray-900">{ticket.requesterName}</p>
                     )}
-                    <p className="truncate text-xs text-gray-500">{ticket.requesterEmail}</p>
+                    <p className="truncate text-xs text-gray-500">
+                      {ticket.requesterEmail ?? ticket.requesterPhone ?? "No contact details"}
+                    </p>
                   </div>
                 </div>
               </div>
               <div>
-                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Status</p>
-                <StatusSelect value={ticket.status} onChange={handleStatusChange} />
-              </div>
-              <div>
                 <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Assigned to</p>
                 <AssigneeSelect users={users} value={ticket.assigneeId} onChange={handleAssigneeChange} />
+              </div>
+              <div>
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Queue</p>
+                <select
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  value={ticket.queue ?? ""}
+                  onChange={(e) => void handleQueueChange((e.target.value || null) as TicketQueue | null)}
+                >
+                  <option value="">No queue</option>
+                  {QUEUES.map((q) => (
+                    <option key={q.value} value={q.value}>
+                      {q.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Channel</p>
+                <select
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  value={ticket.channel}
+                  onChange={(e) => void handleChannelChange(e.target.value as TicketChannel)}
+                >
+                  {CHANNELS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-400">Mailbox</p>
