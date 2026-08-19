@@ -13,8 +13,8 @@ import {
 } from "../services/ticket.service";
 import { getStats } from "../services/stats.service";
 import { getReports } from "../services/reports.service";
-import { ALL_STATUSES, ALL_QUEUES } from "../types";
-import type { TicketStatus, TicketQueue } from "../types";
+import { ALL_STATUSES, ALL_QUEUES, ALL_RESERVATION_TYPES, ALL_RESERVATION_SOURCES } from "../types";
+import type { TicketStatus, TicketQueue, ReservationType, ReservationSource } from "../types";
 import { sendTicketReply, ReplyError } from "../services/reply.service";
 import { addNote } from "../services/note.service";
 import { decryptToken } from "../crypto/token-encryption";
@@ -29,6 +29,10 @@ ticketsRouter.use(requireAuth);
 
 const statusEnum = z.enum(ALL_STATUSES as [TicketStatus, ...TicketStatus[]]);
 const queueEnum = z.enum(ALL_QUEUES as [TicketQueue, ...TicketQueue[]]);
+const reservationTypeEnum = z.enum(ALL_RESERVATION_TYPES as [ReservationType, ...ReservationType[]]);
+const reservationSourceEnum = z.enum(
+  ALL_RESERVATION_SOURCES as [ReservationSource, ...ReservationSource[]]
+);
 
 const listQuerySchema = z.object({
   status: statusEnum.optional(),
@@ -113,6 +117,8 @@ const updateSchema = z.object({
   assigneeId: z.string().nullable().optional(),
   queue: queueEnum.nullable().optional(),
   channel: z.enum(["EMAIL", "PHONE"]).optional(),
+  reservationType: reservationTypeEnum.nullable().optional(),
+  reservationSource: reservationSourceEnum.nullable().optional(),
 });
 
 ticketsRouter.patch("/:id", async (req, res) => {

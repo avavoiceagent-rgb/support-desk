@@ -5,6 +5,7 @@ import { env } from "../config/env";
 import { decryptToken } from "../crypto/token-encryption";
 import { getProvider } from "./registry";
 import { ingestEmail, markAccountError, clearAccountError } from "./ingest";
+import { classifyNewTicket } from "../services/classification.service";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let polling = false;
@@ -24,6 +25,7 @@ export async function pollAllAccounts(): Promise<PollSummary> {
   polling = true;
   let newMessages = 0;
   let failedAccounts = 0;
+  const newTicketIds: string[] = [];
   try {
     let accounts;
     try {
@@ -46,8 +48,9 @@ export async function pollAllAccounts(): Promise<PollSummary> {
         const { messages, nextCursor } = await provider.listNewMessages(refreshToken, cursor);
 
         for (const email of messages) {
-          const { created } = await ingestEmail(account.id, email);
+          const { created, newTicketId } = await ingestEmail(account.id, email);
           if (created) newMessages++;
+          if (newTicketId) newTicketIds.push(newTicketId);
         }
 
         await db
@@ -67,6 +70,21 @@ export async function pollAllAccounts(): Promise<PollSummary> {
     return { newMessages, failedAccounts, skipped: false };
   } finally {
     polling = false;
+    // Triage runs AFTER the mail is safely stored and, deliberately, after
+    // the polling lock is released: the AI is the slowest thing here, and it
+    // must not hold up the next poll or keep the "Check for new email"
+    // request waiting. Each ticket is independent and failures are swallowed.
+    void triageInBackground(newTicketIds);
+  }
+}
+
+async function triageInBackground(ticketIds: string[]): Promise<void> {
+  for (const ticketId of ticketIds) {
+    try {
+      await classifyNewTicket(ticketId);
+    } catch (err) {
+      console.error(`[mail-poller] triage failed for ticket ${ticketId}:`, err);
+    }
   }
 }
 

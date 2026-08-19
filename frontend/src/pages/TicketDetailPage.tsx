@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { PublicUser, TicketChannel, TicketDetail, TicketQueue, TicketStatus } from "../api/types";
+import type {
+  PublicUser,
+  ReservationSource,
+  ReservationType,
+  TicketChannel,
+  TicketDetail,
+  TicketQueue,
+  TicketStatus,
+} from "../api/types";
 import { CHANNELS, QUEUES } from "../lib/statuses";
+import { AutoBadge, ReservationLabels, TriageReason } from "../components/TriageBlock";
 import { StatusBadge } from "../components/StatusBadge";
 import { StatusSelect } from "../components/StatusSelect";
 import { AssigneeSelect } from "../components/AssigneeSelect";
@@ -47,8 +56,34 @@ export function TicketDetailPage() {
 
   async function handleQueueChange(queue: TicketQueue | null) {
     if (!id) return;
-    setTicket((t) => (t ? { ...t, queue } : t));
+    // The server clears the reservation sub-labels when the queue leaves
+    // Reservation; mirror that here so the screen doesn't briefly lie.
+    const clearSub = queue !== "RESERVATION";
+    setTicket((t) =>
+      t
+        ? {
+            ...t,
+            queue,
+            autoClassified: false,
+            ...(clearSub ? { reservationType: null, reservationSource: null } : {}),
+          }
+        : t
+    );
     await api.patch(`/tickets/${id}`, { queue });
+    load();
+  }
+
+  async function handleReservationTypeChange(reservationType: ReservationType | null) {
+    if (!id) return;
+    setTicket((t) => (t ? { ...t, reservationType, autoClassified: false } : t));
+    await api.patch(`/tickets/${id}`, { reservationType });
+    load();
+  }
+
+  async function handleReservationSourceChange(reservationSource: ReservationSource | null) {
+    if (!id) return;
+    setTicket((t) => (t ? { ...t, reservationSource, autoClassified: false } : t));
+    await api.patch(`/tickets/${id}`, { reservationSource });
     load();
   }
 
@@ -126,7 +161,10 @@ export function TicketDetailPage() {
                 <AssigneeSelect users={users} value={ticket.assigneeId} onChange={handleAssigneeChange} />
               </div>
               <div>
-                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">Queue</p>
+                <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-gray-400">
+                  Queue
+                  <AutoBadge ticket={ticket} />
+                </p>
                 <select
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                   value={ticket.queue ?? ""}
@@ -154,11 +192,17 @@ export function TicketDetailPage() {
                   ))}
                 </select>
               </div>
+              <ReservationLabels
+                ticket={ticket}
+                onTypeChange={(v) => void handleReservationTypeChange(v)}
+                onSourceChange={(v) => void handleReservationSourceChange(v)}
+              />
               <div>
                 <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-400">Mailbox</p>
                 <p className="truncate text-sm text-gray-700">{ticket.emailAccount.email}</p>
               </div>
             </div>
+            <TriageReason ticket={ticket} className="mt-3 rounded-lg" />
           </div>
         </div>
       </div>

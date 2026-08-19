@@ -14,6 +14,10 @@ import {
   STATUSES,
   isClosedStatus,
   queueLabel,
+  RESERVATION_SOURCES,
+  RESERVATION_TYPES,
+  reservationSourceLabel,
+  reservationTypeLabel,
   slaInfo,
   statusMeta,
   statusesInGroup,
@@ -21,6 +25,12 @@ import {
 } from "../lib/statuses";
 
 type Tab = "ALL" | StatusGroup | "AUTOMATED";
+/**
+ * Queue filter values. Reservation sub-labels are folded into the same
+ * dropdown (as "RES_TYPE_NEW" etc.) so the toolbar keeps one control per
+ * concept instead of sprouting a second select that is empty most of the time.
+ */
+type QueueFilter = "ALL" | "NONE" | TicketQueue | `RES_TYPE_${string}` | `RES_SRC_${string}`;
 type GroupBy = "none" | "date" | "sender";
 type SortKey = "number" | "requester" | "status" | "received" | "sla" | "updated";
 
@@ -71,7 +81,7 @@ export function TicketListPage() {
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [tab, setTab] = useState<Tab>("ACTIVE");
   const [statusFilter, setStatusFilter] = useState<"ALL" | TicketStatus>("ALL");
-  const [queueFilter, setQueueFilter] = useState<"ALL" | "NONE" | TicketQueue>("ALL");
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>("ALL");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("ALL");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "updated", dir: -1 });
@@ -132,7 +142,13 @@ export function TicketListPage() {
       }
       if (statusFilter !== "ALL" && t.status !== statusFilter) return false;
       if (queueFilter === "NONE" && t.queue !== null) return false;
-      if (queueFilter !== "ALL" && queueFilter !== "NONE" && t.queue !== queueFilter) return false;
+      if (queueFilter.startsWith("RES_TYPE_")) {
+        if (t.queue !== "RESERVATION" || t.reservationType !== queueFilter.slice(9)) return false;
+      } else if (queueFilter.startsWith("RES_SRC_")) {
+        if (t.queue !== "RESERVATION" || t.reservationSource !== queueFilter.slice(8)) return false;
+      } else if (queueFilter !== "ALL" && queueFilter !== "NONE" && t.queue !== queueFilter) {
+        return false;
+      }
       if (assigneeFilter === "unassigned" && t.assignee) return false;
       if (assigneeFilter !== "ALL" && assigneeFilter !== "unassigned" && t.assignee?.id !== assigneeFilter)
         return false;
@@ -302,6 +318,24 @@ export function TicketListPage() {
                 {queueLabel(t.queue)}
               </span>
             )}
+            {t.queue === "RESERVATION" && reservationTypeLabel(t.reservationType) && (
+              <span className="hidden shrink-0 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-600 @4xl:inline">
+                {reservationTypeLabel(t.reservationType)}
+              </span>
+            )}
+            {t.queue === "RESERVATION" && reservationSourceLabel(t.reservationSource) && (
+              <span className="hidden shrink-0 rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-teal-600 @4xl:inline">
+                {reservationSourceLabel(t.reservationSource)}
+              </span>
+            )}
+            {t.autoClassified && (
+              <span
+                title={t.classificationReason ?? "Sorted automatically when the email arrived."}
+                className="hidden shrink-0 cursor-help rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-violet-500 @4xl:inline"
+              >
+                AUTO
+              </span>
+            )}
             <span className="ml-auto shrink-0 text-[11px] text-gray-400 @2xl:hidden">{timeAgo(t.updatedAt)}</span>
           </div>
           <p className="mt-0.5 truncate text-[13px] text-gray-500">
@@ -389,13 +423,31 @@ export function TicketListPage() {
               </optgroup>
             ))}
           </select>
-          <select className={selectClass} value={queueFilter} onChange={(e) => setQueueFilter(e.target.value as "ALL" | "NONE" | TicketQueue)}>
+          <select
+            className={selectClass}
+            value={queueFilter}
+            onChange={(e) => setQueueFilter(e.target.value as QueueFilter)}
+          >
             <option value="ALL">Any queue</option>
             {QUEUES.map((q) => (
               <option key={q.value} value={q.value}>
                 {q.label}
               </option>
             ))}
+            <optgroup label="Reservation — type">
+              {RESERVATION_TYPES.map((t) => (
+                <option key={t.value} value={`RES_TYPE_${t.value}`}>
+                  {t.label}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Reservation — run by">
+              {RESERVATION_SOURCES.map((s) => (
+                <option key={s.value} value={`RES_SRC_${s.value}`}>
+                  {s.label}
+                </option>
+              ))}
+            </optgroup>
             <option value="NONE">No queue</option>
           </select>
           <select className={selectClass} value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>

@@ -16,6 +16,9 @@ const envSchema = z.object({
   // pinger) trigger a mail poll without a login session — used on free-tier
   // hosting where the app may sleep between requests.
   CRON_SECRET: z.string().optional().default(""),
+  // Optional. When empty, AI triage is simply switched off and everything
+  // else keeps working exactly as before.
+  ANTHROPIC_API_KEY: z.string().optional().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -27,6 +30,9 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+/** AI triage only runs when an Anthropic API key is configured. */
+export const isClassifierConfigured = Boolean(env.ANTHROPIC_API_KEY);
 
 export const isGmailConfigured = Boolean(
   env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REDIRECT_URI

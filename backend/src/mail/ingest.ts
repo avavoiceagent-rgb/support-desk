@@ -68,7 +68,7 @@ function extractName(fromHeader: string): { email: string; name?: string } {
 export async function ingestEmail(
   emailAccountId: string,
   email: NormalizedEmail
-): Promise<{ ticketId: string; created: boolean }> {
+): Promise<{ ticketId: string; created: boolean; newTicketId: string | null }> {
   return db.transaction(async (tx) => {
     // Idempotency guard: if we've already stored this providerMessageId,
     // there's nothing to do (covers re-polling after a crash).
@@ -77,9 +77,10 @@ export async function ingestEmail(
       .from(messages)
       .where(eq(messages.providerMessageId, email.providerMessageId))
       .limit(1);
-    if (already) return { ticketId: already.ticketId, created: false };
+    if (already) return { ticketId: already.ticketId, created: false, newTicketId: null };
 
     let ticketId = await findExistingTicketId(emailAccountId, email);
+    let newTicketId: string | null = null;
 
     if (!ticketId) {
       const { email: requesterEmail, name: requesterName } = extractName(email.from);
@@ -100,6 +101,9 @@ export async function ingestEmail(
         })
         .returning({ id: tickets.id });
       ticketId = newTicket.id;
+      // Only genuine new conversations are worth triaging; bulk mail is
+      // already filed away closed.
+      if (!email.isAutoReply) newTicketId = ticketId;
     } else if (!email.isAutoReply) {
       // A genuine (non-auto) reply on an existing thread reopens it if it
       // had been closed, rather than forking a new ticket. It also clears the
@@ -146,7 +150,7 @@ export async function ingestEmail(
       );
     }
 
-    return { ticketId, created: true };
+    return { ticketId, created: true, newTicketId };
   });
 }
 

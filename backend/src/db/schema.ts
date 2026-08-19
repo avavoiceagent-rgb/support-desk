@@ -18,7 +18,7 @@ import {
 import { relations } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 
-import type { TicketStatus, TicketQueue, TicketChannel } from "../types";
+import type { TicketStatus, TicketQueue, TicketChannel, ReservationType, ReservationSource } from "../types";
 
 export const userRoleEnum = pgEnum("user_role", ["ADMIN", "AGENT"]);
 export const mailProviderEnum = pgEnum("mail_provider_type", ["GMAIL", "OUTLOOK"]);
@@ -68,6 +68,14 @@ export const tickets = pgTable(
     // tickets are created already closed and are excluded from the Active
     // list and from every SLA / Dashboard / Reports calculation.
     isBulk: boolean("is_bulk").notNull().default(false),
+    // --- AI triage (see ai/classifier.ts). All nullable: a ticket is never
+    // blocked on classification, and a human editing any of these clears
+    // autoClassified so it is obvious who decided what.
+    reservationType: text("reservation_type").$type<ReservationType>(),
+    reservationSource: text("reservation_source").$type<ReservationSource>(),
+    autoClassified: boolean("auto_classified").notNull().default(false),
+    classificationReason: text("classification_reason"),
+    classificationConfidence: text("classification_confidence"),
     providerThreadId: text("provider_thread_id").notNull(),
     emailAccountId: text("email_account_id")
       .notNull()

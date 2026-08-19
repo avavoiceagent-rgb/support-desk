@@ -1,4 +1,10 @@
-import type { TicketChannel, TicketQueue, TicketStatus } from "../api/types";
+import type {
+  ReservationSource,
+  ReservationType,
+  TicketChannel,
+  TicketQueue,
+  TicketStatus,
+} from "../api/types";
 
 export type StatusGroup = "ACTIVE" | "WAITING" | "CLOSED";
 
@@ -50,6 +56,26 @@ export const QUEUES: { value: TicketQueue; label: string }[] = [
 
 export function queueLabel(q: TicketQueue | null): string {
   return QUEUES.find((x) => x.value === q)?.label ?? "No queue";
+}
+
+// --- Reservation sub-labels (AI triage) ---
+
+export const RESERVATION_TYPES: { value: ReservationType; label: string }[] = [
+  { value: "NEW", label: "New reservation" },
+  { value: "CHANGE", label: "Change to existing" },
+];
+
+export const RESERVATION_SOURCES: { value: ReservationSource; label: string }[] = [
+  { value: "INTERNAL", label: "Internal" },
+  { value: "EXTERNAL", label: "External" },
+];
+
+export function reservationTypeLabel(v: ReservationType | null): string | null {
+  return RESERVATION_TYPES.find((x) => x.value === v)?.label ?? null;
+}
+
+export function reservationSourceLabel(v: ReservationSource | null): string | null {
+  return RESERVATION_SOURCES.find((x) => x.value === v)?.label ?? null;
 }
 
 export const CHANNELS: { value: TicketChannel; label: string }[] = [

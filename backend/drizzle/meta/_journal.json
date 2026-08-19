@@ -29,6 +29,20 @@
       "when": 1787173945771,
       "tag": "0003_no_reply_senders",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787179049416,
+      "tag": "0004_ai_triage",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787180846798,
+      "tag": "0005_classification_confidence",
+      "breakpoints": true
     }
   ]
 }

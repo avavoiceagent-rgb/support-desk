@@ -2,7 +2,7 @@ import { and, desc, eq, or, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "../db/client";
 import { tickets, messages, notes, users, emailAccounts } from "../db/schema";
-import type { TicketStatus, TicketQueue, TicketChannel } from "../types";
+import type { TicketStatus, TicketQueue, TicketChannel, ReservationType, ReservationSource } from "../types";
 
 export interface TicketListFilters {
   status?: TicketStatus;
@@ -56,6 +56,11 @@ export async function listTickets(filters: TicketListFilters) {
       status: t.status,
       queue: t.queue,
       channel: t.channel,
+      reservationType: t.reservationType,
+      reservationSource: t.reservationSource,
+      autoClassified: t.autoClassified,
+      classificationReason: t.classificationReason,
+      classificationConfidence: t.classificationConfidence,
       isBulk: t.isBulk,
       assignee: t.assignee ? { id: t.assignee.id, name: t.assignee.name, email: t.assignee.email } : null,
       mailbox: t.emailAccount.email,
@@ -199,11 +204,31 @@ export async function updateTicket(
     assigneeId?: string | null;
     queue?: TicketQueue | null;
     channel?: TicketChannel;
+    reservationType?: ReservationType | null;
+    reservationSource?: ReservationSource | null;
   }
 ) {
+  // Once a person edits any triage field the ticket stops being "set
+  // automatically" — the badge disappears and nothing will re-label it.
+  const touchesTriage =
+    "queue" in updates || "reservationType" in updates || "reservationSource" in updates;
+
+  // Reservation sub-labels only mean something on a reservation ticket.
+  // Clearing them here rather than in the UI means it happens no matter which
+  // screen sent the edit, and no stale label can reappear if the ticket is
+  // later moved back into Reservation.
+  const leavingReservation = "queue" in updates && updates.queue !== "RESERVATION";
+
   const [updated] = await db
     .update(tickets)
-    .set({ ...updates, updatedAt: new Date() })
+    .set({
+      ...updates,
+      ...(leavingReservation
+        ? { reservationType: null, reservationSource: null }
+        : {}),
+      ...(touchesTriage ? { autoClassified: false, classificationReason: null, classificationConfidence: null } : {}),
+      updatedAt: new Date(),
+    })
     .where(eq(tickets.id, ticketId))
     .returning();
   return updated ?? null;

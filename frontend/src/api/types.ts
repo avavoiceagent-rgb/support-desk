@@ -12,6 +12,9 @@ export type TicketStatus =
   | "UNRESOLVED_CLOSED";
 
 export type TicketQueue = "RESERVATION" | "DISPATCH" | "ACCOUNTING";
+/** Reservation tickets carry two independent labels, not one combined one. */
+export type ReservationType = "NEW" | "CHANGE";
+export type ReservationSource = "INTERNAL" | "EXTERNAL";
 export type TicketChannel = "EMAIL" | "PHONE";
 export type UserRole = "ADMIN" | "AGENT";
 
@@ -32,6 +35,12 @@ export interface TicketListItem {
   status: TicketStatus;
   queue: TicketQueue | null;
   channel: TicketChannel;
+  reservationType: ReservationType | null;
+  reservationSource: ReservationSource | null;
+  /** True while the labels above are still the ones AI triage chose. */
+  autoClassified: boolean;
+  classificationReason: string | null;
+  classificationConfidence: string | null;
   /** Newsletter / marketing / auto-reply mail. Hidden from the normal tabs. */
   isBulk: boolean;
   assignee: { id: string; name: string; email: string } | null;
@@ -88,6 +97,12 @@ export interface TicketDetail {
   status: TicketStatus;
   queue: TicketQueue | null;
   channel: TicketChannel;
+  reservationType: ReservationType | null;
+  reservationSource: ReservationSource | null;
+  /** True while the labels above are still the ones AI triage chose. */
+  autoClassified: boolean;
+  classificationReason: string | null;
+  classificationConfidence: string | null;
   providerThreadId: string;
   emailAccountId: string;
   assigneeId: string | null;
