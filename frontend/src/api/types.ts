@@ -32,6 +32,8 @@ export interface TicketListItem {
   status: TicketStatus;
   queue: TicketQueue | null;
   channel: TicketChannel;
+  /** Newsletter / marketing / auto-reply mail. Hidden from the normal tabs. */
+  isBulk: boolean;
   assignee: { id: string; name: string; email: string } | null;
   mailbox: string;
   createdAt: string;

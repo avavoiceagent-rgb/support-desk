@@ -76,6 +76,10 @@ export async function ingestEmail(emailAccountId: string, email: NormalizedEmail
 
     if (!ticketId) {
       const { email: requesterEmail, name: requesterName } = extractName(email.from);
+      // Newsletters and other machine-generated mail still become a ticket so
+      // nothing is silently lost and it stays searchable — but it is created
+      // already closed and flagged isBulk, which keeps it out of the Active
+      // list and out of every SLA / Dashboard / Reports number.
       const [newTicket] = await tx
         .insert(tickets)
         .values({
@@ -84,18 +88,21 @@ export async function ingestEmail(emailAccountId: string, email: NormalizedEmail
           requesterName,
           providerThreadId: email.providerThreadId,
           emailAccountId,
-          status: "OPEN",
+          status: email.isAutoReply ? "UNRESOLVED_CLOSED" : "OPEN",
+          isBulk: email.isAutoReply,
         })
         .returning({ id: tickets.id });
       ticketId = newTicket.id;
     } else if (!email.isAutoReply) {
       // A genuine (non-auto) reply on an existing thread reopens it if it
-      // had been closed, rather than forking a new ticket.
+      // had been closed, rather than forking a new ticket. It also clears the
+      // bulk flag: a human has written in, so this is a real conversation now
+      // (and it recovers gracefully if detection ever misfires).
       const [ticket] = await tx.select({ status: tickets.status }).from(tickets).where(eq(tickets.id, ticketId)).limit(1);
       if (ticket && CLOSED_STATUSES.includes(ticket.status)) {
-        await tx.update(tickets).set({ status: "OPEN", updatedAt: new Date() }).where(eq(tickets.id, ticketId));
+        await tx.update(tickets).set({ status: "OPEN", isBulk: false, updatedAt: new Date() }).where(eq(tickets.id, ticketId));
       } else {
-        await tx.update(tickets).set({ updatedAt: new Date() }).where(eq(tickets.id, ticketId));
+        await tx.update(tickets).set({ isBulk: false, updatedAt: new Date() }).where(eq(tickets.id, ticketId));
       }
     }
 

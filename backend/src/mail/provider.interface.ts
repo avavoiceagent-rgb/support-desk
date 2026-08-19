@@ -28,7 +28,11 @@ export interface NormalizedEmail {
   bodyHtml?: string;
   attachments: NormalizedAttachment[];
   receivedAt: Date;
-  /** Parsed from Auto-Submitted / Precedence headers. */
+  /**
+   * Machine-generated mail: auto-replies, bounces, newsletters, marketing.
+   * Parsed from Auto-Submitted / Precedence / X-Autoreply and the RFC 2369
+   * List-Unsubscribe / List-Id / List-Post headers.
+   */
   isAutoReply: boolean;
 }
 

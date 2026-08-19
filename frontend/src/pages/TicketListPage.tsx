@@ -20,7 +20,7 @@ import {
   type StatusGroup,
 } from "../lib/statuses";
 
-type Tab = "ALL" | StatusGroup;
+type Tab = "ALL" | StatusGroup | "AUTOMATED";
 type GroupBy = "none" | "date" | "sender";
 type SortKey = "number" | "requester" | "status" | "received" | "sla" | "updated";
 
@@ -29,6 +29,9 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "ACTIVE", label: "Active" },
   { key: "WAITING", label: "Waiting" },
   { key: "CLOSED", label: "Closed" },
+  // Newsletters / marketing / auto-replies. Kept out of the other tabs and
+  // out of the SLA and Reports figures, but still here if you need them.
+  { key: "AUTOMATED", label: "Automated" },
 ];
 
 const statusOrder = new Map(STATUSES.map((s, i) => [s.value, i]));
@@ -105,15 +108,28 @@ export function TicketListPage() {
   }, []);
 
   const counts = useMemo(() => {
-    const c: Record<Tab, number> = { ALL: tickets.length, ACTIVE: 0, WAITING: 0, CLOSED: 0 };
-    for (const t of tickets) c[statusMeta(t.status).group]++;
+    const c: Record<Tab, number> = { ALL: 0, ACTIVE: 0, WAITING: 0, CLOSED: 0, AUTOMATED: 0 };
+    for (const t of tickets) {
+      if (t.isBulk) {
+        c.AUTOMATED++;
+      } else {
+        c.ALL++;
+        c[statusMeta(t.status).group]++;
+      }
+    }
     return c;
   }, [tickets]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = tickets.filter((t) => {
-      if (tab !== "ALL" && statusMeta(t.status).group !== tab) return false;
+      // Automated mail lives only in its own tab; every other tab hides it.
+      if (tab === "AUTOMATED") {
+        if (!t.isBulk) return false;
+      } else {
+        if (t.isBulk) return false;
+        if (tab !== "ALL" && statusMeta(t.status).group !== tab) return false;
+      }
       if (statusFilter !== "ALL" && t.status !== statusFilter) return false;
       if (queueFilter === "NONE" && t.queue !== null) return false;
       if (queueFilter !== "ALL" && queueFilter !== "NONE" && t.queue !== queueFilter) return false;
@@ -433,6 +449,13 @@ export function TicketListPage() {
           </button>
         ))}
       </div>
+
+      {tab === "AUTOMATED" && (
+        <p className="mb-3 rounded-lg bg-gray-50 px-3 py-2 text-[13px] text-gray-500">
+          Newsletters, marketing and automatic replies. These arrive closed and are left out of the
+          Active list, the SLA column and all Dashboard and Reports figures.
+        </p>
+      )}
 
       {selected.size > 0 && (
         <div className="mb-3 flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5">

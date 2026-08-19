@@ -56,6 +56,7 @@ export async function listTickets(filters: TicketListFilters) {
       status: t.status,
       queue: t.queue,
       channel: t.channel,
+      isBulk: t.isBulk,
       assignee: t.assignee ? { id: t.assignee.id, name: t.assignee.name, email: t.assignee.email } : null,
       mailbox: t.emailAccount.email,
       createdAt: t.createdAt,

@@ -104,6 +104,34 @@ describe("ingestEmail", () => {
     expect(msgs).toHaveLength(2); // the auto-reply is still logged, just doesn't reopen
   });
 
+  it("creates newsletters as closed, bulk-flagged tickets", async () => {
+    const { ticketId } = await ingestEmail(
+      accountId,
+      makeEmail({ providerThreadId: "thread-news", subject: "Our August newsletter", isAutoReply: true })
+    );
+    const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+    expect(ticket.isBulk).toBe(true);
+    expect(ticket.status).toBe("UNRESOLVED_CLOSED");
+  });
+
+  it("clears the bulk flag when a real person writes in on that thread", async () => {
+    const { ticketId } = await ingestEmail(
+      accountId,
+      makeEmail({ providerThreadId: "thread-mixed", isAutoReply: true })
+    );
+    await ingestEmail(accountId, makeEmail({ providerThreadId: "thread-mixed", isAutoReply: false }));
+    const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+    expect(ticket.isBulk).toBe(false);
+    expect(ticket.status).toBe("OPEN");
+  });
+
+  it("keeps ordinary customer mail out of the bulk bucket", async () => {
+    const { ticketId } = await ingestEmail(accountId, makeEmail({ providerThreadId: "thread-real" }));
+    const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+    expect(ticket.isBulk).toBe(false);
+    expect(ticket.status).toBe("OPEN");
+  });
+
   it("sanitizes inbound HTML to strip scripts", async () => {
     const { ticketId } = await ingestEmail(
       accountId,

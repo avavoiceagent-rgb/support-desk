@@ -64,6 +64,10 @@ export const tickets = pgTable(
     status: text("status").$type<TicketStatus>().notNull().default("OPEN"),
     queue: text("queue").$type<TicketQueue>(),
     channel: text("channel").$type<TicketChannel>().notNull().default("EMAIL"),
+    // Machine-generated mail (newsletters, marketing, auto-replies). Bulk
+    // tickets are created already closed and are excluded from the Active
+    // list and from every SLA / Dashboard / Reports calculation.
+    isBulk: boolean("is_bulk").notNull().default(false),
     providerThreadId: text("provider_thread_id").notNull(),
     emailAccountId: text("email_account_id")
       .notNull()
@@ -76,6 +80,7 @@ export const tickets = pgTable(
     uniqueIndex("tickets_ticket_number_key").on(t.ticketNumber),
     uniqueIndex("tickets_account_thread_key").on(t.emailAccountId, t.providerThreadId),
     index("tickets_status_idx").on(t.status),
+    index("tickets_is_bulk_idx").on(t.isBulk),
     index("tickets_assignee_idx").on(t.assigneeId),
   ]
 );

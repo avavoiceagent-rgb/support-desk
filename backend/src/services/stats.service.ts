@@ -1,14 +1,17 @@
-import { desc, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { tickets, messages, users } from "../db/schema";
 import { CLOSED_STATUSES } from "../types";
 
 const SLA_TARGET_MS = 24 * 60 * 60 * 1000;
 
-/** Aggregated numbers for the dashboard, computed over all tickets. */
+/**
+ * Aggregated numbers for the dashboard. Bulk tickets (newsletters, marketing,
+ * auto-replies) are excluded so they cannot skew SLA or volume figures.
+ */
 export async function getStats() {
   const [allTickets, timingRows, allUsers] = await Promise.all([
-    db.query.tickets.findMany({ orderBy: desc(tickets.createdAt) }),
+    db.query.tickets.findMany({ where: eq(tickets.isBulk, false), orderBy: desc(tickets.createdAt) }),
     db
       .select({
         ticketId: messages.ticketId,

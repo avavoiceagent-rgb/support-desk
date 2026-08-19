@@ -72,14 +72,29 @@ function findBody(part: gmail_v1.Schema$MessagePart | undefined): { text?: strin
   return result;
 }
 
-function isAutoReply(headers: gmail_v1.Schema$MessagePartHeader[] | undefined): boolean {
+/**
+ * True for machine-generated mail: vacation auto-replies, delivery reports,
+ * and — importantly for ticket hygiene — newsletters and marketing blasts.
+ *
+ * Newsletters very often set ONLY the RFC 2369 List-* headers, so checking
+ * Auto-Submitted / Precedence alone (as we did originally) let every
+ * newsletter through and it became a permanently unanswered ticket.
+ */
+export function isAutoReply(headers: gmail_v1.Schema$MessagePartHeader[] | undefined): boolean {
   const autoSubmitted = header(headers, "Auto-Submitted");
   const precedence = header(headers, "Precedence");
   const xAutoreply = header(headers, "X-Autoreply");
+  // RFC 2369 mailing-list / bulk-sender headers.
+  const listUnsubscribe = header(headers, "List-Unsubscribe");
+  const listId = header(headers, "List-Id");
+  const listPost = header(headers, "List-Post");
   return Boolean(
     (autoSubmitted && autoSubmitted.toLowerCase() !== "no") ||
-      (precedence && ["bulk", "auto_reply", "junk"].includes(precedence.toLowerCase())) ||
-      xAutoreply
+      (precedence && ["bulk", "list", "auto_reply", "junk"].includes(precedence.toLowerCase())) ||
+      xAutoreply ||
+      listUnsubscribe ||
+      listId ||
+      listPost
   );
 }
 

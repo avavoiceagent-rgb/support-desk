@@ -1,4 +1,4 @@
-import { gte, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { tickets, messages, notes, users } from "../db/schema";
 import { CLOSED_STATUSES } from "../types";
@@ -14,15 +14,17 @@ function avg(nums: number[]): number | null {
 /**
  * Analytical reports over a date range (days=0 means all time).
  * Everything is computed from tickets CREATED in the range, plus reply/note
- * activity that happened in the range.
+ * activity that happened in the range. Bulk tickets (newsletters, marketing,
+ * auto-replies) are excluded throughout — they are not real support work and
+ * would otherwise register as permanent SLA breaches.
  */
 export async function getReports(days: number) {
   const since = days > 0 ? new Date(Date.now() - days * 86_400_000) : null;
 
   const [rangeTickets, timingRows, rangeMessages, rangeNotes, allUsers] = await Promise.all([
     since
-      ? db.query.tickets.findMany({ where: gte(tickets.createdAt, since) })
-      : db.query.tickets.findMany(),
+      ? db.query.tickets.findMany({ where: and(gte(tickets.createdAt, since), eq(tickets.isBulk, false)) })
+      : db.query.tickets.findMany({ where: eq(tickets.isBulk, false) }),
     db
       .select({
         ticketId: messages.ticketId,
