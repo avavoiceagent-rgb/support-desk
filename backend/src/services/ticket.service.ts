@@ -10,6 +10,24 @@ export interface TicketListFilters {
 }
 
 /**
+ * Postgres hands back a `timestamp without time zone` from a raw aggregate as
+ * a NAIVE STRING ("2026-08-19 23:07:44.448"), not a Date — unlike the same
+ * column read through Drizzle, which arrives as a Date and serialises with a
+ * trailing Z. Shipped to the browser untouched, that naive string is parsed as
+ * the VIEWER's local time, so every Received time and every "still waiting"
+ * SLA figure was wrong by the viewer's UTC offset (two hours in Berlin).
+ *
+ * The column stores UTC, so say so explicitly before the value leaves here.
+ */
+export function toIsoUtc(value: string | Date | null | undefined): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
+  const parsed = new Date(hasZone ? value : `${value.replace(" ", "T")}Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+/**
  * Per-ticket message timing: when the first customer message arrived and when
  * the team's first reply went out. One grouped query for all tickets.
  */
@@ -66,8 +84,8 @@ export async function listTickets(filters: TicketListFilters) {
       mailbox: t.emailAccount.email,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
-      receivedAt: timing?.firstInboundAt ?? t.createdAt,
-      firstReplyAt: timing?.firstReplyAt ?? null,
+      receivedAt: toIsoUtc(timing?.firstInboundAt) ?? t.createdAt,
+      firstReplyAt: toIsoUtc(timing?.firstReplyAt),
       lastMessagePreview: t.messages[0]
         ? {
             direction: t.messages[0].direction,
