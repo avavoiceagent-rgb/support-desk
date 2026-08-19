@@ -73,6 +73,33 @@ function findBody(part: gmail_v1.Schema$MessagePart | undefined): { text?: strin
 }
 
 /**
+ * Sender addresses nobody can reply to. Service notifications (Google Apps
+ * Script failure summaries, security alerts, and similar) are machine-
+ * generated but carry none of the List-* headers below, so the address is
+ * the only signal we have. Matched against the local part with punctuation
+ * stripped, which catches things like
+ * "noreply-apps-scripts-notifications@google.com" and "do-not-reply@...".
+ */
+const NO_REPLY_LOCAL_PARTS = [
+  "noreply",
+  "donotreply",
+  "notification", // also matches "notifications"
+  "mailerdaemon",
+  "postmaster",
+  "bounce", // also matches "bounces"
+];
+
+export function isNoReplySender(fromHeader: string | undefined): boolean {
+  if (!fromHeader) return false;
+  const angle = fromHeader.match(/<(.+?)>/);
+  const address = (angle ? angle[1] : fromHeader).trim().toLowerCase();
+  const localPart = address.split("@")[0] ?? "";
+  const normalized = localPart.replace(/[^a-z0-9]/g, "");
+  if (!normalized) return false;
+  return NO_REPLY_LOCAL_PARTS.some((p) => normalized.includes(p));
+}
+
+/**
  * True for machine-generated mail: vacation auto-replies, delivery reports,
  * and — importantly for ticket hygiene — newsletters and marketing blasts.
  *
@@ -94,7 +121,8 @@ export function isAutoReply(headers: gmail_v1.Schema$MessagePartHeader[] | undef
       xAutoreply ||
       listUnsubscribe ||
       listId ||
-      listPost
+      listPost ||
+      isNoReplySender(header(headers, "From"))
   );
 }
 
