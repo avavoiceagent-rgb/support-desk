@@ -17,9 +17,17 @@ function SectionCard({ title, subtitle, children }: { title: string; subtitle?: 
   );
 }
 
+interface PollSummary {
+  newMessages: number;
+  failedAccounts: number;
+  skipped: boolean;
+}
+
 function ConnectedMailboxes() {
   const [accounts, setAccounts] = useState<EmailAccountStatus[]>([]);
   const [gmailConfigured, setGmailConfigured] = useState(true);
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<string | null>(null);
   const [params] = useSearchParams();
   const { user } = useAuth();
 
@@ -37,6 +45,30 @@ function ConnectedMailboxes() {
   async function connectGmail() {
     const { authUrl } = await api.get<{ authUrl: string }>("/email-accounts/gmail/connect");
     window.location.href = authUrl;
+  }
+
+  // The mailbox is checked automatically on a timer; this is for when you
+  // don't want to wait for the next round.
+  async function checkNow() {
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      const r = await api.post<PollSummary>("/email-accounts/poll-now");
+      if (r.skipped) {
+        setCheckResult("A check was already running — give it a few seconds.");
+      } else if (r.failedAccounts > 0) {
+        setCheckResult("Couldn't reach the mailbox. See its status above.");
+      } else if (r.newMessages === 0) {
+        setCheckResult("No new email.");
+      } else {
+        setCheckResult(`Found ${r.newMessages} new email${r.newMessages === 1 ? "" : "s"}.`);
+      }
+      load();
+    } catch (err) {
+      setCheckResult(err instanceof ApiError ? err.message : "Couldn't check for new mail.");
+    } finally {
+      setChecking(false);
+    }
   }
 
   async function disconnect(id: string) {
@@ -95,21 +127,41 @@ function ConnectedMailboxes() {
         ))}
       </div>
 
-      {user?.role === "ADMIN" ? (
-        gmailConfigured ? (
-          <button
-            onClick={() => void connectGmail()}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700"
-          >
-            Connect Gmail
-          </button>
+      <div className="flex flex-wrap items-center gap-2.5">
+        {user?.role === "ADMIN" ? (
+          gmailConfigured ? (
+            <button
+              onClick={() => void connectGmail()}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700"
+            >
+              Connect Gmail
+            </button>
+          ) : (
+            <p className="rounded-lg bg-gray-50 px-3.5 py-2.5 text-sm text-gray-600">
+              Gmail isn't configured on the server yet — the GOOGLE_* environment variables need to be set.
+            </p>
+          )
         ) : (
-          <p className="rounded-lg bg-gray-50 px-3.5 py-2.5 text-sm text-gray-600">
-            Gmail isn't configured on the server yet — the GOOGLE_* environment variables need to be set.
-          </p>
-        )
-      ) : (
-        <p className="text-sm text-gray-500">Ask an admin to connect a mailbox.</p>
+          <p className="text-sm text-gray-500">Ask an admin to connect a mailbox.</p>
+        )}
+
+        {accounts.length > 0 && (
+          <button
+            onClick={() => void checkNow()}
+            disabled={checking}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {checking ? "Checking…" : "Check for new email"}
+          </button>
+        )}
+
+        {checkResult && <span className="text-sm text-gray-500">{checkResult}</span>}
+      </div>
+
+      {accounts.length > 0 && (
+        <p className="mt-3 text-xs text-gray-400">
+          New mail is picked up automatically every 30 seconds; use this if you don't want to wait.
+        </p>
       )}
     </SectionCard>
   );

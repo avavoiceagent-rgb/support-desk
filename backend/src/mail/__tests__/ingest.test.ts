@@ -132,6 +132,15 @@ describe("ingestEmail", () => {
     expect(ticket.status).toBe("OPEN");
   });
 
+  it("reports created=true only the first time a message is seen", async () => {
+    const email = makeEmail({ providerThreadId: "thread-count" });
+    const first = await ingestEmail(accountId, email);
+    const second = await ingestEmail(accountId, email);
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.ticketId).toBe(first.ticketId);
+  });
+
   it("sanitizes inbound HTML to strip scripts", async () => {
     const { ticketId } = await ingestEmail(
       accountId,

@@ -60,8 +60,15 @@ function extractName(fromHeader: string): { email: string; name?: string } {
   return { email: fromHeader.trim() };
 }
 
-/** Ingest a single inbound email. Returns the ticket id it landed on. */
-export async function ingestEmail(emailAccountId: string, email: NormalizedEmail): Promise<{ ticketId: string }> {
+/**
+ * Ingest a single inbound email. Returns the ticket it landed on, and whether
+ * this was genuinely new mail (`created: false` means we had already stored
+ * this message — re-polling is a no-op).
+ */
+export async function ingestEmail(
+  emailAccountId: string,
+  email: NormalizedEmail
+): Promise<{ ticketId: string; created: boolean }> {
   return db.transaction(async (tx) => {
     // Idempotency guard: if we've already stored this providerMessageId,
     // there's nothing to do (covers re-polling after a crash).
@@ -70,7 +77,7 @@ export async function ingestEmail(emailAccountId: string, email: NormalizedEmail
       .from(messages)
       .where(eq(messages.providerMessageId, email.providerMessageId))
       .limit(1);
-    if (already) return { ticketId: already.ticketId };
+    if (already) return { ticketId: already.ticketId, created: false };
 
     let ticketId = await findExistingTicketId(emailAccountId, email);
 
@@ -139,7 +146,7 @@ export async function ingestEmail(emailAccountId: string, email: NormalizedEmail
       );
     }
 
-    return { ticketId };
+    return { ticketId, created: true };
   });
 }
 

@@ -96,9 +96,15 @@ emailAccountsRouter.delete("/:id", requireAuth, requireAdmin, async (req, res) =
 });
 
 // POST /api/email-accounts/poll-now — manual "check for new email" trigger.
+// Unlike the cron endpoint this WAITS for the poll (a couple of seconds) so
+// the Settings page can tell the user what it found.
 emailAccountsRouter.post("/poll-now", requireAuth, async (_req, res) => {
-  void pollAllAccounts();
-  res.status(202).json({ triggered: true });
+  try {
+    res.json(await pollAllAccounts());
+  } catch (err) {
+    console.error("[poll-now] failed:", err);
+    res.status(500).json({ error: "Could not check for new mail. Please try again." });
+  }
 });
 
 // GET /api/email-accounts/cron-poll?key=<CRON_SECRET> — unauthenticated

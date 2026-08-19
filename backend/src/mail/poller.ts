@@ -9,9 +9,21 @@ import { ingestEmail, markAccountError, clearAccountError } from "./ingest";
 let timer: ReturnType<typeof setInterval> | null = null;
 let polling = false;
 
-export async function pollAllAccounts(): Promise<void> {
-  if (polling) return; // avoid overlapping runs if one poll takes longer than the interval
+export interface PollSummary {
+  /** How many genuinely new emails were turned into tickets/messages. */
+  newMessages: number;
+  /** Mailboxes whose poll failed (their lastError is updated). */
+  failedAccounts: number;
+  /** True when a poll was already running, so this call did nothing. */
+  skipped: boolean;
+}
+
+export async function pollAllAccounts(): Promise<PollSummary> {
+  // Avoid overlapping runs if one poll takes longer than the interval.
+  if (polling) return { newMessages: 0, failedAccounts: 0, skipped: true };
   polling = true;
+  let newMessages = 0;
+  let failedAccounts = 0;
   try {
     let accounts;
     try {
@@ -19,7 +31,7 @@ export async function pollAllAccounts(): Promise<void> {
     } catch (err) {
       // A transient DB outage must never crash the app — skip this poll.
       console.error("[mail-poller] could not load accounts, skipping poll:", err);
-      return;
+      return { newMessages: 0, failedAccounts: 0, skipped: true };
     }
     for (const account of accounts) {
       try {
@@ -34,7 +46,8 @@ export async function pollAllAccounts(): Promise<void> {
         const { messages, nextCursor } = await provider.listNewMessages(refreshToken, cursor);
 
         for (const email of messages) {
-          await ingestEmail(account.id, email);
+          const { created } = await ingestEmail(account.id, email);
+          if (created) newMessages++;
         }
 
         await db
@@ -46,10 +59,12 @@ export async function pollAllAccounts(): Promise<void> {
           await clearAccountError(account.id);
         }
       } catch (err) {
+        failedAccounts++;
         console.error(`[mail-poller] account ${account.email} failed:`, err);
         await markAccountError(account.id, err instanceof Error ? err.message : String(err));
       }
     }
+    return { newMessages, failedAccounts, skipped: false };
   } finally {
     polling = false;
   }
