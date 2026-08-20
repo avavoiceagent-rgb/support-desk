@@ -19,6 +19,10 @@ const envSchema = z.object({
   // Optional. When empty, AI triage is simply switched off and everything
   // else keeps working exactly as before.
   ANTHROPIC_API_KEY: z.string().optional().default(""),
+  // Optional. Enables verified addresses (Geocoding API) and traffic-aware
+  // drive times (Routes API). Without it, Adam echoes addresses back as the
+  // customer wrote them and asks them to confirm.
+  GOOGLE_MAPS_API_KEY: z.string().optional().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -33,6 +37,9 @@ export const env = parsed.data;
 
 /** AI triage only runs when an Anthropic API key is configured. */
 export const isClassifierConfigured = Boolean(env.ANTHROPIC_API_KEY);
+
+/** Address verification and drive times need a Google Maps key. */
+export const isMapsConfigured = Boolean(env.GOOGLE_MAPS_API_KEY);
 
 export const isGmailConfigured = Boolean(
   env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REDIRECT_URI

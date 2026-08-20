@@ -8,6 +8,7 @@ import { authRouter } from "./routes/auth.routes";
 import { usersRouter } from "./routes/users.routes";
 import { ticketsRouter } from "./routes/tickets.routes";
 import { emailAccountsRouter } from "./routes/email-accounts.routes";
+import { bookingRouter } from "./routes/booking.routes";
 import { startMailPoller } from "./mail/poller";
 
 const app = express();
@@ -24,6 +25,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/tickets", ticketsRouter);
 app.use("/api/email-accounts", emailAccountsRouter);
+app.use("/api/booking", bookingRouter);
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 

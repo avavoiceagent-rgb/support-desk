@@ -1,0 +1,111 @@
+import { describe, it, expect } from "vitest";
+import { parseGeocodeResponse, parseRouteResponse, describeAddress } from "../maps";
+
+const parkAve = {
+  status: "OK",
+  results: [
+    {
+      formatted_address: "245 Park Ave, New York, NY 10167, USA",
+      place_id: "ChIJ_park_ave",
+      types: ["street_address"],
+      address_components: [
+        { long_name: "245", types: ["street_number"] },
+        { long_name: "Park Avenue", types: ["route"] },
+        { long_name: "New York", types: ["locality"] },
+        { long_name: "10167", short_name: "10167", types: ["postal_code"] },
+      ],
+    },
+  ],
+};
+
+const jfk = {
+  status: "OK",
+  results: [
+    {
+      formatted_address: "John F. Kennedy International Airport, Queens, NY 11430, USA",
+      place_id: "ChIJ_jfk",
+      types: ["airport", "point_of_interest", "establishment"],
+      address_components: [{ long_name: "11430", types: ["postal_code"] }],
+    },
+  ],
+};
+
+describe("parseGeocodeResponse", () => {
+  it("pulls the tidy address and the postcode out", () => {
+    const a = parseGeocodeResponse(parkAve, "245 park ave manhattan");
+    expect(a).toMatchObject({
+      formattedAddress: "245 Park Ave, New York, NY 10167, USA",
+      postalCode: "10167",
+      placeId: "ChIJ_park_ave",
+      isAirport: false,
+      partialMatch: false,
+      query: "245 park ave manhattan",
+    });
+  });
+
+  it("recognises an airport, so no postcode confirmation is needed", () => {
+    expect(parseGeocodeResponse(jfk, "JFK terminal 4")?.isAirport).toBe(true);
+  });
+
+  it("flags a partial match so Adam can ask rather than assume", () => {
+    const raw = { ...parkAve, results: [{ ...parkAve.results[0], partial_match: true }] };
+    expect(parseGeocodeResponse(raw, "park ave")?.partialMatch).toBe(true);
+  });
+
+  it("returns null when Google finds nothing", () => {
+    expect(parseGeocodeResponse({ status: "ZERO_RESULTS", results: [] }, "asdfgh")).toBeNull();
+  });
+
+  it("returns null on a configuration error rather than pretending", () => {
+    expect(
+      parseGeocodeResponse({ status: "REQUEST_DENIED", error_message: "API not enabled" }, "x")
+    ).toBeNull();
+  });
+
+  it("returns null for a result with no postcode component rather than inventing one", () => {
+    const raw = {
+      status: "OK",
+      results: [{ formatted_address: "Somewhere, NY, USA", place_id: "p", types: ["locality"] }],
+    };
+    expect(parseGeocodeResponse(raw, "somewhere")?.postalCode).toBeNull();
+  });
+
+  it("copes with junk", () => {
+    expect(parseGeocodeResponse(null, "x")).toBeNull();
+    expect(parseGeocodeResponse("nope", "x")).toBeNull();
+    expect(parseGeocodeResponse({ status: "OK", results: [] }, "x")).toBeNull();
+  });
+});
+
+describe("parseRouteResponse", () => {
+  it("converts the duration and distance Google returns", () => {
+    const r = parseRouteResponse({ routes: [{ duration: "3120s", distanceMeters: 28968 }] });
+    expect(r).toEqual({ minutes: 52, miles: 18 });
+  });
+
+  it("rounds to whole minutes", () => {
+    expect(parseRouteResponse({ routes: [{ duration: "3149s" }] })?.minutes).toBe(52);
+  });
+
+  it("returns null when there is no route", () => {
+    expect(parseRouteResponse({ routes: [] })).toBeNull();
+    expect(parseRouteResponse({})).toBeNull();
+    expect(parseRouteResponse(null)).toBeNull();
+  });
+
+  it("returns null for a nonsense duration instead of NaN minutes", () => {
+    expect(parseRouteResponse({ routes: [{ duration: "abc" }] })).toBeNull();
+    expect(parseRouteResponse({ routes: [{ duration: "0s" }] })).toBeNull();
+  });
+});
+
+describe("describeAddress", () => {
+  it("uses Google's version when we have one", () => {
+    const a = parseGeocodeResponse(parkAve, "245 park ave")!;
+    expect(describeAddress(a, "245 park ave")).toBe("245 Park Ave, New York, NY 10167, USA");
+  });
+
+  it("quotes the customer's own words back when we don't", () => {
+    expect(describeAddress(null, "the blue house on the corner")).toBe("the blue house on the corner");
+  });
+});
