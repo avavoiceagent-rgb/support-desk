@@ -68,11 +68,10 @@ Always run the backend tests and the typecheck before committing.
 ## Deploying
 
 This repo is the deploy pipeline: pushing to `main` makes Railway build and
-release. Amar reviews changes in GitHub Desktop and pushes. There is an old
-`code.tar.gz` unpack workflow in `.github/workflows/` left from the previous
-flow — it now fails harmlessly on every push because no archive is present, and
-it should be deleted when convenient. Note that a GitHub Actions token is not
-allowed to modify workflow files, so changes there must be made by a person.
+release. Amar reviews changes in GitHub Desktop and pushes. There are no GitHub
+Actions here — the old `code.tar.gz` unpack workflow and the archive itself were
+deleted in ad87734, so nothing runs on a push except Railway's own build.
+`docs/DEPLOY_RAILWAY.md` is the plain-language version of all this for Amar.
 
 ## Style
 
