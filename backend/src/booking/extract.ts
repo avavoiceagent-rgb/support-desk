@@ -93,7 +93,8 @@ function systemPrompt(receivedOn: string): string {
 THE RULE THAT MATTERS: record only what the email actually says. If a detail is not there, LEAVE THE FIELD OUT. Do not infer, do not assume, do not use a typical value. Someone will read what you record as established fact and repeat it to the customer, so an omission is cheap and an invention is expensive.
 
 Specific traps:
-- passengerName and bookerName: the sender is the booker. Only record a passenger name if the email names the passenger. If the email doesn't say who is travelling, leave passengerName out — do NOT copy the booker's name into it.
+- bookerName: the person who WROTE the email. If it is signed off with a name ("Regards, Daniel Weiss"), that is the booker — use it. The mailbox's display name is a weaker signal: it is often a shared inbox, a company account or a colleague's address, so fall back to it only when the message is unsigned. When the two disagree, the sign-off wins.
+- passengerName: only record it if the email names the passenger. If the email doesn't say who is travelling, leave passengerName out — do NOT copy the booker's name into it.
 - bookerIsPassenger: set this to true ONLY if the email says so ("I'll be travelling", "for myself", "pick me up"). Set it to false only if the email clearly names someone else as the traveller. If the email is silent, LEAVE IT OUT. A single sender writing in the first person is not evidence either way.
 - Phone numbers: record a number found in the body or the signature. Put it in bookerPhone unless the email attaches it to the passenger. Set useBookerPhoneForPassenger to true only if the booker says in writing to use their number for the passenger.
 - Addresses: record them exactly as written, including any building name or terminal. Do NOT tidy, expand, correct or add a postcode — an address is checked against a map later, and your version would corrupt that.
