@@ -212,11 +212,33 @@ export function resolveServiceArea(
 }
 
 /**
- * How an address should read in Adam's email. Airports keep their name; other
- * addresses get the postcode Google returned, and anything unverified is
- * quoted back exactly as the customer wrote it so nothing is invented.
+ * Google's formatted_address is built for machines. It repeats the place name
+ * in front of the street ("245 Park Avenue, 245 Park Ave, New York, NY 10167,
+ * USA") and always appends the country, which reads badly in an email to a
+ * customer standing in New York.
+ *
+ * This drops a leading name that merely repeats what follows, and the country
+ * suffix. A leading name that adds something — a hotel, a building a driver
+ * would look for — is kept, because that is useful at the kerb.
+ */
+export function tidyAddress(formatted: string): string {
+  const withoutCountry = formatted.replace(/,\s*(?:USA|United States)\s*$/i, "").trim();
+  const parts = withoutCountry.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return withoutCountry;
+
+  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const first = squash(parts[0]);
+  const second = squash(parts[1]);
+  const redundant = first.length > 0 && (second.startsWith(first) || first.startsWith(second));
+
+  return (redundant ? parts.slice(1) : parts).join(", ");
+}
+
+/**
+ * How an address should read in Adam's email. Anything unverified is quoted
+ * back exactly as the customer wrote it, so nothing is invented.
  */
 export function describeAddress(verified: VerifiedAddress | null, fallback: string): string {
   if (!verified) return fallback;
-  return verified.formattedAddress;
+  return tidyAddress(verified.formattedAddress);
 }

@@ -160,7 +160,11 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
       review,
       plan,
       rate,
-      customerName: ticket.requesterName ?? nameFromAddress(first.fromAddress),
+      // The name the person SIGNED with beats the mailbox's display name:
+      // bookers routinely write from a shared or company address, so the two
+      // are often different people.
+      customerName:
+        booking.bookerName ?? ticket.requesterName ?? nameFromAddress(first.fromAddress),
       isExternal,
       agentName: AGENT_NAME_PLACEHOLDER,
     });

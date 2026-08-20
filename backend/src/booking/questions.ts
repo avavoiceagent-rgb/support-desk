@@ -5,6 +5,7 @@
 // these into readable English, not to work out what's missing.
 
 import type { ExtractedBooking } from "./extract";
+import { tidyAddress } from "./maps";
 import type { VerifiedAddress } from "./maps";
 import type { PickupPlan } from "./pickup-time";
 
@@ -37,11 +38,12 @@ export interface ReviewInput {
 function addressLine(label: string, verified: VerifiedAddress | null, written: string | null): string | null {
   if (!written && !verified) return null;
   if (!verified) return `${label}: ${written} — could you confirm the full address?`;
-  if (verified.isAirport) return `${label}: ${verified.formattedAddress}`;
+  const address = tidyAddress(verified.formattedAddress);
+  if (verified.isAirport) return `${label}: ${address}`;
   if (verified.partialMatch || !verified.postalCode) {
-    return `${label}: ${verified.formattedAddress} — could you confirm this is right?`;
+    return `${label}: ${address} — could you confirm this is right?`;
   }
-  return `${label}: ${verified.formattedAddress}`;
+  return `${label}: ${address}`;
 }
 
 export function reviewBooking(input: ReviewInput): BookingReview {

@@ -126,7 +126,8 @@ describe("addresses", () => {
   it("does not ask for a postcode on an airport", () => {
     const r = review({ dropoffAddressText: "JFK" });
     const dropoffLine = r.confirmations.find((c) => c.startsWith("Drop-off"));
-    expect(dropoffLine).toBe("Drop-off: John F. Kennedy International Airport, Queens, NY 11430, USA");
+    // No postcode question, and no ", USA" trailing off the end of it.
+    expect(dropoffLine).toBe("Drop-off: John F. Kennedy International Airport, Queens, NY 11430");
   });
 
   it("asks for a missing address", () => {

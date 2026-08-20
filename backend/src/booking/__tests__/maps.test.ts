@@ -5,6 +5,7 @@ import {
   describeAddress,
   looksLikeAirport,
   resolveServiceArea,
+  tidyAddress,
 } from "../maps";
 import type { VerifiedAddress } from "../maps";
 
@@ -111,9 +112,9 @@ describe("parseRouteResponse", () => {
 });
 
 describe("describeAddress", () => {
-  it("uses Google's version when we have one", () => {
+  it("uses Google's version, tidied for a customer to read", () => {
     const a = parseGeocodeResponse(parkAve, "245 park ave")!;
-    expect(describeAddress(a, "245 park ave")).toBe("245 Park Ave, New York, NY 10167, USA");
+    expect(describeAddress(a, "245 park ave")).toBe("245 Park Ave, New York, NY 10167");
   });
 
   it("quotes the customer's own words back when we don't", () => {
@@ -198,5 +199,43 @@ describe("resolveServiceArea", () => {
     expect(resolveServiceArea([at("NY"), null], ["NY", "NJ"])).toBeNull();
     expect(resolveServiceArea([at("NY"), at(null)], ["NY", "NJ"])).toBeNull();
     expect(resolveServiceArea([], ["NY", "NJ"])).toBeNull();
+  });
+});
+
+describe("tidyAddress", () => {
+  // Google's formatted_address is built for machines. These are the genuine
+  // strings it returned for this company's own test bookings.
+  it("drops a leading name that just repeats the street that follows", () => {
+    expect(tidyAddress("245 Park Avenue, 245 Park Ave, New York, NY 10167, USA")).toBe(
+      "245 Park Ave, New York, NY 10167"
+    );
+  });
+
+  it("drops a terminal name repeated in the line after it", () => {
+    expect(tidyAddress("Terminal 4, Terminal 4 Departures, Jamaica, NY 11430, USA")).toBe(
+      "Terminal 4 Departures, Jamaica, NY 11430"
+    );
+  });
+
+  it("keeps a leading name that actually adds something a driver could use", () => {
+    expect(tidyAddress("Trump Bldg, 40 Wall St, New York, NY 10005, USA")).toBe(
+      "Trump Bldg, 40 Wall St, New York, NY 10005"
+    );
+    expect(tidyAddress("Sheraton Philadelphia Downtown, 201 N 17th St, Philadelphia, PA 19103, USA")).toBe(
+      "Sheraton Philadelphia Downtown, 201 N 17th St, Philadelphia, PA 19103"
+    );
+  });
+
+  it("drops the country either way it is written", () => {
+    expect(tidyAddress("40 Wall St, New York, NY 10005, United States")).toBe("40 Wall St, New York, NY 10005");
+  });
+
+  it("leaves an ordinary address alone", () => {
+    expect(tidyAddress("40 Wall St, New York, NY 10005")).toBe("40 Wall St, New York, NY 10005");
+  });
+
+  it("copes with something too short to tidy", () => {
+    expect(tidyAddress("JFK")).toBe("JFK");
+    expect(tidyAddress("")).toBe("");
   });
 });
