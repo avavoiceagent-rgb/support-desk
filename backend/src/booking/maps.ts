@@ -24,6 +24,8 @@ export interface VerifiedAddress {
   postalCode: string | null;
   placeId: string;
   isAirport: boolean;
+  /** US state code, e.g. "NY". Null when Google didn't return one. */
+  state: string | null;
   /**
    * True when Google wasn't confident it matched what was asked for — the
    * caller should treat the result as a suggestion and have Adam ask.
@@ -104,10 +106,14 @@ export function parseGeocodeResponse(raw: unknown, query: string): VerifiedAddre
 
   const postalCode =
     top.address_components?.find((c) => c.types?.includes("postal_code"))?.long_name ?? null;
+  const state =
+    top.address_components?.find((c) => c.types?.includes("administrative_area_level_1"))?.short_name ??
+    null;
 
   return {
     formattedAddress: top.formatted_address,
     postalCode,
+    state,
     placeId: top.place_id,
     // Airports don't need a postcode confirmed — the terminal is the address.
     isAirport: looksLikeAirport(top.types, top.formatted_address, query),
@@ -181,6 +187,28 @@ export async function estimateRoute(params: {
       body: JSON.stringify(body),
     })
   );
+}
+
+/**
+ * Is this journey one our own drivers cover, decided from the geocoded states
+ * rather than from a model's reading of the email.
+ *
+ * This exists because the model got it wrong on the most common trip there is:
+ * asked about Manhattan to JFK it answered EXTERNAL, reasoning that "the trip
+ * ends at JFK Terminal 4, which is outside our service area" — the opposite of
+ * what it had been told. A state code from Google is not a matter of opinion.
+ *
+ * Returns null when we could not verify enough to say, so the label is left
+ * for a person rather than guessed.
+ */
+export function resolveServiceArea(
+  points: (VerifiedAddress | null)[],
+  serviceAreaStates: string[]
+): "INTERNAL" | "EXTERNAL" | null {
+  const known = points.filter((p): p is VerifiedAddress => p !== null && p.state !== null);
+  // Every leg has to be accounted for; one unverified address could be anywhere.
+  if (known.length === 0 || known.length !== points.length) return null;
+  return known.every((p) => serviceAreaStates.includes(p.state as string)) ? "INTERNAL" : "EXTERNAL";
 }
 
 /**

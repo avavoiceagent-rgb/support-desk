@@ -82,6 +82,7 @@ RESERVATION_SOURCE — only when queue is RESERVATION, otherwise null:
 Our own drivers cover ${area}. Airports serving that area (JFK, LaGuardia, Newark/EWR) count as inside it.
 - INTERNAL: both the pickup and the drop-off are inside ${area}.
 - EXTERNAL: any part of the trip reaches outside ${area}, so it has to be farmed out to a partner.
+Judge ONLY where the car goes. A flight's destination is irrelevant — a car to JFK for a flight to London is a trip that begins and ends inside ${area}, so it is INTERNAL. JFK, LaGuardia and Newark are inside the area; so are their terminals.
 Answer null when the email does not say clearly enough where the trip starts and ends. Do NOT infer a location from the sender's address, their phone number, or the language they write in.
 Important: the company also farms out work when all its own vehicles happen to be busy. That is never visible in the email, so never take it into account.
 

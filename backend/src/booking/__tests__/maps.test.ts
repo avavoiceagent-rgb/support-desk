@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { parseGeocodeResponse, parseRouteResponse, describeAddress, looksLikeAirport } from "../maps";
+import {
+  parseGeocodeResponse,
+  parseRouteResponse,
+  describeAddress,
+  looksLikeAirport,
+  resolveServiceArea,
+} from "../maps";
+import type { VerifiedAddress } from "../maps";
 
 const parkAve = {
   status: "OK",
@@ -12,6 +19,7 @@ const parkAve = {
         { long_name: "245", types: ["street_number"] },
         { long_name: "Park Avenue", types: ["route"] },
         { long_name: "New York", types: ["locality"] },
+        { long_name: "New York", short_name: "NY", types: ["administrative_area_level_1"] },
         { long_name: "10167", short_name: "10167", types: ["postal_code"] },
       ],
     },
@@ -25,7 +33,10 @@ const jfk = {
       formatted_address: "John F. Kennedy International Airport, Queens, NY 11430, USA",
       place_id: "ChIJ_jfk",
       types: ["airport", "point_of_interest", "establishment"],
-      address_components: [{ long_name: "11430", types: ["postal_code"] }],
+      address_components: [
+        { long_name: "11430", types: ["postal_code"] },
+        { long_name: "New York", short_name: "NY", types: ["administrative_area_level_1"] },
+      ],
     },
   ],
 };
@@ -150,5 +161,42 @@ describe("airport detection", () => {
     ]) {
       expect(looksLikeAirport(["street_address"], a, a), a).toBe(false);
     }
+  });
+});
+
+describe("resolveServiceArea", () => {
+  // The model called Manhattan-to-JFK "external", reasoning that JFK is
+  // outside the service area. It is not. These decide it from state codes.
+  const at = (state: string | null): VerifiedAddress => ({
+    formattedAddress: "somewhere",
+    postalCode: null,
+    state,
+    placeId: "p",
+    isAirport: false,
+    partialMatch: false,
+    query: "somewhere",
+  });
+
+  it("calls a trip that stays in New York internal — JFK included", () => {
+    expect(resolveServiceArea([at("NY"), at("NY")], ["NY", "NJ"])).toBe("INTERNAL");
+  });
+
+  it("counts New Jersey as inside too", () => {
+    expect(resolveServiceArea([at("NJ"), at("NY")], ["NY", "NJ"])).toBe("INTERNAL");
+  });
+
+  it("calls anything reaching another state external", () => {
+    expect(resolveServiceArea([at("NY"), at("PA")], ["NY", "NJ"])).toBe("EXTERNAL");
+    expect(resolveServiceArea([at("MA"), at("RI")], ["NY", "NJ"])).toBe("EXTERNAL");
+  });
+
+  it("takes stops into account, not just the two ends", () => {
+    expect(resolveServiceArea([at("NY"), at("CT"), at("NY")], ["NY", "NJ"])).toBe("EXTERNAL");
+  });
+
+  it("refuses to decide when any point could not be verified", () => {
+    expect(resolveServiceArea([at("NY"), null], ["NY", "NJ"])).toBeNull();
+    expect(resolveServiceArea([at("NY"), at(null)], ["NY", "NJ"])).toBeNull();
+    expect(resolveServiceArea([], ["NY", "NJ"])).toBeNull();
   });
 });

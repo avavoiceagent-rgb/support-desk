@@ -9,6 +9,7 @@ const verified = (over: Partial<VerifiedAddress> = {}): VerifiedAddress => ({
   postalCode: "10167",
   placeId: "p1",
   isAirport: false,
+  state: "NY",
   partialMatch: false,
   query: "245 park ave",
   ...over,

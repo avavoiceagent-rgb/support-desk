@@ -12,13 +12,14 @@ import { db } from "../db/client";
 import { tickets, messages, ticketDrafts, users } from "../db/schema";
 import { isClassificationEnabled } from "../ai/classifier";
 import { extractBooking } from "../booking/extract";
-import { verifyAddress, estimateRoute, isMapsEnabled } from "../booking/maps";
+import { verifyAddress, estimateRoute, isMapsEnabled, resolveServiceArea } from "../booking/maps";
 import type { VerifiedAddress } from "../booking/maps";
 import { planPickup } from "../booking/pickup-time";
 import { reviewBooking } from "../booking/questions";
 import { lookupIndicativeRate } from "../booking/rates";
 import { composeReply } from "../booking/compose";
 import { toPlainText } from "../ai/classifier";
+import { SERVICE_AREA_STATES } from "../types";
 import { DateTime } from "luxon";
 import { OPERATING_TIME_ZONE } from "../booking/pickup-time";
 
@@ -117,8 +118,22 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
       stopDurationsMinutes: booking.stops.map((s) => s.durationMinutes),
     });
 
-    // --- 5. What do we confirm, what do we ask? --------------------------
-    const isExternal = ticket.reservationSource === "EXTERNAL";
+    // --- 5. Is this ours to run? -----------------------------------------
+    // Decided from the geocoded state codes, not from the model's reading of
+    // the email. Triage labels this before any address has been checked, and
+    // it got Manhattan-to-JFK wrong, so a verified answer overrides it —
+    // unless a person has already set the label themselves.
+    const geocodedSource = resolveServiceArea([pickup, ...stops, dropoff], SERVICE_AREA_STATES);
+    if (geocodedSource && ticket.autoClassified && geocodedSource !== ticket.reservationSource) {
+      await db
+        .update(tickets)
+        .set({ reservationSource: geocodedSource })
+        .where(and(eq(tickets.id, ticketId), eq(tickets.autoClassified, true)));
+    }
+
+    // --- 6. What do we confirm, what do we ask? --------------------------
+    const isExternal =
+      (geocodedSource ?? ticket.reservationSource) === "EXTERNAL";
     const review = reviewBooking({
       booking,
       pickup,
@@ -129,7 +144,7 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
       senderEmail: ticket.requesterEmail ?? first.fromAddress,
     });
 
-    // --- 6. A rough market price, only when we know both ends ------------
+    // --- 7. A rough market price, only when we know both ends ------------
     const rate =
       pickup && dropoff
         ? await lookupIndicativeRate({
@@ -140,7 +155,7 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
           })
         : null;
 
-    // --- 7. Write it -----------------------------------------------------
+    // --- 8. Write it -----------------------------------------------------
     const composed = await composeReply({
       review,
       plan,

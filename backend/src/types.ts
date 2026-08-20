@@ -49,6 +49,13 @@ export const ALL_RESERVATION_SOURCES: ReservationSource[] = ["INTERNAL", "EXTERN
  */
 export const SERVICE_AREA = ["New York", "New Jersey"];
 
+/**
+ * The same area as US state codes, for deciding INTERNAL vs EXTERNAL from a
+ * geocoded address rather than from a model's opinion. Keep in step with
+ * SERVICE_AREA above.
+ */
+export const SERVICE_AREA_STATES = ["NY", "NJ"];
+
 export type TicketChannel = "EMAIL" | "PHONE";
 
 export type UserRole = "ADMIN" | "AGENT";
