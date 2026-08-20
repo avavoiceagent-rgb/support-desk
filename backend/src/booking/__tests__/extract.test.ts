@@ -92,6 +92,7 @@ describe("bookerRoleFromText", () => {
       "My traveller lands at 6pm.",
       "My passenger will be waiting in the lobby.",
       "My client needs a car on Tuesday.",
+      "Our guest arrives Thursday.",
     ]) {
       expect(bookerRoleFromText(text), text).toBe(false);
     }
@@ -103,6 +104,7 @@ describe("bookerRoleFromText", () => {
     for (const text of [
       "My client and I are flying to Miami on the 4th.",
       "My passenger and I will need the SUV.",
+      "Our guest and I are heading to Newark together.",
     ]) {
       expect(bookerRoleFromText(text), text).toBe(true);
     }

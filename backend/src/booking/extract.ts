@@ -251,7 +251,7 @@ const BOOKING_FOR_SOMEONE_ELSE = [
   // writer is not the one riding. The lookahead keeps "my client and I are
   // flying" out of it: this list is checked first, so without the guard that
   // writer would be read as staying behind.
-  /\b(?:my|our)\s+(?:traveller|traveler|passenger|client)\b(?!\s+and\s+(?:i|me)\b)/i,
+  /\b(?:my|our)\s+(?:traveller|traveler|passenger|client|guest)\b(?!\s+and\s+(?:i|me)\b)/i,
 ];
 
 /**
