@@ -62,6 +62,21 @@ interface GeocodeComponent {
   types?: string[];
 }
 
+/**
+ * Google types a whole airport as "airport", but a specific TERMINAL comes
+ * back as an ordinary point of interest — "JFK Terminal 4" resolves to
+ * "Terminal 4, Terminal 4 Departures, Jamaica, NY 11430, USA" with no airport
+ * type at all. Found by running a real lookup; no amount of mocking would
+ * have shown it. Missing it means asking a customer to confirm the postcode
+ * of JFK, and the airport lead-time rules never firing on a terminal drop-off.
+ */
+const AIRPORT_TEXT = /\bairport\b|\bterminal\s*\d|\b(?:jfk|lga|ewr|hpn|swf|isp|teb)\b/i;
+
+export function looksLikeAirport(types: string[] | undefined, formattedAddress: string, query: string): boolean {
+  if (types?.includes("airport")) return true;
+  return AIRPORT_TEXT.test(formattedAddress) || AIRPORT_TEXT.test(query);
+}
+
 interface GeocodeResult {
   formatted_address?: string;
   place_id?: string;
@@ -95,7 +110,7 @@ export function parseGeocodeResponse(raw: unknown, query: string): VerifiedAddre
     postalCode,
     placeId: top.place_id,
     // Airports don't need a postcode confirmed — the terminal is the address.
-    isAirport: Boolean(top.types?.includes("airport")),
+    isAirport: looksLikeAirport(top.types, top.formatted_address, query),
     partialMatch: Boolean(top.partial_match),
     query,
   };

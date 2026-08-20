@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 
 type Mode = "reply" | "note";
@@ -12,14 +12,30 @@ export function Composer({
   ticketId,
   onSent,
   statusSlot,
+  seedBody = "",
+  seedKey = 0,
 }: {
   ticketId: string;
   onSent: () => void;
   /** Optional control (e.g. the status dropdown) shown to the right of the Reply/Note toggle. */
   statusSlot?: React.ReactNode;
+  /** Text to drop into the box — used when an agent accepts a suggested reply. */
+  seedBody?: string;
+  /** Bump this to load seedBody again. Zero means "never seeded". */
+  seedKey?: number;
 }) {
   const [mode, setMode] = useState<Mode>("reply");
   const [body, setBody] = useState("");
+
+  // Only ever fires when someone clicks "Use this draft" — it must not clobber
+  // something an agent is halfway through typing.
+  useEffect(() => {
+    if (seedKey > 0) {
+      setMode("reply");
+      setBody(seedBody);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

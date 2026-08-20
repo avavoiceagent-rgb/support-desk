@@ -43,6 +43,13 @@
       "when": 1787180846798,
       "tag": "0005_classification_confidence",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787186642606,
+      "tag": "0006_ticket_drafts",
+      "breakpoints": true
     }
   ]
 }

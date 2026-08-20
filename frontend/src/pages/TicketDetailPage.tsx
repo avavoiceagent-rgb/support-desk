@@ -17,6 +17,7 @@ import { StatusSelect } from "../components/StatusSelect";
 import { AssigneeSelect } from "../components/AssigneeSelect";
 import { ConversationTimeline } from "../components/ConversationTimeline";
 import { Composer } from "../components/Composer";
+import { DraftPanel } from "../components/DraftPanel";
 import { Avatar } from "../components/Avatar";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime } from "../lib/ui";
@@ -26,6 +27,8 @@ export function TicketDetailPage() {
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [notFound, setNotFound] = useState(false);
+  const [seedBody, setSeedBody] = useState("");
+  const [seedKey, setSeedKey] = useState(0);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -129,9 +132,18 @@ export function TicketDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-5">
           <ConversationTimeline ticketId={ticket.id} messages={ticket.messages} notes={ticket.notes} />
+          <DraftPanel
+            ticketId={ticket.id}
+            onUse={(text) => {
+              setSeedBody(text);
+              setSeedKey((k) => k + 1);
+            }}
+          />
           <Composer
             ticketId={ticket.id}
             onSent={load}
+            seedBody={seedBody}
+            seedKey={seedKey}
             statusSlot={<StatusSelect compact value={ticket.status} onChange={handleStatusChange} />}
           />
         </div>

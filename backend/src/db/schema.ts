@@ -120,6 +120,37 @@ export const messages = pgTable(
   (t) => [index("messages_ticket_idx").on(t.ticketId)]
 );
 
+/**
+ * A reply Adam has drafted for a ticket. Never sent automatically: a person
+ * opens the ticket, reads it, edits it and sends it under their own name.
+ * One per ticket — regenerating replaces it.
+ */
+export const ticketDrafts = pgTable("ticket_drafts", {
+  id: cuid(),
+  ticketId: text("ticket_id")
+    .notNull()
+    .unique()
+    .references(() => tickets.id, { onDelete: "cascade" }),
+  /** Body with a {{AGENT_NAME}} placeholder, filled in when it is served. */
+  bodyHtml: text("body_html").notNull(),
+  /** What the draft states as established fact, for the reviewer to scan. */
+  confirmations: jsonb("confirmations").notNull().$type<string[]>(),
+  /** What it asks the customer for. */
+  questions: jsonb("questions").notNull().$type<string[]>(),
+  /** Warnings for the reviewer only — never sent. */
+  internalNotes: jsonb("internal_notes").notNull().$type<string[]>(),
+  /** The indicative market rate and its sources, if one was found. */
+  rate: jsonb("rate").$type<unknown>(),
+  /** READY (awaiting review) | USED (loaded into the composer) | DISMISSED */
+  status: text("status").notNull().default("READY"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const ticketDraftsRelations = relations(ticketDrafts, ({ one }) => ({
+  ticket: one(tickets, { fields: [ticketDrafts.ticketId], references: [tickets.id] }),
+}));
+
 export const attachments = pgTable(
   "attachments",
   {

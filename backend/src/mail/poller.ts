@@ -6,6 +6,7 @@ import { decryptToken } from "../crypto/token-encryption";
 import { getProvider } from "./registry";
 import { ingestEmail, markAccountError, clearAccountError } from "./ingest";
 import { classifyNewTicket } from "../services/classification.service";
+import { draftReplyForTicket } from "../services/draft.service";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let polling = false;
@@ -82,6 +83,9 @@ async function triageInBackground(ticketIds: string[]): Promise<void> {
   for (const ticketId of ticketIds) {
     try {
       await classifyNewTicket(ticketId);
+      // Drafting only applies to new reservations; the service checks that
+      // itself, so classification has to have landed first.
+      await draftReplyForTicket(ticketId);
     } catch (err) {
       console.error(`[mail-poller] triage failed for ticket ${ticketId}:`, err);
     }

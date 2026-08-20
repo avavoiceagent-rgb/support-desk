@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseGeocodeResponse, parseRouteResponse, describeAddress } from "../maps";
+import { parseGeocodeResponse, parseRouteResponse, describeAddress, looksLikeAirport } from "../maps";
 
 const parkAve = {
   status: "OK",
@@ -107,5 +107,48 @@ describe("describeAddress", () => {
 
   it("quotes the customer's own words back when we don't", () => {
     expect(describeAddress(null, "the blue house on the corner")).toBe("the blue house on the corner");
+  });
+});
+
+describe("airport detection", () => {
+  // This block exists because the mocked tests all passed while the real
+  // lookup did not: Google returns a specific TERMINAL as a point of interest
+  // with no airport type. The payload below is the genuine response for
+  // "JFK Terminal 4", copied from a live call.
+  const jfkTerminal4 = {
+    status: "OK",
+    results: [
+      {
+        formatted_address: "Terminal 4, Terminal 4 Departures, Jamaica, NY 11430, USA",
+        place_id: "ChIJw6g6qfhmwokRbY4s0mSbReY",
+        types: ["premise"],
+        address_components: [{ long_name: "11430", types: ["postal_code"] }],
+      },
+    ],
+  };
+
+  it("treats a named terminal as an airport even though Google does not", () => {
+    expect(parseGeocodeResponse(jfkTerminal4, "JFK Terminal 4")?.isAirport).toBe(true);
+  });
+
+  it("still honours Google's own airport type", () => {
+    expect(looksLikeAirport(["airport"], "Somewhere", "somewhere")).toBe(true);
+  });
+
+  it("recognises the airports this company actually serves", () => {
+    for (const q of ["JFK", "pick up at LGA", "EWR terminal B", "Newark Liberty International Airport"]) {
+      expect(looksLikeAirport([], "", q), q).toBe(true);
+    }
+  });
+
+  it("does not mistake ordinary addresses for airports", () => {
+    for (const a of [
+      "245 Park Ave, New York, NY 10167, USA",
+      "40 Wall St, New York, NY 10005, USA",
+      "1 Terminal Place, Somewhere, NJ",
+      "Jfkennedy Street, Boston, MA",
+    ]) {
+      expect(looksLikeAirport(["street_address"], a, a), a).toBe(false);
+    }
   });
 });

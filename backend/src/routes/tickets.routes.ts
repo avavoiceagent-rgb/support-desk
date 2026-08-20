@@ -11,6 +11,7 @@ import {
   assertUserExists,
   listEmailAccountRow,
 } from "../services/ticket.service";
+import { getDraftForTicket, setDraftStatus } from "../services/draft.service";
 import { getStats } from "../services/stats.service";
 import { getReports } from "../services/reports.service";
 import { ALL_STATUSES, ALL_QUEUES, ALL_RESERVATION_TYPES, ALL_RESERVATION_SOURCES } from "../types";
@@ -100,6 +101,22 @@ ticketsRouter.post("/", async (req, res) => {
 });
 
 // Other tickets from the same requester (by email or display name).
+// The suggested reply, with the sign-off filled in for whoever is looking.
+ticketsRouter.get("/:id/draft", async (req, res) => {
+  const draft = await getDraftForTicket(param(req, "id"), req.session?.userId ?? "");
+  res.json({ draft });
+});
+
+// Loaded into the composer, or set aside. Either way it stops being offered.
+ticketsRouter.post("/:id/draft/:action", async (req, res) => {
+  const action = param(req, "action");
+  if (action !== "use" && action !== "dismiss") {
+    return res.status(400).json({ error: "Unknown action" });
+  }
+  await setDraftStatus(param(req, "id"), action === "use" ? "USED" : "DISMISSED");
+  res.status(204).end();
+});
+
 ticketsRouter.get("/:id/history", async (req, res) => {
   const history = await listRequesterHistory(param(req, "id"));
   if (history === null) return res.status(404).json({ error: "Ticket not found" });

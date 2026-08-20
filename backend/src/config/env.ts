@@ -23,6 +23,12 @@ const envSchema = z.object({
   // drive times (Routes API). Without it, Adam echoes addresses back as the
   // customer wrote them and asks them to confirm.
   GOOGLE_MAPS_API_KEY: z.string().optional().default(""),
+  // Which model does the rate web-search. Server-side search is only
+  // supported on some models and the set moves, so this is changeable
+  // without a deploy.
+  RATES_MODEL: z.string().optional().default(""),
+  // Shown in Adam's drafts. Left empty, the company name is simply omitted.
+  COMPANY_NAME: z.string().optional().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);
