@@ -195,10 +195,15 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
 /**
  * The draft as a named person should see it. The sign-off is filled in with
  * the name of whoever is looking, because they are the one who will send it.
+ *
+ * Returned whatever its status: a draft is part of the ticket's history, not a
+ * one-time offer. Hiding it once it had been used or dismissed meant a ticket
+ * that HAD a draft looked identical to one that never did, and loading it into
+ * the composer then navigating away lost it for good.
  */
 export async function getDraftForTicket(ticketId: string, userId: string) {
   const draft = await db.query.ticketDrafts.findFirst({
-    where: and(eq(ticketDrafts.ticketId, ticketId), eq(ticketDrafts.status, "READY")),
+    where: eq(ticketDrafts.ticketId, ticketId),
   });
   if (!draft) return null;
 
@@ -212,6 +217,7 @@ export async function getDraftForTicket(ticketId: string, userId: string) {
     questions: draft.questions,
     internalNotes: draft.internalNotes,
     rate: draft.rate,
+    status: draft.status,
     createdAt: draft.createdAt,
   };
 }

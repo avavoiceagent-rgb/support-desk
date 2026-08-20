@@ -1,10 +1,12 @@
 import type { TicketMessage, TicketNote } from "../api/types";
 import { Avatar } from "./Avatar";
+import { DraftCard, type TicketDraft } from "./DraftCard";
 import { displayName, formatDateTime } from "../lib/ui";
 
 type TimelineItem =
   | { kind: "message"; at: string; message: TicketMessage }
-  | { kind: "note"; at: string; note: TicketNote };
+  | { kind: "note"; at: string; note: TicketNote }
+  | { kind: "draft"; at: string; draft: TicketDraft };
 
 /**
  * Conversation timeline: emails and internal notes interleaved in time order.
@@ -14,14 +16,22 @@ export function ConversationTimeline({
   ticketId,
   messages,
   notes = [],
+  draft = null,
+  onUseDraft,
+  onDismissDraft,
 }: {
   ticketId: string;
   messages: TicketMessage[];
   notes?: TicketNote[];
+  /** A drafted reply, shown in place and kept there for good. */
+  draft?: TicketDraft | null;
+  onUseDraft?: (text: string) => void;
+  onDismissDraft?: () => void;
 }) {
   const items: TimelineItem[] = [
     ...messages.map((m) => ({ kind: "message" as const, at: m.sentAt, message: m })),
     ...notes.map((n) => ({ kind: "note" as const, at: n.createdAt, note: n })),
+    ...(draft ? [{ kind: "draft" as const, at: draft.createdAt, draft }] : []),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
   if (items.length === 0) {
@@ -35,6 +45,18 @@ export function ConversationTimeline({
   return (
     <div className="space-y-4">
       {items.map((item) => {
+        if (item.kind === "draft") {
+          return (
+            <DraftCard
+              key={`draft-${item.draft.id}`}
+              draft={item.draft}
+              at={formatDateTime(item.at)}
+              onUse={(text) => onUseDraft?.(text)}
+              onDismiss={() => onDismissDraft?.()}
+            />
+          );
+        }
+
         if (item.kind === "note") {
           const n = item.note;
           return (

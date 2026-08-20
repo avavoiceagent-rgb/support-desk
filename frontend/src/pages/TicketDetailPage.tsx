@@ -17,7 +17,7 @@ import { StatusSelect } from "../components/StatusSelect";
 import { AssigneeSelect } from "../components/AssigneeSelect";
 import { ConversationTimeline } from "../components/ConversationTimeline";
 import { Composer } from "../components/Composer";
-import { DraftPanel } from "../components/DraftPanel";
+import { useDraft } from "../hooks/useDraft";
 import { Avatar } from "../components/Avatar";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime } from "../lib/ui";
@@ -29,6 +29,7 @@ export function TicketDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [seedBody, setSeedBody] = useState("");
   const [seedKey, setSeedKey] = useState(0);
+  const { draft, markUsed, markDismissed } = useDraft(id ?? "");
 
   const load = useCallback(() => {
     if (!id) return;
@@ -131,13 +132,17 @@ export function TicketDetailPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-5">
-          <ConversationTimeline ticketId={ticket.id} messages={ticket.messages} notes={ticket.notes} />
-          <DraftPanel
+          <ConversationTimeline
             ticketId={ticket.id}
-            onUse={(text) => {
+            messages={ticket.messages}
+            notes={ticket.notes}
+            draft={draft}
+            onUseDraft={(text) => {
               setSeedBody(text);
               setSeedKey((k) => k + 1);
+              void markUsed();
             }}
+            onDismissDraft={() => void markDismissed()}
           />
           <Composer
             ticketId={ticket.id}

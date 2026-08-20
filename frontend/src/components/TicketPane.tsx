@@ -17,7 +17,7 @@ import { StatusSelect } from "./StatusSelect";
 import { AssigneeSelect } from "./AssigneeSelect";
 import { ConversationTimeline } from "./ConversationTimeline";
 import { Composer } from "./Composer";
-import { DraftPanel } from "./DraftPanel";
+import { useDraft } from "../hooks/useDraft";
 import { HistoryDrawer } from "./HistoryDrawer";
 import { usePolling } from "../hooks/usePolling";
 
@@ -42,6 +42,7 @@ export function TicketPane({
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
   const [seedBody, setSeedBody] = useState("");
   const [seedKey, setSeedKey] = useState(0);
+  const { draft, markUsed, markDismissed } = useDraft(ticketId);
   const [error, setError] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -237,23 +238,25 @@ export function TicketPane({
           {/* Conversation (emails + notes) and composer */}
           <div className="flex-1 overflow-y-auto bg-gray-50/40 p-4">
             <div className="space-y-4">
-              <ConversationTimeline ticketId={ticket.id} messages={ticket.messages} notes={ticket.notes} />
-              <div>
-                <DraftPanel
-                  ticketId={ticket.id}
-                  onUse={(text) => {
-                    setSeedBody(text);
-                    setSeedKey((k) => k + 1);
-                  }}
-                />
-                <Composer
-                  ticketId={ticket.id}
-                  onSent={afterSend}
-                  seedBody={seedBody}
-                  seedKey={seedKey}
-                  statusSlot={<StatusSelect compact value={ticket.status} onChange={handleStatusChange} />}
-                />
-              </div>
+              <ConversationTimeline
+                ticketId={ticket.id}
+                messages={ticket.messages}
+                notes={ticket.notes}
+                draft={draft}
+                onUseDraft={(text) => {
+                  setSeedBody(text);
+                  setSeedKey((k) => k + 1);
+                  void markUsed();
+                }}
+                onDismissDraft={() => void markDismissed()}
+              />
+              <Composer
+                ticketId={ticket.id}
+                onSent={afterSend}
+                seedBody={seedBody}
+                seedKey={seedKey}
+                statusSlot={<StatusSelect compact value={ticket.status} onChange={handleStatusChange} />}
+              />
             </div>
           </div>
 
