@@ -55,8 +55,18 @@ export function reviewBooking(input: ReviewInput): BookingReview {
   // --- Who is travelling, and who is booking -----------------------------
   if (booking.bookerIsPassenger === true) {
     const name = booking.passengerName ?? booking.bookerName;
-    if (name) confirmations.push(`Passenger and booker: ${name} (travelling yourself)`);
-    else questions.push("the name the booking should be under");
+    // "Two of us" means the booker is in the car with company. We do not need
+    // every name for a car booking, so say who it is under and how many.
+    const others = booking.passengerCount !== null ? booking.passengerCount - 1 : 0;
+    if (name) {
+      confirmations.push(
+        others > 0
+          ? `Passenger and booker: ${name}, travelling with ${others} other${others > 1 ? "s" : ""}`
+          : `Passenger and booker: ${name} (travelling yourself)`
+      );
+    } else {
+      questions.push("the name the booking should be under");
+    }
   } else if (booking.bookerIsPassenger === false) {
     if (booking.bookerName) confirmations.push(`Booker: ${booking.bookerName}`);
     if (booking.passengerName) confirmations.push(`Passenger: ${booking.passengerName}`);

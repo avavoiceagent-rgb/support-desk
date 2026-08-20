@@ -54,6 +54,18 @@ describe("who is travelling", () => {
     expect(confirms(r, "Booker: Daniel Weiss")).toBe(true);
   });
 
+  it("does not ask when the email counted the booker in", () => {
+    // "Two of us, two suitcases" — he told us, so asking again is a mistake.
+    const r = review({ bookerName: "Daniel Weiss", bookerIsPassenger: true, passengerCount: 2 });
+    expect(asks(r, "travelling yourself")).toBe(false);
+    expect(confirms(r, "Daniel Weiss, travelling with 1 other")).toBe(true);
+  });
+
+  it("pluralises when the booker travels with more than one other", () => {
+    const r = review({ bookerName: "Daniel Weiss", bookerIsPassenger: true, passengerCount: 4 });
+    expect(confirms(r, "travelling with 3 others")).toBe(true);
+  });
+
   it("does not ask when the booker said they are travelling themselves", () => {
     const r = review({ bookerName: "Daniel Weiss", bookerIsPassenger: true });
     expect(asks(r, "travelling yourself")).toBe(false);

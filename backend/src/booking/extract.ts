@@ -95,7 +95,7 @@ THE RULE THAT MATTERS: record only what the email actually says. If a detail is 
 Specific traps:
 - bookerName: the person who WROTE the email. If it is signed off with a name ("Regards, Daniel Weiss"), that is the booker — use it. The mailbox's display name is a weaker signal: it is often a shared inbox, a company account or a colleague's address, so fall back to it only when the message is unsigned. When the two disagree, the sign-off wins.
 - passengerName: only record it if the email names the passenger. If the email doesn't say who is travelling, leave passengerName out — do NOT copy the booker's name into it.
-- bookerIsPassenger: set this to true ONLY if the email says so ("I'll be travelling", "for myself", "pick me up"). Set it to false only if the email clearly names someone else as the traveller. If the email is silent, LEAVE IT OUT. A single sender writing in the first person is not evidence either way.
+- bookerIsPassenger: set this to true when the writer puts THEMSELVES in the car. Saying so outright counts ("I'll be travelling", "for myself"), and so does counting themselves in ("two of us", "my wife and I", "pick me up", "our flight lands at", "we're flying to Miami"). Set it to false when the email clearly names someone else as the traveller and does not include the writer. Leave it out only when the email really is silent — arranging the car is not the same as riding in it, so "I need a car" or "could you send a sedan" on its own is not evidence either way.
 - Phone numbers: record a number found in the body or the signature. Put it in bookerPhone unless the email attaches it to the passenger. Set useBookerPhoneForPassenger to true only if the booker says in writing to use their number for the passenger.
 - Addresses: record them exactly as written, including any building name or terminal. Do NOT tidy, expand, correct or add a postcode — an address is checked against a map later, and your version would corrupt that.
 - flightKind: DOMESTIC or INTERNATIONAL only when the email makes it clear (a destination country, an international airport pair, the word "international"). A flight number alone does NOT tell you this — leave it out.
@@ -209,6 +209,47 @@ export function parseExtraction(raw: unknown): ExtractedBooking {
   };
 }
 
+/**
+ * A deterministic second opinion on "is the booker in the car?".
+ *
+ * The prompt asks for this, but a model that leaves it out costs the customer
+ * a pointless question about something they already told us — Daniel wrote
+ * "Two of us, two suitcases" and was still asked whether he was travelling.
+ * These patterns only fire on phrasing that puts the writer inside the
+ * travelling party, so they can fill a blank without ever contradicting a
+ * clear statement: this is consulted only when the model left the field out.
+ */
+const BOOKER_IS_TRAVELLING = [
+  // Counting themselves in.
+  /\b(?:\d+|one|two|three|four|five|six|seven|eight|both|all)\s+of\s+us\b/i,
+  /\b(?:my|our)\s+\w+(?:\s+\w+)?\s+and\s+(?:i|me)\b/i, // "my wife and I"
+  /\b(?:i|me)\s+and\s+my\b/i,
+  /\bmyself\s+and\b/i,
+  /\bfor\s+myself\b/i,
+  /\bjust\s+me\b/i,
+  // Asking to be carried.
+  /\b(?:pick|picking|collect|collecting)\s+(?:me|us)\b/i,
+  /\b(?:drop|dropping)\s+(?:me|us)\b/i,
+  /\b(?:take|taking|drive|driving|bring|bringing)\s+(?:me|us)\b/i,
+  // Their own journey.
+  /\bi(?:'m|\s+am)\s+(?:flying|travelling|traveling|going|heading|arriving|landing)/i,
+  /\bwe(?:'re|\s+are)\s+(?:flying|travelling|traveling|going|heading|arriving|landing)/i,
+  /\b(?:my|our)\s+flight\b/i,
+];
+
+/** Phrasing that says the trip is for somebody else — never infer over this. */
+const BOOKING_FOR_SOMEONE_ELSE = [
+  /\bon\s+behalf\s+of\b/i,
+  /\bfor\s+(?:my|our)\s+(?:client|guest|customer|boss|colleague|passenger|executive|principal)\b/i,
+];
+
+/** Exported for tests. True only when the email puts the writer in the car. */
+export function bookerTravelsFromText(text: string): boolean {
+  if (!text) return false;
+  if (BOOKING_FOR_SOMEONE_ELSE.some((re) => re.test(text))) return false;
+  return BOOKER_IS_TRAVELLING.some((re) => re.test(text));
+}
+
 export interface ExtractInput {
   subject: string;
   body: string;
@@ -249,7 +290,15 @@ export async function extractBooking(input: ExtractInput): Promise<ExtractedBook
     const toolUse = response.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") return null;
 
-    return parseExtraction(toolUse.input);
+    const booking = parseExtraction(toolUse.input);
+
+    // The email may have answered this in passing ("two of us") without the
+    // model recording it. Fill the blank; never overwrite a stated answer.
+    if (booking.bookerIsPassenger === null && bookerTravelsFromText(`${input.subject}\n${input.body}`)) {
+      booking.bookerIsPassenger = true;
+    }
+
+    return booking;
   } catch (err) {
     console.error("[extract] failed:", err);
     return null;
