@@ -1,0 +1,13 @@
+{
+  "name": "mail-tester",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sends scripted test emails to the support desk inbox. Not part of the app; Railway never builds this.",
+  "scripts": {
+    "send": "node send.mjs"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16"
+  }
+}

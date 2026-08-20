@@ -126,10 +126,24 @@ export function parseGeocodeResponse(raw: unknown, query: string): VerifiedAddre
  * Look up one address. Returns null when maps are switched off, when Google
  * doesn't recognise it, or when the call fails.
  */
+export function buildGeocodeUrl(query: string, key: string): string {
+  // `components=country:US` RESTRICTS the search; `region=us` only biases it.
+  // Without the restriction Google answered "LaGuardia" with Laguardia in
+  // Álava, Spain — which put a Spanish town in a customer's drop-off line and,
+  // because Álava is not NY or NJ, flagged a Manhattan airport run as a trip
+  // outside the service area. This company drives in the United States.
+  const params = new URLSearchParams({
+    address: query,
+    components: "country:US",
+    region: "us",
+    key,
+  });
+  return `${GEOCODE_URL}?${params.toString()}`;
+}
+
 export async function verifyAddress(query: string): Promise<VerifiedAddress | null> {
   if (!isMapsConfigured || !query.trim()) return null;
-  const url = `${GEOCODE_URL}?address=${encodeURIComponent(query)}&region=us&key=${encodeURIComponent(env.GOOGLE_MAPS_API_KEY)}`;
-  return parseGeocodeResponse(await getJson(url), query);
+  return parseGeocodeResponse(await getJson(buildGeocodeUrl(query, env.GOOGLE_MAPS_API_KEY)), query);
 }
 
 /** Exported for tests: reads the duration and distance out of a Routes reply. */

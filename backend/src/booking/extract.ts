@@ -95,7 +95,7 @@ THE RULE THAT MATTERS: record only what the email actually says. If a detail is 
 Specific traps:
 - bookerName: the person who WROTE the email. If it is signed off with a name ("Regards, Daniel Weiss"), that is the booker — use it. The mailbox's display name is a weaker signal: it is often a shared inbox, a company account or a colleague's address, so fall back to it only when the message is unsigned. When the two disagree, the sign-off wins.
 - passengerName: only record it if the email names the passenger. If the email doesn't say who is travelling, leave passengerName out — do NOT copy the booker's name into it.
-- bookerIsPassenger: set this to true when the writer puts THEMSELVES in the car. Saying so outright counts ("I'll be travelling", "for myself"), and so does counting themselves in ("two of us", "my wife and I", "pick me up", "our flight lands at", "we're flying to Miami"). Set it to false when the email clearly names someone else as the traveller and does not include the writer. Leave it out only when the email really is silent — arranging the car is not the same as riding in it, so "I need a car" or "could you send a sedan" on its own is not evidence either way.
+- bookerIsPassenger: set this to true when the writer puts THEMSELVES in the car. Saying so outright counts ("I'll be travelling", "for myself"), and so does counting themselves in ("two of us", "my wife and I", "pick me up", "our flight lands at", "we're flying to Miami"). Set it to false when the email clearly names someone else as the traveller and does not include the writer. Leave it out only when the email really is silent — arranging the car is not the same as riding in it, so "I need a car" or "could you send a sedan" on its own is not evidence either way. When the writer says they are arranging it for someone ("for our client, Ms Ana Costa", "on behalf of Mr Smith"), that is the false case AND the person they name is the passenger: record that name in passengerName.
 - Phone numbers: record a number found in the body or the signature. Put it in bookerPhone unless the email attaches it to the passenger. Set useBookerPhoneForPassenger to true only if the booker says in writing to use their number for the passenger.
 - Addresses: record them exactly as written, including any building name or terminal. Do NOT tidy, expand, correct or add a postcode — an address is checked against a map later, and your version would corrupt that.
 - flightKind: DOMESTIC or INTERNATIONAL only when the email makes it clear (a destination country, an international airport pair, the word "international"). A flight number alone does NOT tell you this — leave it out.
@@ -235,19 +235,51 @@ const BOOKER_IS_TRAVELLING = [
   /\bi(?:'m|\s+am)\s+(?:flying|travelling|traveling|going|heading|arriving|landing)/i,
   /\bwe(?:'re|\s+are)\s+(?:flying|travelling|traveling|going|heading|arriving|landing)/i,
   /\b(?:my|our)\s+flight\b/i,
+  // Not "travel": "my travel agent" and "our travel policy" say nothing about
+  // who rides, and an unclosed "trave" matched both — plus "my traveller",
+  // which means the opposite. Only the unambiguous nouns, boundary closed.
+  /\b(?:my|our)\s+(?:trip|journey)\b/i,
+  /\bi\s+(?:fly|land|arrive|depart)\b/i,
+  /\bi(?:'ll|\s+will)\s+(?:be\s+)?(?:flying|travelling|traveling|going|heading|arriving|landing)\b/i,
 ];
 
 /** Phrasing that says the trip is for somebody else — never infer over this. */
 const BOOKING_FOR_SOMEONE_ELSE = [
   /\bon\s+behalf\s+of\b/i,
   /\bfor\s+(?:my|our)\s+(?:client|guest|customer|boss|colleague|passenger|executive|principal)\b/i,
+  // "My traveller lands at 6pm" needs no "for" to be positive evidence that the
+  // writer is not the one riding. The lookahead keeps "my client and I are
+  // flying" out of it: this list is checked first, so without the guard that
+  // writer would be read as staying behind.
+  /\b(?:my|our)\s+(?:traveller|traveler|passenger|client)\b(?!\s+and\s+(?:i|me)\b)/i,
 ];
 
-/** Exported for tests. True only when the email puts the writer in the car. */
-export function bookerTravelsFromText(text: string): boolean {
-  if (!text) return false;
+/**
+ * Exported for tests. What the email itself says about who is in the car:
+ * true (the writer is), false (they are arranging it for someone else), or
+ * null (it doesn't say, so somebody has to ask).
+ */
+export function bookerRoleFromText(text: string): boolean | null {
+  if (!text) return null;
   if (BOOKING_FOR_SOMEONE_ELSE.some((re) => re.test(text))) return false;
-  return BOOKER_IS_TRAVELLING.some((re) => re.test(text));
+  if (BOOKER_IS_TRAVELLING.some((re) => re.test(text))) return true;
+  return null;
+}
+
+/**
+ * Exported for tests. Settles the disagreement between what the model recorded
+ * and what the email actually says. Not symmetrical, deliberately: an
+ * unevidenced "yes" is withdrawn, because it reaches the customer as a
+ * statement that they are travelling, while a "no" is kept, because the worst
+ * it costs is one extra question.
+ */
+export function reconcileBookerRole(
+  recorded: boolean | null,
+  stated: boolean | null
+): boolean | null {
+  if (recorded === null) return stated; // the email may have answered in passing
+  if (recorded === true && stated !== true) return stated; // no words to back it up
+  return recorded;
 }
 
 export interface ExtractInput {
@@ -292,11 +324,16 @@ export async function extractBooking(input: ExtractInput): Promise<ExtractedBook
 
     const booking = parseExtraction(toolUse.input);
 
-    // The email may have answered this in passing ("two of us") without the
-    // model recording it. Fill the blank; never overwrite a stated answer.
-    if (booking.bookerIsPassenger === null && bookerTravelsFromText(`${input.subject}\n${input.body}`)) {
-      booking.bookerIsPassenger = true;
-    }
+    // What the email actually says outranks what the model concluded, in both
+    // directions. Filling a blank saves the customer a question they already
+    // answered ("two of us"). Withdrawing an unevidenced "yes" matters more:
+    // asked only "I need a car on Friday", the model once decided the writer
+    // was travelling and Adam told him so as established fact. With no
+    // supporting words in the email, the honest answer is that we don't know.
+    booking.bookerIsPassenger = reconcileBookerRole(
+      booking.bookerIsPassenger,
+      bookerRoleFromText(`${input.subject}\n${input.body}`)
+    );
 
     return booking;
   } catch (err) {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildGeocodeUrl,
   parseGeocodeResponse,
   parseRouteResponse,
   describeAddress,
@@ -237,5 +238,27 @@ describe("tidyAddress", () => {
   it("copes with something too short to tidy", () => {
     expect(tidyAddress("JFK")).toBe("JFK");
     expect(tidyAddress("")).toBe("");
+  });
+});
+
+describe("buildGeocodeUrl", () => {
+  // Google answered a bare "LaGuardia" with Laguardia, Álava, Spain. That went
+  // into a customer-facing drop-off line, and because Álava is not NY or NJ it
+  // also flagged a Manhattan airport run as leaving the service area.
+  const url = buildGeocodeUrl("LaGuardia", "test-key");
+
+  it("restricts the search to the United States, not merely biases it", () => {
+    expect(url).toContain("components=country%3AUS");
+  });
+
+  it("still sends the query, the region hint and the key", () => {
+    expect(url).toContain("address=LaGuardia");
+    expect(url).toContain("region=us");
+    expect(url).toContain("key=test-key");
+  });
+
+  it("escapes an address with spaces and punctuation", () => {
+    const messy = buildGeocodeUrl("245 Park Ave, New York", "k");
+    expect(messy).toContain("address=245+Park+Ave%2C+New+York");
   });
 });
