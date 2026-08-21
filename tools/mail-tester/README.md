@@ -30,6 +30,12 @@ This folder is not part of the app. Railway only builds `backend/` and
     node send.mjs new-internal  # send one
     node send.mjs all           # send all nine, 45 seconds apart
     node send.mjs all --delay 20
+    node send.mjs vague --no-tag    # exact subject, will thread onto the last one
+
+Every subject gets a short run tag like `[0117]`. Gmail threads by subject and
+sender, so without it a repeat send arrives as a reply on the existing ticket —
+which means no new ticket, no new draft, and a re-test that quietly tests
+nothing. That happened once already; hence the tag.
 
 Each send prints what to look for when the ticket appears. Those checks are
 for a person to read — nothing is asserted automatically, because what is being

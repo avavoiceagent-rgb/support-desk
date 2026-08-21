@@ -65,6 +65,26 @@ EXTERNAL and gets farmed out to a partner, so the draft must not promise a car.
 
 Always run the backend tests and the typecheck before committing.
 
+## Checking Adam for real
+
+The unit tests cover the rules; `tools/mail-tester` covers the behaviour. It
+sends nine scripted scenarios to the desk inbox as real email — an internal
+booking, one crossing out of state, an arrival, one booked for somebody else, a
+vague one-liner, a pickup that is too late, a change to an existing booking, an
+invoice and a newsletter — and prints what a person should look for in each
+resulting ticket. Nothing is asserted automatically.
+
+    cd tools/mail-tester
+    node send.mjs list      # what the scenarios are
+    node send.mjs vague     # send one
+    node send.mjs all       # send all nine, 45 seconds apart
+
+Every subject carries a run tag like `[0117]`. Gmail threads by subject and
+sender, so without it a second send of the same scenario arrives as a reply on
+the existing ticket: no new ticket, no new draft, and a re-test that quietly
+proves nothing. It needs its own `.env` (see that folder's README); the
+credentials are a Gmail app password and never belong in the repo.
+
 ## Deploying
 
 This repo is the deploy pipeline: pushing to `main` makes Railway build and
@@ -74,6 +94,20 @@ deleted in ad87734, so nothing runs on a push except Railway's own build. If CI
 ever comes back, note that a GitHub Actions token is not allowed to modify
 workflow files, so changes there must be made by a person.
 `docs/DEPLOY_RAILWAY.md` is the plain-language version of all this for Amar.
+
+## Working with the other Claude
+
+Amar also works on this project through a Cowork session in the Claude desktop
+app. That session can see the live desk, the real tickets and the drafts Adam
+wrote, watch Railway, and run the full test suite against a real Postgres — but
+it cannot push to GitHub or delete files here. This session can do all of those
+and none of the former.
+
+The two cannot message each other. `docs/HANDOFF.md` is the channel: a task is
+written there, Amar says "read docs/HANDOFF.md and do it", and the reply goes
+back into the same file and gets committed. Read that file before starting such
+a task, and say plainly in the reply if the task itself is wrong — the other
+session writes them without being able to run anything.
 
 ## Style
 

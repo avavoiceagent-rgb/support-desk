@@ -43,6 +43,20 @@ function loadEnv() {
   return env;
 }
 
+/**
+ * A short tag appended to every subject line.
+ *
+ * Gmail threads by subject and participants, so sending the same scenario
+ * twice landed the second one as a reply on the first ticket — no new ticket,
+ * no new draft, and a re-test that silently tested nothing. A per-run tag
+ * keeps each send a genuinely new conversation.
+ */
+function runTag() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
 function printScenario(s, index, total) {
   console.log(`\n[${index}/${total}] ${s.id} — ${s.title}`);
   console.log(`    subject: ${s.subject}`);
@@ -95,14 +109,20 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Sending ${chosen.length} email(s) from ${env.GMAIL_USER} to ${env.TO_ADDRESS}.`);
+  // --no-tag sends the subject exactly as written, for testing threading itself.
+  const tag = rest.includes("--no-tag") ? null : runTag();
+  console.log(
+    `Sending ${chosen.length} email(s) from ${env.GMAIL_USER} to ${env.TO_ADDRESS}` +
+      (tag ? ` (run tag ${tag}).` : ".")
+  );
 
   for (const [i, s] of chosen.entries()) {
-    printScenario(s, i + 1, chosen.length);
+    const subject = tag ? `${s.subject} [${tag}]` : s.subject;
+    printScenario({ ...s, subject }, i + 1, chosen.length);
     await transport.sendMail({
       from: env.GMAIL_USER,
       to: env.TO_ADDRESS,
-      subject: s.subject,
+      subject,
       text: s.body,
       headers: s.headers,
     });

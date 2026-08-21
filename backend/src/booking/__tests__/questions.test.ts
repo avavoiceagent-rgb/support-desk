@@ -214,7 +214,9 @@ describe("notes for the person reviewing", () => {
     // 50-minute drive this helper uses = a 14:10 pickup, so the 15:00 they
     // asked for is 50 minutes too late.
     expect(r.internalNotes.join(" ")).toContain("50 minutes too late");
-    expect(r.internalNotes.join(" ")).toContain("2026-09-22T14:10");
+    // Spelled out for the dispatcher reading it, not the raw "2026-09-22T14:10".
+    expect(r.internalNotes.join(" ")).toContain("Tuesday 22 September, 2:10 PM");
+    expect(r.internalNotes.join(" ")).not.toContain("2026-09-22T14:10");
   });
 
   it("flags a stop with no stated duration", () => {

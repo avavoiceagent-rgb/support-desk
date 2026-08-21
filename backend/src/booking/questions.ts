@@ -7,6 +7,7 @@
 import type { ExtractedBooking } from "./extract";
 import { tidyAddress } from "./maps";
 import type { VerifiedAddress } from "./maps";
+import { describeLocal } from "./pickup-time";
 import type { PickupPlan } from "./pickup-time";
 
 /** Capacities Adam quotes when recommending a vehicle. */
@@ -160,8 +161,12 @@ export function reviewBooking(input: ReviewInput): BookingReview {
     );
   }
   if (plan.requestedIsTooLate && plan.shortfallMinutes !== null) {
+    // Spelled out, not "2026-09-05T14:10": a dispatcher reads this under time
+    // pressure and should not have to decode a timestamp. Falls back to the
+    // raw value rather than printing nothing if it cannot be parsed.
+    const suggested = describeLocal(plan.recommendedPickupLocal) ?? plan.recommendedPickupLocal;
     internalNotes.push(
-      `The requested pickup is ${plan.shortfallMinutes} minutes too late for the ${plan.leadMinutes}-minute airport rule. The draft suggests ${plan.recommendedPickupLocal} instead.`
+      `The requested pickup is ${plan.shortfallMinutes} minutes too late for the ${plan.leadMinutes}-minute airport rule. The draft suggests ${suggested} instead.`
     );
   }
   if (input.pickup?.partialMatch || input.dropoff?.partialMatch) {
