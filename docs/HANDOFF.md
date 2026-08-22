@@ -118,6 +118,9 @@ in March are both "matched by sender" but a person reading the panel treats them
 completely differently. Quoted always wins a tie, so a trip that is both named
 in the email and their latest booking appears once, as quoted.
 
+Extraction is 14 tests now, not 13, and the suite is 226. All still pass here
+without a database.
+
 **Two additions beyond the brief**
 
 `unresolvedReferences` — references the customer quoted that match nothing on
@@ -130,13 +133,11 @@ field, so it costs nothing to ignore.
 `quotedReferences` is returned too, so the panel can show what was matched on
 without re-deriving it.
 
-**What I could not verify**
+**What I could not verify — now resolved**
 
-The 11 endpoint tests need Postgres and this machine has none — same as last
-time, and I am not reporting them as passing. Typecheck is clean and the suite
-has **zero assertion failures**: all 64 failures are the connection refusing.
-Suite is 225 tests, 161 passing. Please run
-`src/services/__tests__/ops-context.service.test.ts` before the panel trusts it.
+The 11 endpoint tests need Postgres and this machine has none, so I did not
+report them as passing. **The Cowork session has since run them: 225 tests pass
+against a real Postgres, typecheck clean.**
 
 The 13 extraction tests need no database and **do pass here**, which is the point
 of keeping that function pure — it is the part that guesses.
@@ -151,18 +152,21 @@ relative to the real clock, in whole days so there is no boundary to race.
 
 **Where I would push back**
 
-*`#10432` is not safely a trip reference.* You listed it among the trip
-spellings and I implemented it as one, but it collides with ticket numbers,
-which this project writes exactly that way — the standing candidates below say
-"Ticket #60". I put a floor of four digits on the bare-hash form only, which
-keeps every ticket number we currently have out of it, and left the prefixed and
-keyword forms at three. That is a heuristic with a shelf life: it breaks the day
-ticket numbers reach four digits. It is safe *today* because this endpoint is
-read-only and staff-facing and a wrong guess costs one lookup that finds
-nothing. **It stops being safe the moment any of this reaches a draft**, which
-is exactly the step you deferred. Worth deciding before that task, not during
-it: either drop the bare-hash form, or disambiguate it against the ticket's own
-number at the call site, where the ticket number is actually known.
+*`#10432` was not safely a trip reference — **settled, and now removed**.* You
+listed it among the trip spellings and I first implemented it with a four-digit
+floor, which kept today's ticket numbers out but was a collision scheduled for
+the day ticket numbers reach four digits. Amar agreed the fault was in the spec
+and asked for the form to be dropped outright rather than floored, which is the
+better call: a floor with an expiry date is worse than no rule.
+
+A bare `#10432` now extracts nothing, at any length. `booking #10432`,
+`invoice #10432` and `trip no. #10432` still work — the word carries the
+meaning and the hash is only punctuation between it and the digits. There are
+two tests: one asserting the bare form finds nothing (`#60`, `#1234`, `#10432`,
+"please cancel #10432"), and one asserting the worded forms still do, so
+dropping the first cannot silently break the second. The reason is written into
+the file header as well, because this is the kind of thing that gets helpfully
+added back.
 
 *A number is never a reference without a word next to it.* That is the rule the
 whole file rests on, and it is why "postcode 10118", "flight DL2801", "917 555

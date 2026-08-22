@@ -9,6 +9,15 @@
 // about a ride to Newark is full of five-digit numbers that mean something
 // else — postcodes, flight numbers, phone fragments, dollar amounts. Only a
 // number a person has labelled counts, and the label is what we match on.
+//
+// That rule is why a bare `#10432` is deliberately NOT a reference, though an
+// earlier draft of this file read it as a trip. A hash says a number matters;
+// it does not say whether it is a trip, an invoice, or one of our own ticket
+// numbers, which staff write exactly that way ("Ticket #60"). Reading it as a
+// trip is a collision scheduled for the day ticket numbers reach four digits.
+// `booking #10432` still works — the word carries the meaning and the hash is
+// only punctuation. There is a test asserting a bare `#10432` finds nothing;
+// it is there to stop this coming back.
 
 import { normaliseReference } from "./lookup";
 
@@ -27,14 +36,6 @@ export interface ExtractedReferences {
  * quietly stop working. Two would start matching "trip 22" out of a date.
  */
 const MIN_DIGITS = 3;
-
-/**
- * `#10432` is the one form with no word attached, so it carries the weakest
- * evidence — and it collides with ticket numbers, which staff write as "#60"
- * all day. Requiring four digits keeps the ticket numbers we actually have out
- * of it. It is a heuristic, not a guarantee; see the note in the reply.
- */
-const MIN_HASH_DIGITS = 4;
 
 /**
  * Words that mark the number after them as a booking or a bill.
@@ -58,8 +59,6 @@ const REFERENCE_PATTERN = new RegExp(
     String.raw`\binv[-\s]?(?<invoicePrefix>\d{${MIN_DIGITS},})\b`,
     // "invoice 10432", "invoice no. 10432"
     String.raw`\b(?:${INVOICE_WORDS})\b[\s:#-]*${OPTIONAL_LABEL}(?<invoiceWord>\d{${MIN_DIGITS},})\b`,
-    // "#10432" on its own, with nothing to say which kind it is.
-    String.raw`#(?<hash>\d{${MIN_HASH_DIGITS},})\b`,
   ].join("|"),
   "gi"
 );
@@ -92,11 +91,6 @@ export function extractReferences(subject: string, body: string): ExtractedRefer
       else if (g.tripWord) add(trips, g.tripWord, "T");
       else if (g.invoicePrefix) add(invoices, g.invoicePrefix, "INV");
       else if (g.invoiceWord) add(invoices, g.invoiceWord, "INV");
-      // A bare "#10432" says a number matters but not what it is. Treated as a
-      // trip, because that is what customers quote in the reference-free form;
-      // a wrong guess costs a lookup that finds nothing, which is why this is
-      // read-only staff-facing and not in a draft.
-      else if (g.hash) add(trips, g.hash, "T");
     }
   }
 

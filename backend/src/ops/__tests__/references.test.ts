@@ -19,7 +19,6 @@ describe("extractReferences", () => {
       "can we move reservation 10432 to 10am",
       "can we move booking no. 10432 to 10am",
       "can we move booking #10432 to 10am",
-      "can we move #10432 to 10am",
     ]) {
       expect(body(typed).trips, `for ${JSON.stringify(typed)}`).toEqual(["T-10432"]);
     }
@@ -78,11 +77,28 @@ describe("extractReferences", () => {
     expect(body("booking on 2026-09-22")).toEqual({ trips: [], invoices: [] });
   });
 
-  it("leaves a short #number alone, because that is how staff write ticket numbers", () => {
-    // "#60" in this system means ticket 60, not trip 60. Four digits is the
-    // line; it is a heuristic, and the reply to this task says so.
-    expect(body("see ticket #60 for background").trips).toEqual([]);
-    expect(body("see #1234 for background").trips).toEqual(["T-1234"]);
+  it("never reads a bare #number as a reference, whatever its length", () => {
+    // A hash says a number matters, not what kind of number it is — and this
+    // project writes its own ticket numbers exactly that way. An earlier draft
+    // read "#10432" as a trip with a four-digit floor, which was a collision
+    // scheduled for the day ticket numbers reach four digits. This test exists
+    // to stop that coming back.
+    for (const text of [
+      "see #60 for background",
+      "see #1234 for background",
+      "see #10432 for background",
+      "please cancel #10432",
+    ]) {
+      expect(body(text), `for ${JSON.stringify(text)}`).toEqual({ trips: [], invoices: [] });
+    }
+  });
+
+  it("still reads a hash when a word gives it meaning", () => {
+    // The word carries the sense; the hash is punctuation between it and the
+    // digits. Dropping the bare form must not break this one.
+    expect(body("please cancel booking #10432").trips).toEqual(["T-10432"]);
+    expect(body("please check invoice #10432").invoices).toEqual(["INV-10432"]);
+    expect(body("trip no. #10432 was fine").trips).toEqual(["T-10432"]);
   });
 
   it("finds nothing in an email that mentions nothing", () => {
