@@ -69,7 +69,11 @@ const COLUMNS: { key: TripSort | null; label: string; align?: "right"; className
   { key: "pickupAt", label: `Pickup (${OPERATING_ZONE_LABEL})` },
   { key: "bookedHours", label: "Hrs", align: "right" },
   { key: "passengerName", label: "Passenger" },
-  { key: null, label: "From → To", className: "w-full" },
+  // Two columns rather than one "A → B": the eye scans a column of pickups
+  // for the one it wants, and cannot do that when every cell starts with a
+  // different address.
+  { key: null, label: "From", className: "w-1/2" },
+  { key: null, label: "To", className: "w-1/2" },
   { key: "vehicle", label: "Car" },
   { key: "driver", label: "Driver / partner" },
   { key: "status", label: "Status" },
@@ -484,7 +488,7 @@ export function ReservationsTab({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[64rem] border-collapse text-sm">
+          <table className="w-full min-w-[70rem] border-collapse text-sm">
             <thead className="border-b border-gray-200 bg-gray-50">
               <tr>
                 {COLUMNS.map((c) => (
@@ -529,11 +533,11 @@ export function ReservationsTab({
                         <span className="ml-1 text-[11px] text-gray-400">{t.passengerCount}p</span>
                       )}
                     </Cell>
-                    <Cell
-                      className="max-w-0 truncate text-gray-600"
-                      title={`${t.pickupAddress} → ${t.dropoffAddress}`}
-                    >
-                      {shortStop(t.pickupAddress)} → {shortStop(t.dropoffAddress)}
+                    <Cell className="max-w-0 truncate text-gray-600" title={t.pickupAddress}>
+                      {shortStop(t.pickupAddress)}
+                    </Cell>
+                    <Cell className="max-w-0 truncate text-gray-600" title={t.dropoffAddress}>
+                      {shortStop(t.dropoffAddress)}
                     </Cell>
                     <Cell className="whitespace-nowrap text-gray-600">
                       {t.vehicle?.label ?? (
