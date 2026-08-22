@@ -12,6 +12,7 @@
 //
 // Everything is hourly ("as directed"), which is how this company charges.
 
+import { sql } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "./client";
 import {
@@ -156,6 +157,17 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
   const now = DateTime.now().setZone(OPERATING_TIME_ZONE);
   const from = now.minus({ days: 30 }).startOf("day");
   const to = now.plus({ days: 14 }).endOf("day");
+
+  // Refuse rather than half-insert. Without this, a second run collides on the
+  // trip references and prints several screens of SQL, which tells the person
+  // running it nothing about what to do next.
+  const [existing] = await db.select({ n: sql<number>`count(*)::int` }).from(trips);
+  if ((existing?.n ?? 0) > 0 && !options.reset) {
+    throw new Error(
+      `There are already ${existing.n} trips here. Pass --reset to replace the dummy data, ` +
+        `or leave it alone if this database has anything real in it.`
+    );
+  }
 
   if (options.reset) {
     // Order matters: children first. Tickets and messages are never touched.

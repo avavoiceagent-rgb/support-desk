@@ -1,0 +1,9 @@
+{
+  // What Railway actually ships. Tests are still type-checked — `tsc --noEmit`
+  // uses tsconfig.json, which includes them — but they are not compiled into
+  // the deployed image. Emitting them also made vitest discover every test
+  // twice, once from src and once from dist, where the compiled CommonJS
+  // version cannot run at all.
+  "extends": "./tsconfig.json",
+  "exclude": ["src/**/__tests__/**", "dist", "node_modules"]
+}
