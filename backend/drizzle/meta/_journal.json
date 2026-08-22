@@ -50,6 +50,13 @@
       "when": 1787186642606,
       "tag": "0006_ticket_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787360035667,
+      "tag": "0007_operations",
+      "breakpoints": true
     }
   ]
 }

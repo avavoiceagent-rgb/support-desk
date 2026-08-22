@@ -9,7 +9,8 @@
     "start": "node dist/db/migrate.js && node dist/index.js",
     "db:migrate": "tsx src/db/migrate.ts",
     "test": "vitest run",
-    "seed": "tsx src/db/seed.ts"
+    "seed": "tsx src/db/seed.ts",
+    "seed:ops": "tsx src/db/seed-ops.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
