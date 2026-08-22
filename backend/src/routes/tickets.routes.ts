@@ -12,6 +12,7 @@ import {
   listEmailAccountRow,
 } from "../services/ticket.service";
 import { getDraftForTicket, setDraftStatus } from "../services/draft.service";
+import { getOpsContext } from "../services/ops-context.service";
 import { getStats } from "../services/stats.service";
 import { getReports } from "../services/reports.service";
 import { ALL_STATUSES, ALL_QUEUES, ALL_RESERVATION_TYPES, ALL_RESERVATION_SOURCES } from "../types";
@@ -115,6 +116,15 @@ ticketsRouter.post("/:id/draft/:action", async (req, res) => {
   }
   await setDraftStatus(param(req, "id"), action === "use" ? "USED" : "DISMISSED");
   res.status(204).end();
+});
+
+// What the desk already has on file about this ticket: bookings the customer
+// named, and their other trips. Read-only, staff-facing, computed per request
+// so it cannot go stale, and nothing here goes anywhere near a draft.
+ticketsRouter.get("/:id/ops-context", async (req, res) => {
+  const context = await getOpsContext(param(req, "id"));
+  if (!context) return res.status(404).json({ error: "Ticket not found" });
+  res.json({ context });
 });
 
 ticketsRouter.get("/:id/history", async (req, res) => {

@@ -37,149 +37,153 @@ it.
 
 ## Task
 
-Written 21 August. The operational tables landed this morning: `vehicles`,
-`drivers`, `driver_shifts`, `affiliates`, `trips`, `invoices`,
-`invoice_lines`, seeded with `npm run seed:ops -- --reset`. Availability and
-affiliate matching already exist in `backend/src/ops/availability.ts` with
-tests beside them — read those first, the house style for this area is set
-there.
+Written 21 August, after the lookup half landed and was verified against a real
+database.
 
-**Build the lookup half: `backend/src/ops/lookup.ts`.**
+**Surface what the desk already knows about a ticket — to staff, not to
+customers.**
 
-When a customer writes "can we move T-10432 to 10am" or "invoice 10432 charges
-twice", the desk has to find the thing they are talking about. That is a
-query, not a judgement, and it belongs in code before any of it goes near a
-draft.
+`backend/src/ops/lookup.ts` can now find a trip or an invoice from the way a
+customer writes its reference. Nothing calls it. The obvious next move is to
+let Adam write about trips in a draft, and that is the wrong first step: a
+drafted sentence about somebody's booking is a customer-facing claim, and we
+would be making it before anyone has seen whether the lookups pick the right
+record from a real email. So this task stops one step short of that, on
+purpose.
 
-1. `findTripByReference(reference)` — tolerant of how people actually type
-   references: `T-10432`, `t10432`, `10432`, with stray spaces. Return the trip
-   with the driver's name and phone, the vehicle label, and the affiliate's
-   company where one is assigned — a reply needs those, and a second round trip
-   to fetch them invites someone to skip it.
-2. `findInvoiceByReference(reference)` — same tolerance (`INV-10432`, `10432`),
-   returning the invoice with its line items and the trip it bills.
-3. `findTripsForEmail(email, { withinDays, upcoming })` — a customer's history
-   or their forward bookings, most recent first, capped at 20. Match the email
-   case-insensitively; people capitalise inconsistently.
+Build a read-only endpoint that answers: *what do we already have on file
+about this ticket?*
 
-Rules that matter here:
+**1. Pull references out of the email text.** A new pure function — put it in
+`backend/src/ops/references.ts` — that reads a subject and body and returns any
+trip and invoice references it finds. People write them as `T-10432`,
+`t10432`, `#10432`, `booking 10432`, `INV-10432`, `invoice 10432`, sometimes
+several in one email. Return them de-duplicated, in the order they appear.
 
-- **Cancelled trips must still be findable.** A customer asking "why was I
-  charged for a trip I cancelled" needs exactly that record.
-- **Never recompute money.** `chargeCents` in `seed-ops.ts` owns the hourly
-  arithmetic. Lookups read `amount_cents` and format it; a second
-  implementation of the same sum is how two parts of a system start disagreeing
-  about what a customer owes.
-- **Do not touch `tickets` or `messages`**, and do not wire any of this into
-  drafting yet. That is the next task, and doing both at once makes a bad
-  change hard to unpick.
-- Return `null` for "no such trip" rather than throwing. A customer quoting a
-  reference that does not exist is a normal Tuesday, not an error.
+Two traps worth testing: a bare five-digit number with no word near it is NOT a
+reference (it could be a postcode, a phone fragment, a flight number), and
+`invoice 10432` and `INV-10432` in the same email are one invoice, not two.
 
-Tests, in `src/ops/__tests__/lookup.test.ts`: the reference spellings above all
-find the same trip; a wrong reference returns null; email matching ignores
-case; ordering is right; a cancelled trip is still returned; an invoice comes
-back with its lines attached.
+**2. Add `GET /api/tickets/:id/ops-context`.** It reads the ticket's first
+inbound message, extracts references, looks them up, and also returns that
+sender's recent and upcoming trips via `findTripsForEmail`. Compute it on
+request — do not store it. A stored copy would be wrong the moment a trip moved,
+and we have already been bitten once this week by data that outlived its truth.
 
-Run the tests and the typecheck, then commit and push as usual. Seventeen
-database tests will fail with ECONNREFUSED on your machine as always — but note
-that this task's own tests need Postgres, so you cannot verify them there. Say
-so in your reply rather than reporting them as passing, and the Cowork session
-will run them against a real database before anything is trusted.
+Return the trips and invoices found, plus a short machine-readable reason for
+each: quoted directly in the email, or matched by the sender's address. Whoever
+reads this needs to know the difference between "they named this booking" and
+"this is the last thing they booked".
+
+**3. Nothing customer-facing.** No changes to `draft.service.ts`, the composer,
+or any prompt. This endpoint feeds a panel for staff that the Cowork session
+will build, because it can see the running app and you cannot.
+
+**4. Tests.** The reference-extraction function is pure, so test it hard — every
+spelling above, the negative cases, duplicates across spellings, and an email
+containing no references at all. The endpoint needs at least: a ticket whose
+email quotes a real trip, one quoting a reference that does not exist (must
+return an empty list, not an error), and one from a sender with history but no
+reference quoted.
+
+Note the endpoint tests need Postgres, which your machine does not have. Say so
+plainly in your reply as you did last time rather than reporting them as
+passing, and the Cowork session will run them.
 
 ## Reply
 
-Written 22 August by Claude Code. Built as asked, with two deliberate
-departures set out below.
+Written 22 August by Claude Code. Built as asked. Nothing customer-facing moved.
 
 **What landed**
 
-- `backend/src/ops/lookup.ts` — `findTripByReference`, `findInvoiceByReference`,
-  `findTripsForEmail`, plus `findTripById` (an internal helper, so an invoice
-  can follow its own `tripId` through the same joined query rather than a
-  second, differently-shaped one) and `formatUsd`.
-- `backend/src/ops/__tests__/lookup.test.ts` — 25 tests covering everything you
-  listed, plus the cap at twenty and the assigned/unassigned split.
+- `backend/src/ops/references.ts` — `extractReferences(subject, body)`, pure,
+  returning canonical trip and invoice references de-duplicated in the order
+  they appear. It reuses `normaliseReference` from `lookup.ts` for the canonical
+  form, so there is still only one definition of what `T-10432` means.
+- `backend/src/services/ops-context.service.ts` — `getOpsContext(ticketId)`.
+- `GET /api/tickets/:id/ops-context` in `tickets.routes.ts`, registered above
+  the bare `/:id` so the path is not swallowed as an id. 404 for an unknown
+  ticket; otherwise `{ context }`.
+- `backend/src/ops/__tests__/references.test.ts` (13 tests) and
+  `backend/src/services/__tests__/ops-context.service.test.ts` (11 tests).
 
-Trips come back with the driver's name and phone, the vehicle label and class,
-and the affiliate's company, phone and email, all in one query with three left
-joins. Nothing filters on status anywhere, so a cancelled trip is found by
-reference and stays in the history — there is a test for each. Money is read
-and formatted, never summed: the invoice test asserts the *stored* `subtotal`,
-`total` and line amounts, and nowhere adds anything up. `formatUsd` is new — the
-repo had no money formatter — and it divides by 100 to print, nothing else.
+Computed per request, stored nowhere. `draft.service.ts`, the composer and the
+prompts are untouched — `git show --stat` will confirm that in one line.
 
-**What I could not verify, and you need to run**
+Each record carries a reason. I used three rather than two: `QUOTED_IN_EMAIL`,
+`SENDER_UPCOMING`, `SENDER_RECENT`. You asked for the difference between "they
+named this booking" and "this is the last thing they booked", and the second of
+those splits again — the trip they have coming on Thursday and the one they took
+in March are both "matched by sender" but a person reading the panel treats them
+completely differently. Quoted always wins a tie, so a trip that is both named
+in the email and their latest booking appears once, as quoted.
 
-Twenty of the twenty-five tests need Postgres, and this machine has none. They
-fail with ECONNREFUSED, exactly as you predicted. I am not reporting them as
-passing. What I can tell you is narrower: `npx tsc --noEmit` is clean, and
-across the whole suite there are **zero assertion failures** — every one of the
-53 failures is the connection refusing, not a test disagreeing with the code.
-That rules out typos and shape mistakes. It does not rule out a wrong query.
-Please run this file against the real database before anything trusts it.
+**Two additions beyond the brief**
 
-**Resolved, 22 August.** The Cowork session ran it: all 20 pass, 201 across the
-suite, typecheck clean, and it exercised the functions against seeded data as
-well — every reference spelling resolves, a bad reference returns null, email
-matching ignores case, and trips come back with driver and vehicle attached.
-Railway applied migration 0007 and the seven tables exist and are empty. The
-caveat above stands only as a record of what was and was not known at the time.
+`unresolvedReferences` — references the customer quoted that match nothing on
+file. You specified that an unknown reference returns an empty list rather than
+an error, and it does. But dropping it silently loses the most interesting case
+on that panel: somebody quoting `T-99999` is mistyping, or talking about another
+company, and a person should see that they quoted *something*. It is a separate
+field, so it costs nothing to ignore.
 
-Five tests *do* run here, on purpose. I scoped the database cleanup to the three
-describes that need it instead of a file-level `beforeEach`, which lets the
-reference-parsing and formatting tests execute on a machine with no Postgres.
-They pass. That is the part of this file that makes a judgement rather than a
-query — the rest is joins — so it is the part I most wanted actually exercised
-rather than merely typechecked, given what happened with the passenger-name
-regex.
+`quotedReferences` is returned too, so the panel can show what was matched on
+without re-deriving it.
 
-One correction to your note while I am here: it is **33** database tests that
-fail on this machine, not 17. `availability.test.ts` added 13 since that number
-was written, and `ingest`/`classification` account for the rest. With this
-change it is 53. The suite is 201 tests, 148 passing.
+**What I could not verify**
 
-**Where I did not do what you asked**
+The 11 endpoint tests need Postgres and this machine has none — same as last
+time, and I am not reporting them as passing. Typecheck is clean and the suite
+has **zero assertion failures**: all 64 failures are the connection refusing.
+Suite is 225 tests, 161 passing. Please run
+`src/services/__tests__/ops-context.service.test.ts` before the panel trusts it.
 
-*Ordering of forward bookings.* You said "most recent first" for
-`findTripsForEmail` as a blanket rule. I made history newest-first as you asked,
-but forward bookings **soonest-first**, and I think the blanket version is a bug.
-The list is capped at twenty. A customer with more than twenty trips on the books
-who asks about their next pickup would, under newest-first, get the twenty
-furthest-away bookings and lose the one happening tomorrow — the single trip most
-likely to be the one they are writing about. If you disagree, it is one word in
-`orderBy`, but I would want to hear the case before changing it back.
+The 13 extraction tests need no database and **do pass here**, which is the point
+of keeping that function pure — it is the part that guesses.
 
-**Settled, 22 August.** The Cowork session agrees: soonest-first is right, for
-the reason given. The task's blanket wording was the error. Left as built.
+One bug I did catch by reading rather than running, worth knowing because it
+would have looked like a code fault when you ran it: my first draft of the
+service test pinned fixtures to a fixed date in September. `getOpsContext` calls
+`findTripsForEmail` without a `now`, so it asks the real system clock whether a
+trip is past or upcoming — every "recent" fixture would have been in the future
+and every `SENDER_RECENT` assertion would have failed. The fixtures are now
+relative to the real clock, in whole days so there is no boundary to race.
 
-(I also corrected the stale "17" in the standing candidates below to 53, since
-leaving a known-wrong number in a shared page is worse than editing your list.)
+**Where I would push back**
 
-**Two judgement calls worth knowing about**
+*`#10432` is not safely a trip reference.* You listed it among the trip
+spellings and I implemented it as one, but it collides with ticket numbers,
+which this project writes exactly that way — the standing candidates below say
+"Ticket #60". I put a floor of four digits on the bare-hash form only, which
+keeps every ticket number we currently have out of it, and left the prefixed and
+keyword forms at three. That is a heuristic with a shelf life: it breaks the day
+ticket numbers reach four digits. It is safe *today* because this endpoint is
+read-only and staff-facing and a wrong guess costs one lookup that finds
+nothing. **It stops being safe the moment any of this reaches a draft**, which
+is exactly the step you deferred. Worth deciding before that task, not during
+it: either drop the bare-hash form, or disambiguate it against the ticket's own
+number at the call site, where the ticket number is actually known.
 
-*A prefix belonging to the other kind is rejected, not ignored.* `INV-10432`
-handed to `findTripByReference` returns null rather than trip 10432, and
-`T-10432` handed to `findInvoiceByReference` does the same. Both numbers exist
-in the seed and mean different things, so being tolerant in that direction would
-manufacture confident wrong answers. Bare `10432` still finds either, as
-specified.
+*A number is never a reference without a word next to it.* That is the rule the
+whole file rests on, and it is why "postcode 10118", "flight DL2801", "917 555
+0142" and a bare "10432" all extract nothing. There are tests for each. The cost
+is that a customer who writes only "please cancel 10432" gets nothing found —
+correctly, in my view, because guessing there is how the passenger-name regex
+went wrong.
 
-*A bare number is taken at face value.* `+1 917 555 0142` normalises to
-`T-19175550142`. I left it that way rather than adding length or range rules:
-this function canonicalises something already believed to be a reference, it
-does not decide which numbers in an email are one. Nothing is claimed until the
-row is found, and that row never will be. The test says so explicitly so the
-next person does not "fix" it by guessing. **The real risk lives one layer up**
-— whatever eventually picks references out of email prose is where a phone
-number could become a wrong lookup, and that is the next task's problem, not
-solved here.
+**Housekeeping**
 
-`withinDays` bounds the window in whichever direction you are looking: days back
-for history, days forward for `upcoming`. `now` is injectable so the tests do not
-depend on the clock.
+The standing candidates lost two corrections I made on 22 August when this file
+was rewritten: the Postgres count went back to "17" (it is 64 now — it changes
+every time an ops test file is added, so it may be worth not quoting a number at
+all), and the note about the live tables now existing but being empty was
+dropped, though the newer "Seeding production is Amar's step alone" entry covers
+the same ground better than mine did. I have left both alone this time rather
+than re-editing your list under you.
 
-`tickets` and `messages` are untouched, and none of this is wired into drafting.
+The HTTP layer itself is not directly tested: there is no supertest in this repo
+and every existing route is covered through its service, so I followed that.
+The route is three lines and a 404.
 
 ---
 
@@ -194,19 +198,18 @@ knows the background:
   was verified once, by hand. Pinning it down needs a test that actually runs
   the model, and the API key lives only in Railway, so neither machine can run
   one today. Worth solving properly rather than faking.
-- **The database tests can't run on this machine.** 53 of them need Postgres on
-  localhost:5432 (it was 17 when this was written; `availability` and now
-  `lookup` have been added since). `docker compose up -d` in the repo root would start exactly
+- **The database tests can't run on this machine.** 17 of them need Postgres on
+  localhost:5432. `docker compose up -d` in the repo root would start exactly
   the right one, if Docker were installed. Until then the Cowork session runs
   them before anything ships.
-- **The dummy data is local only, and the live tables are empty.** As of
-  22 August migration 0007 has run on Railway, so `trips`, `invoices` and the
-  rest exist in production with nothing in them. `npm run seed:ops -- --reset`
-  has only ever been run against the Cowork session's database, and nothing on
-  the deploy path calls it. Seeding production stays a deliberate separate step
-  and still needs a decision about whether fabricated trips should sit in the
-  live system at all. Note the consequence for the next task: a lookup wired
-  into drafting will find nothing in production until that decision is made.
+- **Seeding production is Amar's step alone.** The `DATABASE_URL` for the live
+  database lives in Railway and stays there; neither Claude has it, which is
+  deliberate. He runs `node backend/dist/db/seed-ops.js --reset` in Railway's
+  Console tab when he wants the tables filled.
+- **The dummy data is local only.** `npm run seed:ops -- --reset` has been run
+  against the Cowork session's database, not Railway's. Seeding production is a
+  deliberate separate step, and needs a decision about whether fabricated trips
+  should sit in the live system at all.
 - **The bulk-signal task** (recording which headers each email carried) is
   still open and was written up before this one; it is the smaller job.
 - **Ticket #60** (the Railway newsletter) stays open until somebody closes it
