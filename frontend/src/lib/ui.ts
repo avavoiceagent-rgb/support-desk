@@ -1,4 +1,5 @@
 // Small shared UI helpers.
+import { OPERATING_TIME_ZONE } from "./time";
 
 export function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -9,15 +10,23 @@ export function timeAgo(iso: string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString("en-GB", {
+    timeZone: OPERATING_TIME_ZONE,
+    month: "short",
+    day: "numeric",
+  });
 }
 
+// New York, not the reader's laptop. A desk in Berlin looking at a ticket
+// should see the same clock time the customer was quoted.
 export function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
+  return new Date(iso).toLocaleString("en-GB", {
+    timeZone: OPERATING_TIME_ZONE,
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
   });
 }
 

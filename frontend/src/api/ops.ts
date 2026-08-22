@@ -166,41 +166,17 @@ export interface TripSearchResult {
   total: number;
 }
 
-/**
- * A yyyy-mm-dd from a date input, as the first instant of that day here.
- *
- * The server wants a full ISO datetime — a bare date is a 400 — and "here"
- * is the right zone because the person picking the date is looking at a
- * calendar on the wall in New Jersey, not at UTC.
- */
-export function startOfDayIso(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
-}
-
-export function endOfDayIso(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
-}
-
-/** yyyy-mm-dd for a date input, in local time rather than UTC. */
-export function toDateInput(value: Date | string): string {
-  const d = typeof value === "string" ? new Date(value) : value;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-/** yyyy-mm-ddThh:mm for a datetime-local input, in local time. */
-export function toDateTimeInput(value: Date | string): string {
-  const d = typeof value === "string" ? new Date(value) : value;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${toDateInput(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** What a datetime-local input gives back, as a full ISO instant. */
-export function fromDateTimeInput(value: string): string {
-  return new Date(value).toISOString();
-}
+// Dates and times belong to the operating zone, not the browser's. See
+// lib/time.ts — these are re-exported so callers have one import for the API
+// and the calendar it speaks in.
+export {
+  startOfDayIso,
+  endOfDayIso,
+  toDateInput,
+  toDateTimeInput,
+  fromDateTimeInput,
+  OPERATING_ZONE_LABEL,
+} from "../lib/time";
 
 function query(params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();

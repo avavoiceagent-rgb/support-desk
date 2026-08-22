@@ -32,20 +32,10 @@ const STATUS_STYLE: Record<string, string> = {
   VOID: "text-gray-400",
 };
 
-// One date style for the whole panel. It previously mixed "Wed 22 Jul, 05:00 pm"
-// with "issued 28/07/2026", and neither is how a person writes a time. Adam
-// already says "2:10 PM" in drafts; a staff panel should not disagree with the
-// email sitting beside it.
-function when(iso: string): string {
-  const d = new Date(iso);
-  const date = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-  return `${date}, ${time}`;
-}
-
-function onDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
+// One date style for the whole panel, and one timezone for the whole app:
+// New York, where the cars are. This used to format in the browser's zone,
+// which put a staff panel six hours out from the email sitting beside it.
+import { when, onDate } from "../lib/time";
 
 const money = (cents: number) => `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
 

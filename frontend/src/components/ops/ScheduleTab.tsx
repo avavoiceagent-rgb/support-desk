@@ -13,7 +13,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   opsApi,
-  toDateInput,
   toDateTimeInput,
   fromDateTimeInput,
   startOfDayIso,
@@ -36,20 +35,17 @@ import {
   span,
   when,
 } from "./shared";
+import {
+  OPERATING_ZONE_LABEL,
+  dayMonth,
+  dayStartMs,
+  longDate,
+  shiftDate,
+  todayInZone,
+} from "../../lib/time";
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
-
-function shiftDate(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return toDateInput(new Date(y, m - 1, d + days));
-}
-
-/** Midnight local on the selected date — the left edge of the board. */
-function dayStartMs(date: string): number {
-  const [y, m, d] = date.split("-").map(Number);
-  return new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
-}
 
 interface Band {
   leftPct: number;
@@ -141,7 +137,7 @@ function DriverRow({
     .map((s) => {
       const carriedOver = new Date(s.startsAt).getTime() < dayStart;
       const from = carriedOver
-        ? `${new Date(s.startsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} · `
+        ? `${dayMonth(s.startsAt)} · `
         : "";
       return {
         id: s.id,
@@ -270,7 +266,7 @@ function ShiftEditor({
   const [endsAt, setEndsAt] = useState(() =>
     shift
       ? toDateTimeInput(shift.endsAt)
-      : toDateTimeInput(new Date(new Date(`${date}T08:00`).getTime() + 11 * HOUR_MS))
+      : toDateTimeInput(new Date(new Date(fromDateTimeInput(`${date}T08:00`)).getTime() + 11 * HOUR_MS))
   );
   const [vehicleId, setVehicleId] = useState(shift?.vehicle?.id ?? "");
   const [unavailable, setUnavailable] = useState(shift?.unavailable ?? false);
@@ -320,7 +316,7 @@ function ShiftEditor({
     <Modal title={shift ? "Edit shift" : "Add shift"} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Starts">
+          <Field label="Starts ({OPERATING_ZONE_LABEL})">
             <input
               type="datetime-local"
               value={startsAt}
@@ -329,7 +325,7 @@ function ShiftEditor({
               required
             />
           </Field>
-          <Field label="Ends" hint="A shift can run up to 24 hours.">
+          <Field label="Ends" hint="New York time. A shift can run up to 24 hours.">
             <input
               type="datetime-local"
               value={endsAt}
@@ -457,7 +453,7 @@ export function ScheduleTab({
   vehicles: Vehicle[];
   isAdmin: boolean;
 }) {
-  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [date, setDate] = useState(todayInZone);
   const [showInactive, setShowInactive] = useState(false);
   const [schedules, setSchedules] = useState<Record<string, DriverSchedule>>({});
   const [loading, setLoading] = useState(false);
@@ -542,7 +538,7 @@ export function ScheduleTab({
             </div>
           </Field>
         </div>
-        <Button onClick={() => setDate(toDateInput(new Date()))}>Today</Button>
+        <Button onClick={() => setDate(todayInZone())}>Today</Button>
         <label className="flex items-center gap-2 pb-1.5 text-sm text-gray-600">
           <input
             type="checkbox"
@@ -578,12 +574,10 @@ export function ScheduleTab({
       <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-5 py-3">
           <h2 className="text-sm font-semibold text-gray-900">
-            {new Date(dayStart).toLocaleDateString("en-GB", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            })}
+            {longDate(new Date(dayStart).toISOString())}
+            <span className="ml-2 font-normal text-gray-400">
+              all times {OPERATING_ZONE_LABEL}
+            </span>
           </h2>
           <p className="text-xs text-gray-500">
             {workingCount} of {visible.length} drivers working · {bookedCount} trips booked

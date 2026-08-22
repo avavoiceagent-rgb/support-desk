@@ -7,28 +7,9 @@
 import { useEffect, type ReactNode } from "react";
 import { ApiError } from "../../api/client";
 
-export function when(iso: string): string {
-  const d = new Date(iso);
-  const date = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-  return `${date}, ${time}`;
-}
-
-export function onDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
-export function atTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-}
-
-/** "Wed 22 Jul, 5:00 PM – 11:00 PM", collapsing the date when it does not change. */
-export function span(startIso: string, endIso: string): string {
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  const sameDay = start.toDateString() === end.toDateString();
-  return sameDay ? `${when(startIso)} – ${atTime(endIso)}` : `${when(startIso)} – ${when(endIso)}`;
-}
+// Formatting lives in lib/time so this screen, the ticket panel and the
+// emails Adam sends cannot drift into three different ideas of what time it is.
+export { when, onDate, atTime, span, longDate, OPERATING_ZONE_LABEL } from "../../lib/time";
 
 /** Shortened for a narrow column; the full address stays in the record. */
 export function shortAddress(address: string): string {
