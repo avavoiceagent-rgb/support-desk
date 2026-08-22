@@ -79,14 +79,25 @@ const VEHICLES = [
   { label: "SUV 2", class: "SUV", makeModel: "Cadillac Escalade", plate: "T512350C", passengerCapacity: 6, luggageCapacity: 6 },
   { label: "SUV 3", class: "SUV", makeModel: "Chevrolet Suburban", plate: "T512351C", passengerCapacity: 6, luggageCapacity: 6 },
   { label: "SUV 4", class: "SUV", makeModel: "Lincoln Navigator", plate: "T512352C", passengerCapacity: 6, luggageCapacity: 6 },
+  { label: "SUV 5", class: "SUV", makeModel: "Cadillac Escalade", plate: "T512355C", passengerCapacity: 6, luggageCapacity: 6 },
+  { label: "SUV 6", class: "SUV", makeModel: "Chevrolet Suburban", plate: "T512356C", passengerCapacity: 6, luggageCapacity: 6 },
   { label: "Van 1", class: "VAN", makeModel: "Mercedes Metris", plate: "T512353C", passengerCapacity: 7, luggageCapacity: 7 },
+  { label: "Van 2", class: "VAN", makeModel: "Mercedes Metris", plate: "T512357C", passengerCapacity: 7, luggageCapacity: 7 },
   { label: "Sprinter 1", class: "SPRINTER", makeModel: "Mercedes Sprinter", plate: "T512354C", passengerCapacity: 14, luggageCapacity: 14 },
+  { label: "Sprinter 2", class: "SPRINTER", makeModel: "Mercedes Sprinter", plate: "T512358C", passengerCapacity: 14, luggageCapacity: 14 },
 ] as const;
 
+// Sized against the work, not picked round. An eleven-hour shift covers under
+// half the clock, so one driver of a class is on for roughly a third of the
+// week once rest days are taken out — which is why a fleet with a single van
+// ended up farming out every van booking it ever took. Each class needs enough
+// people to be reachable at whatever hour the phone rings, not merely enough
+// to do the volume.
 const DRIVER_NAMES = [
   "Marco Rinaldi", "Dimitri Petrov", "Samuel Okafor", "Hector Alvarez",
   "Amrit Singh", "Joseph Nowak", "Kwame Boateng", "Luis Fernandes",
   "Ibrahim Diallo", "Peter Nowicki", "Rashid Karim", "Tomasz Wójcik",
+  "Yusuf Demir", "Andrei Popescu", "Mateo Castillo", "Sanjay Iyer",
 ] as const;
 
 const AFFILIATES = [
@@ -210,32 +221,81 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
   ).returning();
 
   // --- Shifts -------------------------------------------------------------
+  //
+  // A rota, not a rubber stamp. The first version gave every driver the same
+  // eleven-hour block on every single day of the month, which produced a fleet
+  // where nobody ever rested and Amrit Singh worked 5pm-4am for thirty days
+  // straight. Fabricated data that no real company could produce teaches a
+  // tester nothing about the real thing.
+  //
+  // So: each driver keeps a home start hour, because people really are morning
+  // or night people and a rota that reshuffles everyone daily is its own kind
+  // of fiction. Around that, the start drifts by an hour and each driver takes
+  // two rest days a week, staggered by index so the fleet is always covered.
+  const SHIFT_HOURS = 11;
+
+  /** The two weekdays this driver is off. Staggered so cover never collapses. */
+  function restDays(driverIndex: number): [number, number] {
+    return [(driverIndex % 7) + 1, ((driverIndex + 3) % 7) + 1];
+  }
+
+  interface Roster {
+    driverIndex: number;
+    startMs: number;
+    endMs: number;
+    unavailable: boolean;
+  }
+  const rosters: Roster[] = [];
+
   const shiftRows: (typeof driverShifts.$inferInsert)[] = [];
   for (let day = 0; from.plus({ days: day }) <= to; day++) {
     const date = from.plus({ days: day });
-    const weekend = date.weekday >= 6;
     for (const [i, driver] of insertedDrivers.entries()) {
-      // Staggered starts, not two blocks. A clean day/night changeover at 16:00
-      // looked tidy and was wrong: a 3pm booking for 3 hours had nobody whose
-      // shift covered it end to end, because the day crew clocked off in the
-      // middle of it. Real rotas overlap, so these do.
-      if (weekend && rng.chance(0.45)) continue;
-      const startHour = [5, 6, 7, 9, 11, 13, 14, 15, 16, 17, 18, 19][i % 12];
+      const [restA, restB] = restDays(i);
+      if (date.weekday === restA || date.weekday === restB) continue;
+
+      // Starts spaced two hours apart right around the clock. Eleven-hour
+      // shifts every two hours means roughly five drivers are on at any moment,
+      // including 3am, which is when airport work actually happens. The first
+      // pass ran 5am to 7pm and left the ends of the day bare: a 9pm booking
+      // had two drivers in the whole company who could take it, so a third of
+      // the month farmed out for no reason a dispatcher would recognise.
+      // Stepped by 5 rather than read straight off the index, and that detail
+      // is the whole point. Drivers get their car by index too, so reading the
+      // hours in order tied class to time of day: both van drivers landed on
+      // night shifts and every afternoon van booking in the month farmed out
+      // for want of a driver who was never rostered. 5 and 16 share no factor,
+      // so each class ends up spread right around the clock.
+      const HOURS = [4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0, 2, 5, 9, 15, 21];
+      const homeHour = HOURS[(i * 5) % HOURS.length];
+      // A little drift, so the rota reads as written by a person.
+      const startHour = (homeHour + rng.int(-1, 1) + 24) % 24;
       const start = date.set({ hour: startHour, minute: 0 });
+      const end = start.plus({ hours: SHIFT_HOURS });
       const unavailable = rng.chance(0.05);
+
       shiftRows.push({
         driverId: driver.id,
         vehicleId: driver.defaultVehicleId,
         startsAt: start.toJSDate(),
-        endsAt: start.plus({ hours: 11 }).toJSDate(),
+        endsAt: end.toJSDate(),
         unavailable,
         reason: unavailable ? rng.pick(["Annual leave", "Sick", "Training", "Vehicle service"]) : null,
+      });
+      rosters.push({
+        driverIndex: i,
+        startMs: start.toMillis(),
+        endMs: end.toMillis(),
+        unavailable,
       });
     }
   }
   await db.insert(driverShifts).values(shiftRows);
 
   // --- Trips --------------------------------------------------------------
+  /** Hours each driver is already committed to, so nobody is in two places at once. */
+  const busy = new Map<string, [number, number][]>();
+
   const tripRows: (typeof trips.$inferInsert)[] = [];
   let reference = 10_000;
 
@@ -258,32 +318,91 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
           ? rng.pick(AIRPORTS)
           : rng.pick(PICKUPS);
 
-      const passengerCount = rng.int(1, 5);
-      const vehicleClass = passengerCount > 3 ? (rng.chance(0.15) ? "VAN" : "SUV") : "SEDAN";
+      // The occasional roadshow or crew move. Without these the company owns
+      // two Sprinters that never turn a wheel, and the largest vehicle class
+      // never appears in a month of data anybody is meant to learn from.
+      const bigGroup = rng.chance(0.05);
+      const passengerCount = bigGroup ? rng.int(6, 12) : rng.int(1, 5);
+      const vehicleClass = bigGroup
+        ? "SPRINTER"
+        : passengerCount > 3
+          ? (rng.chance(0.15) ? "VAN" : "SUV")
+          : "SEDAN";
       const bookedHours = outOfArea ? rng.int(4, 8) : airportRun ? rng.int(2, 3) : rng.int(3, 6);
 
-      // Farm-outs: everything out of area, plus the odd day we simply run out
-      // of cars — the case Amar described that no email ever reveals.
-      const noVehicle = !outOfArea && rng.chance(0.06);
-      const farmedOut = outOfArea || noVehicle;
-
-      // The car has to match the booking. Assigning each driver their default
-      // vehicle regardless produced trips reading "SEDAN" while showing "SUV 4",
-      // and fabricated data that contradicts itself teaches a tester that the
-      // system is confused when it is only the fixture that is.
+      // Who could actually take this, and who is left over.
+      //
+      // The first version picked on vehicle class alone and never looked at the
+      // rota, so trips landed on drivers who were off, on leave, or already out
+      // on another job. That is worse than untidy: the desk refuses a
+      // double-booking when a dispatcher tries to make one, so shipping fixture
+      // data full of them means the training set contradicts the rules being
+      // taught. A driver is a candidate only if a shift of theirs covers this
+      // job end to end, they are not marked unavailable, and they are not
+      // already out.
       const rank = { SEDAN: 1, SUV: 2, VAN: 3, SPRINTER: 4 } as const;
       const classOf = (d: (typeof insertedDrivers)[number]) =>
         insertedVehicles.find((veh) => veh.id === d.defaultVehicleId)?.class;
-      const exact = insertedDrivers.filter((d) => classOf(d) === vehicleClass);
+
+      const startMs = pickupAt.toMillis();
+      const endMs = startMs + bookedHours * 3_600_000;
+
+      const onDuty = (driverIndex: number) =>
+        rosters.some(
+          (r) =>
+            r.driverIndex === driverIndex &&
+            !r.unavailable &&
+            r.startMs <= startMs &&
+            r.endMs >= endMs
+        );
+      const alreadyOut = (driverId: string) =>
+        (busy.get(driverId) ?? []).some(([s2, e2]) => s2 < endMs && e2 > startMs);
+
+      const free = insertedDrivers.filter((d, i) => onDuty(i) && !alreadyOut(d.id));
+
       // A dispatcher sends the car that was booked. Occasionally the only thing
       // free is bigger, which is worth having in the data, but a Sprinter on a
       // sedan job should be the exception it is in real life, not one run in six.
-      const bigger = insertedDrivers.filter((d) => {
+      const exact = free.filter((d) => classOf(d) === vehicleClass);
+      // Exactly one size up, never more. A dispatcher short of a sedan sends
+      // the SUV; nobody sends a fourteen-seat Sprinter to collect one person
+      // with a briefcase, and fixture data that does teaches the reader that
+      // this desk cannot tell a car from a coach.
+      const bigger = free.filter((d) => {
         const c = classOf(d);
-        return c && rank[c] > rank[vehicleClass as keyof typeof rank];
+        return c && rank[c] === rank[vehicleClass as keyof typeof rank] + 1;
       });
-      const pool = exact.length && !rng.chance(0.08) ? exact : bigger.length ? bigger : insertedDrivers;
-      const driver = rng.pick(pool);
+      const pool = exact.length && !rng.chance(0.08) ? exact : bigger;
+
+      // Out of area always goes to a partner. Otherwise we farm out when — and
+      // only when — nobody is actually free. "We ran out of cars" now happens
+      // because the rota says so rather than on a 6% coin flip, which is the
+      // whole point of having a rota in the fixture at all.
+      const noVehicle = !outOfArea && pool.length === 0;
+      const farmedOut = outOfArea || noVehicle;
+      let driver = pool.length ? rng.pick(pool) : null;
+
+      // One deliberate exception, kept rare on purpose.
+      //
+      // Rosters change after work is assigned, and a trip left stranded outside
+      // its driver's shift is a real dispatch problem — it is why the schedule
+      // screen shows those in amber instead of tucking them into the nearest
+      // shift. With a perfectly consistent fixture that warning would never
+      // fire and nobody could tell whether it worked. So a few trips are left
+      // stranded on purpose: never double-booked, just uncovered.
+      if (!farmedOut && rng.chance(0.03)) {
+        const stranded = insertedDrivers.filter(
+          (d, i) => !onDuty(i) && !alreadyOut(d.id) && classOf(d) === vehicleClass
+        );
+        if (stranded.length) driver = rng.pick(stranded);
+      }
+
+      if (driver) {
+        const windows = busy.get(driver.id) ?? [];
+        windows.push([startMs, endMs]);
+        busy.set(driver.id, windows);
+      }
+
       const affiliate = outOfArea
         ? rng.pick(insertedAffiliates.filter((a) => !a.overflowPartner))
         : rng.pick(insertedAffiliates.filter((a) => a.overflowPartner));
@@ -316,9 +435,9 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
         luggageCount: rng.int(0, passengerCount + 1),
         flightNumber: airportRun ? `${rng.pick(["DL", "AA", "UA", "BA", "LH"])}${rng.int(100, 999)}` : null,
         status,
-        assignedKind: farmedOut ? "AFFILIATE" : "DRIVER",
-        driverId: farmedOut ? null : driver.id,
-        vehicleId: farmedOut ? null : driver.defaultVehicleId,
+        assignedKind: farmedOut ? "AFFILIATE" : driver ? "DRIVER" : "UNASSIGNED",
+        driverId: farmedOut ? null : (driver?.id ?? null),
+        vehicleId: farmedOut ? null : (driver?.defaultVehicleId ?? null),
         affiliateId: farmedOut ? affiliate.id : null,
         farmOutReason: outOfArea ? "OUT_OF_AREA" : noVehicle ? "NO_VEHICLE" : null,
         notes: rng.chance(0.1) ? rng.pick(["Meet and greet requested", "Child seat required", "VIP — company director", "Quiet ride requested"]) : null,

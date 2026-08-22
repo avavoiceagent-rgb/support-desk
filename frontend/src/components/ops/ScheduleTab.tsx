@@ -92,6 +92,17 @@ function ShiftBlock({
           </button>
         )}
       </div>
+      {/* A driver marked unavailable who still has work on the books. The seed no
+          longer produces this, but an admin can create it in one click by
+          blocking out a shift after the trips were assigned, and it is precisely
+          the kind of thing that should not sit quietly in a list. */}
+      {shift.unavailable && shift.trips.length > 0 && (
+        <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+          {shift.trips.length === 1 ? "A trip is" : `${shift.trips.length} trips are`} still booked
+          inside this shift, but {shift.reason ? shift.reason.toLowerCase() : "the driver"} takes them
+          off the road. Reassign the work or clear the block.
+        </p>
+      )}
       {shift.trips.length > 0 && <div className="mt-1">{shift.trips.map((t) => <TripLine key={t.id} trip={t} />)}</div>}
     </div>
   );
