@@ -580,7 +580,8 @@ export function ScheduleTab({
             </span>
           </h2>
           <p className="text-xs text-gray-500">
-            {workingCount} of {visible.length} drivers working · {bookedCount} trips booked
+            {workingCount} of {visible.length} drivers working ·{" "}
+            {bookedCount === 1 ? "1 trip" : `${bookedCount} trips`} booked
             {uncoveredCount > 0 && (
               <span className="font-medium text-amber-700">
                 {" "}
