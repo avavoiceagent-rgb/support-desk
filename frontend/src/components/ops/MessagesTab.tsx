@@ -141,13 +141,24 @@ export function MessagesTab({
     void load();
   }, [load]);
 
-  // Unassigned upcoming work is what there is to offer. A job somebody is
-  // already on is not an offer, it is a reassignment, and that belongs on the
-  // Reservations screen where the consequences are visible.
+  // Soonest first, and not filtered to unassigned work.
+  //
+  // It was, and the list came back empty every time: every seeded trip has
+  // somebody on it, so "Send offer" was a button that could never be pressed.
+  // Offering a job that is already covered is a real thing a dispatcher does —
+  // bringing a farmed-out job back in-house, or moving it when somebody calls
+  // in sick — so the option is here with the current holder named, rather than
+  // hidden behind a filter that made the feature look broken.
   useEffect(() => {
     opsApi
-      .trips({ from: new Date().toISOString(), status: "SCHEDULED", limit: 100 })
-      .then((r) => setTrips(r.trips.filter((t) => !t.driverId && !t.affiliateId)))
+      .trips({
+        from: new Date().toISOString(),
+        status: "SCHEDULED",
+        sort: "pickupAt",
+        dir: "asc",
+        limit: 60,
+      })
+      .then((r) => setTrips(r.trips))
       .catch(() => setTrips([]));
   }, [messages.length]);
 
@@ -252,11 +263,16 @@ export function MessagesTab({
                   className={inputClass}
                 >
                   <option value="">Choose an unassigned job…</option>
-                  {trips.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.reference} · {when(t.pickupAt)} · {t.bookedHours}h · {t.vehicleClass}
-                    </option>
-                  ))}
+                  {trips.map((t) => {
+                    const holder = t.driver?.name ?? t.affiliate?.company;
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {t.reference} · {when(t.pickupAt)} · {t.bookedHours}h ·{" "}
+                        {t.vehicleClass.toLowerCase()} —{" "}
+                        {holder ? `currently ${holder}` : "nobody assigned"}
+                      </option>
+                    );
+                  })}
                 </select>
               </Field>
             </div>
@@ -272,6 +288,12 @@ export function MessagesTab({
               Send offer
             </Button>
           </div>
+
+          {offerTripId && trips.find((t) => t.id === offerTripId)?.driverId && (
+            <p className="text-[11px] text-amber-700">
+              Somebody is already on that job. If this offer is accepted they come off it.
+            </p>
+          )}
 
           <form
             onSubmit={(e) => {
