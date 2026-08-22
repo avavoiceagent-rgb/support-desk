@@ -256,7 +256,23 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
       const noVehicle = !outOfArea && rng.chance(0.06);
       const farmedOut = outOfArea || noVehicle;
 
-      const driver = rng.pick(insertedDrivers);
+      // The car has to match the booking. Assigning each driver their default
+      // vehicle regardless produced trips reading "SEDAN" while showing "SUV 4",
+      // and fabricated data that contradicts itself teaches a tester that the
+      // system is confused when it is only the fixture that is.
+      const rank = { SEDAN: 1, SUV: 2, VAN: 3, SPRINTER: 4 } as const;
+      const classOf = (d: (typeof insertedDrivers)[number]) =>
+        insertedVehicles.find((veh) => veh.id === d.defaultVehicleId)?.class;
+      const exact = insertedDrivers.filter((d) => classOf(d) === vehicleClass);
+      // A dispatcher sends the car that was booked. Occasionally the only thing
+      // free is bigger, which is worth having in the data, but a Sprinter on a
+      // sedan job should be the exception it is in real life, not one run in six.
+      const bigger = insertedDrivers.filter((d) => {
+        const c = classOf(d);
+        return c && rank[c] > rank[vehicleClass as keyof typeof rank];
+      });
+      const pool = exact.length && !rng.chance(0.08) ? exact : bigger.length ? bigger : insertedDrivers;
+      const driver = rng.pick(pool);
       const affiliate = outOfArea
         ? rng.pick(insertedAffiliates.filter((a) => !a.overflowPartner))
         : rng.pick(insertedAffiliates.filter((a) => a.overflowPartner));

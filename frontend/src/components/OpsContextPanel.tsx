@@ -32,11 +32,19 @@ const STATUS_STYLE: Record<string, string> = {
   VOID: "text-gray-400",
 };
 
+// One date style for the whole panel. It previously mixed "Wed 22 Jul, 05:00 pm"
+// with "issued 28/07/2026", and neither is how a person writes a time. Adam
+// already says "2:10 PM" in drafts; a staff panel should not disagree with the
+// email sitting beside it.
 function when(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    weekday: "short", day: "numeric", month: "short",
-    hour: "2-digit", minute: "2-digit", hour12: true,
-  });
+  const d = new Date(iso);
+  const date = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  return `${date}, ${time}`;
+}
+
+function onDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 const money = (cents: number) => `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
@@ -100,7 +108,7 @@ function InvoiceRow({ entry }: { entry: OpsInvoice }) {
         <span className={`ml-1 font-medium ${STATUS_STYLE[i.status] ?? "text-gray-600"}`}>
           {i.status.toLowerCase()}
         </span>
-        <span className="ml-1 text-gray-400">· issued {new Date(i.issuedOn).toLocaleDateString("en-GB")}</span>
+        <span className="ml-1 text-gray-400">· issued {onDate(i.issuedOn)}</span>
       </p>
       {i.lines.map((line, n) => (
         <p key={n} className="text-[11px] text-gray-500">
@@ -114,8 +122,12 @@ function InvoiceRow({ entry }: { entry: OpsInvoice }) {
   );
 }
 
+/** A regular customer has plenty of history; the panel should not swamp the email. */
+const VISIBLE = 4;
+
 export function OpsContextPanel({ context }: { context: OpsContext | null }) {
   const [open, setOpen] = useState(true);
+  const [showAll, setShowAll] = useState(false);
   if (!context) return null;
 
   const { trips, invoices, unresolvedReferences } = context;
@@ -124,6 +136,7 @@ export function OpsContextPanel({ context }: { context: OpsContext | null }) {
   if (nothingOnFile) return null;
 
   const count = trips.length + invoices.length;
+  const hidden = Math.max(0, trips.length - VISIBLE) + Math.max(0, invoices.length - VISIBLE);
 
   return (
     <section className="border-b border-gray-100 bg-slate-50/70 px-4 py-2.5">
@@ -149,9 +162,28 @@ export function OpsContextPanel({ context }: { context: OpsContext | null }) {
             </p>
           )}
 
-          {trips.length > 0 && <ul className="space-y-1.5">{trips.map((t) => <TripRow key={t.trip.id} entry={t} />)}</ul>}
+          {trips.length > 0 && (
+            <ul className="space-y-1.5">
+              {(showAll ? trips : trips.slice(0, VISIBLE)).map((t) => (
+                <TripRow key={t.trip.id} entry={t} />
+              ))}
+            </ul>
+          )}
           {invoices.length > 0 && (
-            <ul className="space-y-1.5">{invoices.map((i) => <InvoiceRow key={i.invoice.id} entry={i} />)}</ul>
+            <ul className="space-y-1.5">
+              {(showAll ? invoices : invoices.slice(0, VISIBLE)).map((i) => (
+                <InvoiceRow key={i.invoice.id} entry={i} />
+              ))}
+            </ul>
+          )}
+
+          {hidden > 0 && (
+            <button
+              onClick={() => setShowAll((v) => !v)}
+              className="text-[11px] font-medium text-indigo-600 hover:underline"
+            >
+              {showAll ? "Show fewer" : `Show ${hidden} more`}
+            </button>
           )}
 
           <p className="text-[10px] text-gray-400">
