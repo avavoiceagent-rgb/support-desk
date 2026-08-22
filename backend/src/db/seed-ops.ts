@@ -124,12 +124,23 @@ const AIRPORTS = [
   "Teterboro Airport, Teterboro, NJ 07608",
 ] as const;
 
+/**
+ * Destinations that genuinely leave the service area — every one in a state
+ * other than NY or NJ.
+ *
+ * Mohonk Mountain House was in this list and should not have been: New Paltz
+ * is in New York, so the app's own rule calls that trip INTERNAL while the
+ * fixture labelled it "outside the service area". Fabricated data that
+ * disagrees with the rules it is meant to demonstrate teaches a tester the
+ * wrong thing about the system.
+ */
 const OUT_OF_AREA = [
   { address: "Sheraton Philadelphia Downtown, 201 N 17th St, Philadelphia, PA 19103", state: "PA" },
   { address: "Boston Logan Airport Terminal B, Boston, MA 02128", state: "MA" },
   { address: "The Willard InterContinental, 1401 Pennsylvania Ave NW, Washington, DC 20004", state: "DC" },
   { address: "Foxwoods Resort, 350 Trolley Line Blvd, Mashantucket, CT 06338", state: "CT" },
-  { address: "Mohonk Mountain House, 1000 Mountain Rest Rd, New Paltz, NY 12561", state: "NY" },
+  { address: "The Breakers, 44 Ochre Point Ave, Newport, RI 02840", state: "RI" },
+  { address: "Hotel du Pont, 42 W 11th St, Wilmington, DE 19801", state: "DE" },
 ] as const;
 
 const CUSTOMERS = [
