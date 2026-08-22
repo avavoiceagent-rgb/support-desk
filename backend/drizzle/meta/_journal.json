@@ -71,6 +71,13 @@
       "when": 1787373836166,
       "tag": "0009_trip_events",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787374724472,
+      "tag": "0010_draft_facts",
+      "breakpoints": true
     }
   ]
 }

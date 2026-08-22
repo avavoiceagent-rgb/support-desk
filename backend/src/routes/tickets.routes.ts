@@ -13,6 +13,13 @@ import {
 } from "../services/ticket.service";
 import { getDraftForTicket, setDraftStatus } from "../services/draft.service";
 import { getOpsContext } from "../services/ops-context.service";
+import {
+  createReservationFromTicket,
+  reservationForTicket,
+  suggestedReservation,
+} from "../ops/reservations";
+import { actorFor } from "../ops/trip-events";
+import { OpsError } from "../ops/errors";
 import { getStats } from "../services/stats.service";
 import { getReports } from "../services/reports.service";
 import { ALL_STATUSES, ALL_QUEUES, ALL_RESERVATION_TYPES, ALL_RESERVATION_SOURCES } from "../types";
@@ -232,5 +239,59 @@ ticketsRouter.get("/:ticketId/attachments/:attachmentId", async (req, res) => {
   } catch (err) {
     console.error("[attachment-download] failed:", err);
     res.status(502).json({ error: "Failed to download attachment" });
+  }
+});
+
+
+// --- Turning a ticket into a reservation ----------------------------------
+//
+// Lives here rather than under /ops on purpose. Everything under /ops is
+// admin-only to write, and this is the ordinary work of whoever is answering
+// the ticket. Making a booking is not an administrative act; changing the
+// roster is.
+
+/** What the form should open with: the existing trip, or what the draft kept. */
+ticketsRouter.get("/:id/reservation", async (req, res) => {
+  const ticketId = param(req, "id");
+  const [trip, suggested] = await Promise.all([
+    reservationForTicket(ticketId),
+    suggestedReservation(ticketId),
+  ]);
+  res.json({ trip, suggested });
+});
+
+const reservationSchema = z.object({
+  passengerName: z.string().min(1, "A reservation needs a passenger name."),
+  passengerPhone: z.string().nullable().optional(),
+  bookerName: z.string().nullable().optional(),
+  bookerEmail: z.string().nullable().optional(),
+  pickupAddress: z.string().min(1, "Where is the pickup?"),
+  dropoffAddress: z.string().min(1, "Where are they going?"),
+  stops: z.array(z.string()).optional(),
+  pickupAtLocal: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Pick a date and a time."),
+  bookedHours: z.coerce.number().int().min(1, "A booking is at least one hour."),
+  vehicleClass: z.enum(["SEDAN", "SUV", "VAN", "SPRINTER"], "Choose the class of car."),
+  passengerCount: z.coerce.number().int().min(1).nullable().optional(),
+  luggageCount: z.coerce.number().int().min(0).nullable().optional(),
+  flightNumber: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+ticketsRouter.post("/:id/reservation", async (req, res) => {
+  const parsed = reservationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+  }
+  try {
+    const actor = await actorFor(req.session?.userId);
+    const trip = await createReservationFromTicket(param(req, "id"), parsed.data, actor);
+    res.status(201).json({ trip });
+  } catch (err) {
+    // The refusal here is written to be read — "T-10441 was already created
+    // from this ticket" — so it is passed through rather than flattened.
+    if (err instanceof OpsError) return res.status(err.status).json({ error: err.message });
+    throw err;
   }
 });

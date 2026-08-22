@@ -20,6 +20,7 @@ import { Composer } from "../components/Composer";
 import { useDraft } from "../hooks/useDraft";
 import { useOpsContext } from "../hooks/useOpsContext";
 import { OpsContextPanel } from "../components/OpsContextPanel";
+import { ReservationPanel } from "../components/ReservationPanel";
 import { Avatar } from "../components/Avatar";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime } from "../lib/ui";
@@ -223,6 +224,8 @@ export function TicketDetailPage() {
               </div>
             </div>
             <TriageReason ticket={ticket} className="mt-3 rounded-lg" />
+
+            <ReservationPanel ticketId={ticket.id} />
 
             <div className="mt-3 overflow-hidden rounded-lg border border-gray-200">
               <OpsContextPanel context={opsContext} />

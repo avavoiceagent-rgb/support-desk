@@ -126,6 +126,29 @@ export const messages = pgTable(
  * opens the ticket, reads it, edits it and sends it under their own name.
  * One per ticket — regenerating replaces it.
  */
+/**
+ * What the desk worked out about a booking, in the form a reservation needs.
+ *
+ * Addresses are the geocoded ones, not what the customer typed, and the pickup
+ * is the time Adam recommended rather than the time they asked for — those are
+ * the values in the email they received.
+ */
+export interface DraftFacts {
+  passengerName: string | null;
+  passengerPhone: string | null;
+  bookerName: string | null;
+  bookerEmail: string | null;
+  pickupAddress: string | null;
+  dropoffAddress: string | null;
+  stops: string[];
+  /** New York wall clock, "2026-09-22T09:00". */
+  pickupAtLocal: string | null;
+  vehicleClass: VehicleClass | null;
+  passengerCount: number | null;
+  luggageCount: number | null;
+  flightNumber: string | null;
+}
+
 export const ticketDrafts = pgTable("ticket_drafts", {
   id: cuid(),
   ticketId: text("ticket_id")
@@ -142,6 +165,19 @@ export const ticketDrafts = pgTable("ticket_drafts", {
   internalNotes: jsonb("internal_notes").notNull().$type<string[]>(),
   /** The indicative market rate and its sources, if one was found. */
   rate: jsonb("rate").$type<unknown>(),
+  /**
+   * The booking facts behind the prose, kept rather than thrown away.
+   *
+   * The draft used to be the only survivor: addresses geocoded, a pickup time
+   * worked out and a vehicle chosen, all of it dissolved into a paragraph. So
+   * turning an agreed booking into a reservation meant reading the English
+   * back or asking the model a second time, and a second reading is a second
+   * chance to differ from what the customer was actually told.
+   *
+   * Null on drafts written before this existed, which the screen handles by
+   * asking the person to fill the form in.
+   */
+  facts: jsonb("facts").$type<DraftFacts | null>(),
   /** READY (awaiting review) | USED (loaded into the composer) | DISMISSED */
   status: text("status").notNull().default("READY"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

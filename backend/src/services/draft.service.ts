@@ -10,6 +10,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { tickets, messages, ticketDrafts, users } from "../db/schema";
+import { vehicleClassFromText } from "../ops/reservations";
 import { isClassificationEnabled } from "../ai/classifier";
 import { extractBooking } from "../booking/extract";
 import { verifyAddress, estimateRoute, isMapsEnabled, resolveServiceArea } from "../booking/maps";
@@ -180,6 +181,30 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
         questions: review.questions,
         internalNotes: review.internalNotes,
         rate: rate ?? null,
+        // Kept so an agreed booking can become a reservation without anybody
+        // reading the English back or asking the model a second time. The
+        // addresses are the geocoded ones and the pickup is the time we
+        // recommended, because those are the values in the email the customer
+        // received.
+        facts: {
+          passengerName:
+            booking.passengerName ?? (booking.bookerIsPassenger ? booking.bookerName : null),
+          passengerPhone:
+            booking.passengerPhone ??
+            (booking.useBookerPhoneForPassenger ? booking.bookerPhone : null),
+          bookerName: booking.bookerName ?? ticket.requesterName ?? null,
+          bookerEmail: ticket.requesterEmail ?? first.fromAddress ?? null,
+          pickupAddress: pickup?.formattedAddress ?? booking.pickupAddressText,
+          dropoffAddress: dropoff?.formattedAddress ?? booking.dropoffAddressText,
+          stops: stops
+            .map((stop, i) => stop?.formattedAddress ?? booking.stops[i]?.addressText ?? null)
+            .filter((a): a is string => Boolean(a)),
+          pickupAtLocal: plan.recommendedPickupLocal ?? booking.requestedPickupLocal,
+          vehicleClass: vehicleClassFromText(review.vehicleSuggestion),
+          passengerCount: booking.passengerCount,
+          luggageCount: booking.luggageCount,
+          flightNumber: booking.flightNumber,
+        },
         status: "READY",
       })
       .onConflictDoNothing({ target: ticketDrafts.ticketId })
