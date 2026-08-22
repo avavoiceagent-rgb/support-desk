@@ -37,157 +37,201 @@ it.
 
 ## Task
 
-Written 21 August, after the lookup half landed and was verified against a real
-database.
+Written 22 August. Amar wants the operational data to be usable, not just
+present: tabs for driver schedules, an editable affiliate list, and a way to
+look through the reservations. He answered the shape questions:
 
-**Surface what the desk already knows about a ticket — to staff, not to
-customers.**
+- **Schedule reads as a list by driver** — pick a driver, see their shifts and
+  the trips inside them. Not a week grid.
+- **Admins can edit everything**: shifts, affiliates, drivers and vehicles, and
+  the reservations themselves.
+- **Everyone can look, only admins can change.** Same split as the ticket queue:
+  `requireAuth` to read, `requireAdmin` to write (`src/middleware/auth.ts`).
 
-`backend/src/ops/lookup.ts` can now find a trip or an invoice from the way a
-customer writes its reference. Nothing calls it. The obvious next move is to
-let Adam write about trips in a draft, and that is the wrong first step: a
-drafted sentence about somebody's booking is a customer-facing claim, and we
-would be making it before anyone has seen whether the lookups pick the right
-record from a real email. So this task stops one step short of that, on
-purpose.
+**Your half is the API. The Cowork session is building the screens against the
+contract below, starting now** — so the shapes here are a commitment, not a
+suggestion. If one of them is wrong, say so in the reply rather than quietly
+improving it, or the two halves will not meet.
 
-Build a read-only endpoint that answers: *what do we already have on file
-about this ticket?*
+Put it in `backend/src/routes/ops.routes.ts`, mounted at `/api/ops`, with the
+query work in `backend/src/ops/` beside the existing lookup and availability
+modules.
 
-**1. Pull references out of the email text.** A new pure function — put it in
-`backend/src/ops/references.ts` — that reads a subject and body and returns any
-trip and invoice references it finds. People write them as `T-10432`,
-`t10432`, `#10432`, `booking 10432`, `INV-10432`, `invoice 10432`, sometimes
-several in one email. Return them de-duplicated, in the order they appear.
+**Read (requireAuth):**
 
-Two traps worth testing: a bare five-digit number with no word near it is NOT a
-reference (it could be a postcode, a phone fragment, a flight number), and
-`invoice 10432` and `INV-10432` in the same email are one invoice, not two.
+    GET /api/ops/drivers
+      -> { drivers: [{ id, name, phone, email, licenceNumber, active,
+                       defaultVehicle: { id, label, class } | null }] }
 
-**2. Add `GET /api/tickets/:id/ops-context`.** It reads the ticket's first
-inbound message, extracts references, looks them up, and also returns that
-sender's recent and upcoming trips via `findTripsForEmail`. Compute it on
-request — do not store it. A stored copy would be wrong the moment a trip moved,
-and we have already been bitten once this week by data that outlived its truth.
+    GET /api/ops/drivers/:id/schedule?from=ISO&to=ISO
+      -> { driver, shifts: [{ id, startsAt, endsAt, unavailable, reason,
+                              vehicle: { id, label, class } | null,
+                              trips: [TripSummary] }] }
+      Trips belong INSIDE the shift they fall in. A trip with no covering shift
+      goes in a separate `unscheduledTrips` array rather than being dropped —
+      that is a real dispatch problem and hiding it would be the wrong kindness.
 
-Return the trips and invoices found, plus a short machine-readable reason for
-each: quoted directly in the email, or matched by the sender's address. Whoever
-reads this needs to know the difference between "they named this booking" and
-"this is the last thing they booked".
+    GET /api/ops/vehicles   -> { vehicles: [...] }
+    GET /api/ops/affiliates -> { affiliates: [...] }   (include inactive; the UI filters)
+    GET /api/ops/trips?from&to&status&driverId&affiliateId&q&limit&offset
+      -> { trips: [TripSummary], total }
+      `q` matches the reference, passenger name or booker email, case-insensitively.
+      Default limit 50, hard maximum 200.
 
-**3. Nothing customer-facing.** No changes to `draft.service.ts`, the composer,
-or any prompt. This endpoint feeds a panel for staff that the Cowork session
-will build, because it can see the running app and you cannot.
+`TripSummary` is the same shape `findTripByReference` already returns — reference,
+passenger, addresses, pickupAt, bookedHours, vehicleClass, status, assignedKind,
+farmOutReason, and the nested driver / vehicle / affiliate. Reuse it; do not
+invent a second trip shape.
 
-**4. Tests.** The reference-extraction function is pure, so test it hard — every
-spelling above, the negative cases, duplicates across spellings, and an email
-containing no references at all. The endpoint needs at least: a ticket whose
-email quotes a real trip, one quoting a reference that does not exist (must
-return an empty list, not an error), and one from a sender with history but no
-reference quoted.
+**Write (requireAdmin):**
 
-Note the endpoint tests need Postgres, which your machine does not have. Say so
-plainly in your reply as you did last time rather than reporting them as
-passing, and the Cowork session will run them.
+    POST   /api/ops/shifts            { driverId, vehicleId?, startsAt, endsAt, unavailable?, reason? }
+    PATCH  /api/ops/shifts/:id        any of the above
+    DELETE /api/ops/shifts/:id
+    POST   /api/ops/affiliates        PATCH /api/ops/affiliates/:id
+    POST   /api/ops/drivers           PATCH /api/ops/drivers/:id
+    POST   /api/ops/vehicles          PATCH /api/ops/vehicles/:id
+    PATCH  /api/ops/trips/:id         { pickupAt?, bookedHours?, driverId?, vehicleId?,
+                                        affiliateId?, status?, notes? }
+
+Rules that matter more than the endpoints:
+
+1. **Validate with zod**, as the existing routes do. Reject an end before its
+   start, a shift longer than 24 hours, and unknown ids — with a message a
+   person could act on, not just a 400.
+2. **Refuse to double-book.** Assigning a driver to a trip that overlaps another
+   of their trips must fail with a clear error naming the clash. The overlap
+   logic already exists in `availability.ts`; reuse it rather than writing a
+   second version that can disagree with the first.
+3. **Never hard-delete a driver, vehicle or affiliate.** They have trips
+   pointing at them and the history has to stay readable — set `active: false`.
+   Shifts are the exception: deleting one is normal and harmless.
+4. **Nothing here touches drafting or the ticket tables.**
+
+Tests: the validation rejections, the double-booking refusal, that deactivating
+keeps past trips readable, and that a write from a non-admin session is
+refused. They need Postgres, so say plainly what you could not verify, as
+before.
 
 ## Reply
 
-Written 22 August by Claude Code. Built as asked. Nothing customer-facing moved.
+Written 22 August by Claude Code. Built to the contract. Nothing touches
+drafting or the ticket tables — `git show --stat` confirms that in one line.
 
-**What landed**
+**Files**
 
-- `backend/src/ops/references.ts` — `extractReferences(subject, body)`, pure,
-  returning canonical trip and invoice references de-duplicated in the order
-  they appear. It reuses `normaliseReference` from `lookup.ts` for the canonical
-  form, so there is still only one definition of what `T-10432` means.
-- `backend/src/services/ops-context.service.ts` — `getOpsContext(ticketId)`.
-- `GET /api/tickets/:id/ops-context` in `tickets.routes.ts`, registered above
-  the bare `/:id` so the path is not swallowed as an id. 404 for an unknown
-  ticket; otherwise `{ context }`.
-- `backend/src/ops/__tests__/references.test.ts` (13 tests) and
-  `backend/src/services/__tests__/ops-context.service.test.ts` (11 tests).
+    backend/src/routes/ops.routes.ts   the endpoints, mounted at /api/ops
+    backend/src/ops/directory.ts       drivers, vehicles, affiliates
+    backend/src/ops/schedule.ts        the by-driver schedule, shift writes
+    backend/src/ops/trips.ts           browsing, and the double-booking refusal
+    backend/src/ops/errors.ts          OpsError -> status + message
 
-Computed per request, stored nowhere. `draft.service.ts`, the composer and the
-prompts are untouched — `git show --stat` will confirm that in one line.
+**The contract, confirmed — read this bit if you read nothing else**
 
-Each record carries a reason. I used three rather than two: `QUOTED_IN_EMAIL`,
-`SENDER_UPCOMING`, `SENDER_RECENT`. You asked for the difference between "they
-named this booking" and "this is the last thing they booked", and the second of
-those splits again — the trip they have coming on Thursday and the one they took
-in March are both "matched by sender" but a person reading the panel treats them
-completely differently. Quoted always wins a tie, so a trip that is both named
-in the email and their latest booking appears once, as quoted.
+Everything is as specified. Four details you cannot see from the task text and
+will hit within an hour of building against it:
 
-Extraction is 14 tests now, not 13, and the suite is 226. All still pass here
-without a database.
+1. **`from` and `to` must be full ISO datetimes, not bare dates.**
+   `2026-09-22T00:00:00Z` works, `2026-09-22` is rejected with 400. Offsets are
+   accepted too (`+01:00`). I verified this against the real zod schema rather
+   than assuming.
+2. **Response envelopes.** Reads: `{ drivers }`, `{ vehicles }`, `{ affiliates }`,
+   `{ trips, total }`. The schedule is the one that is *not* wrapped — it
+   returns `{ driver, shifts, unscheduledTrips }` at the top level, as the task
+   wrote it. Writes return `{ shift }`, `{ driver }`, `{ vehicle }`,
+   `{ affiliate }`, `{ trip }`; `DELETE /shifts/:id` returns 204 with no body.
+3. **Status codes.** 400 validation (message is the zod message, not "Invalid
+   input"), 403 non-admin write, 404 unknown id, **409 double-booking**. If you
+   are switching on status, 409 is the one that means "the refusal was about a
+   clash" and its `error` string is written to be shown to the user verbatim.
+4. **`limit` over 200 is a 400, not a silent clamp.** "Hard maximum" could have
+   meant either; refusing tells you that you asked for something you will not
+   get, where clamping would have you paginate through a set that silently
+   stopped growing. Say if you would rather it clamped — it is one line.
 
-**Two additions beyond the brief**
+`TripSummary` is exactly `TripRecord` from `lookup.ts`: every trip column plus
+nested `driver`, `vehicle`, `affiliate`. There is no second trip shape anywhere
+in the system, which is why two of the changes below are exports rather than new
+code.
 
-`unresolvedReferences` — references the customer quoted that match nothing on
-file. You specified that an unknown reference returns an empty list rather than
-an error, and it does. But dropping it silently loses the most interesting case
-on that panel: somebody quoting `T-99999` is mistyping, or talking about another
-company, and a person should see that they quoted *something*. It is a separate
-field, so it costs nothing to ignore.
+**Two refactors, both behaviour-preserving**
 
-`quotedReferences` is returned too, so the panel can show what was matched on
-without re-deriving it.
+You said to reuse the overlap logic in `availability.ts` rather than write a
+second one. It was not reusable — it was an inline expression in the middle of
+`findAvailableDrivers`. So it is now `overlapsWindow(...)`, exported, and
+`findAvailableDrivers` calls it. Same for `selectTrips`/`toTripRecord` in
+`lookup.ts`, now exported so the schedule and browse screens return the same
+trip shape as everything else. The existing availability and lookup tests are
+untouched and still assert the same things.
 
-**What I could not verify — now resolved**
+**Decisions inside the rules you set**
 
-The 11 endpoint tests need Postgres and this machine has none, so I did not
-report them as passing. **The Cowork session has since run them: 225 tests pass
-against a real Postgres, typecheck clean.**
+*The double-booking refusal uses no travel buffer.* `findAvailableDrivers`
+keeps 45 minutes either side so it *suggests* sensibly. This is a *refusal*, and
+a back-to-back turnaround a dispatcher has chosen deliberately is a normal day —
+blocking it would be the code overruling the person who can see the road. So a
+trip ending at 12:00 and one starting at 12:00 is allowed; genuine overlap is
+refused. There is a test for each.
 
-The 13 extraction tests need no database and **do pass here**, which is the point
-of keeping that function pure — it is the part that guesses.
+*A trip that runs past the end of its shift counts as uncovered* and goes to
+`unscheduledTrips`. Partial cover is exactly the case worth surfacing — the
+driver clocks off at 12 and the job runs to 13 — and folding it into the shift
+would report it as fine.
 
-One bug I did catch by reading rather than running, worth knowing because it
-would have looked like a code fault when you ran it: my first draft of the
-service test pinned fixtures to a fixed date in September. `getOpsContext` calls
-`findTripsForEmail` without a `now`, so it asks the real system clock whether a
-trip is past or upcoming — every "recent" fixture would have been in the future
-and every `SENDER_RECENT` assertion would have failed. The fixtures are now
-relative to the real clock, in whole days so there is no boundary to race.
+*Cancelled trips clash with nothing*, and are excluded from the refusal. They
+still appear everywhere they are read: on the schedule, in the browse list, in
+search results.
 
-**Where I would push back**
+*The clash message is in New York time, not UTC.* "Marco Rinaldi is already on
+T-10432 (22 Sep, 10:00-13:00). Move or reassign that first." A dispatcher told
+"13:00 UTC" has to do arithmetic before they can act, which defeats the point of
+writing an actionable message.
 
-*`#10432` was not safely a trip reference — **settled, and now removed**.* You
-listed it among the trip spellings and I first implemented it with a four-digit
-floor, which kept today's ticket numbers out but was a collision scheduled for
-the day ticket numbers reach four digits. Amar agreed the fault was in the spec
-and asked for the form to be dropped outright rather than floored, which is the
-better call: a floor with an expiry date is worse than no rule.
+*One rule I added:* a deactivated driver is refused new work, with their name in
+the message. Deactivation has to mean something or it is just a flag. Past trips
+still show them, which is the point of never deleting.
 
-A bare `#10432` now extracts nothing, at any length. `booking #10432`,
-`invoice #10432` and `trip no. #10432` still work — the word carries the
-meaning and the hash is only punctuation between it and the digits. There are
-two tests: one asserting the bare form finds nothing (`#60`, `#1234`, `#10432`,
-"please cancel #10432"), and one asserting the worded forms still do, so
-dropping the first cannot silently break the second. The reason is written into
-the file header as well, because this is the kind of thing that gets helpfully
-added back.
+*The schedule defaults to now → +14 days* when `from`/`to` are absent.
 
-*A number is never a reference without a word next to it.* That is the rule the
-whole file rests on, and it is why "postcode 10118", "flight DL2801", "917 555
-0142" and a bare "10432" all extract nothing. There are tests for each. The cost
-is that a customer who writes only "please cancel 10432" gets nothing found —
-correctly, in my view, because guessing there is how the passenger-name regex
-went wrong.
+*Browsing is newest pickup first.* A caller wanting a diary passes a range.
 
-**Housekeeping**
+**What I could not verify**
 
-The standing candidates lost two corrections I made on 22 August when this file
-was rewritten: the Postgres count went back to "17" (it is 64 now — it changes
-every time an ops test file is added, so it may be worth not quoting a number at
-all), and the note about the live tables now existing but being empty was
-dropped, though the newer "Seeding production is Amar's step alone" entry covers
-the same ground better than mine did. I have left both alone this time rather
-than re-editing your list under you.
+Most of it. 54 new tests; **18 run on this machine and pass**, the other 36 need
+Postgres and are unverified here. Suite is 280 tests, 180 passing, and **zero
+assertion failures** — all 100 failures are the connection refusing. Typecheck
+is clean.
 
-The HTTP layer itself is not directly tested: there is no supertest in this repo
-and every existing route is covered through its service, so I followed that.
-The route is three lines and a 404.
+The 18 that do run are the ones I could make runnable without a database, and
+they are deliberately the riskiest parts rather than the easiest:
+
+- `ops-guards.test.ts` (7) — the permission split, below.
+- `overlapsWindow` (5) — the shared collision rule, including that back-to-back
+  is not a clash.
+- shift range validation and `resolveWindow` (6) — these reject before touching
+  the database, which is why they are testable, and why the range is checked
+  first.
+
+**How the non-admin test is done, since it is not what you asked for**
+
+There is no supertest in this repo and every existing route is tested through
+its service, so adding an HTTP test dependency for one assertion seemed the
+wrong trade. Instead `ops-guards.test.ts` walks the router's own stack and
+asserts that *every* write route carries `requireAdmin`, that no read route
+does, and that the only `DELETE` in the whole router is `/shifts/:id`. Plus
+`requireAdmin` itself is unit-tested for agent, admin and no-session.
+
+I think this is stronger than the test you asked for, not weaker: a single
+"non-admin write is refused" case proves one endpoint is guarded, while this
+proves all eleven are and keeps proving it for routes added later. What it does
+*not* prove is that Express actually runs the middleware it is holding — that is
+Express's own behaviour, verified by every other guarded route in the app. If
+you want the belt-and-braces HTTP test too, say so and I will add supertest.
+
+**Nothing customer-facing**
+
+No changes to `draft.service.ts`, the composer, the prompts, `tickets`, or
+`messages`.
 
 ---
 

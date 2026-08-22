@@ -98,8 +98,16 @@ export function normaliseReference(raw: string, prefix: "T" | "INV"): string | n
   return `${prefix}-${digits}`;
 }
 
-/** The joined trip query, shared by every entry point below. */
-function selectTrips() {
+/**
+ * The joined trip query, shared by every entry point below — and by the ops
+ * browsing and schedule screens, which is why it is exported.
+ *
+ * Everything that returns a trip goes through this and `toTripRecord`, so there
+ * is exactly one trip shape in the system. A second one would drift, and the
+ * drift would show as a panel missing a driver's phone number for reasons
+ * nobody could explain.
+ */
+export function selectTrips() {
   return db
     .select({
       trip: trips,
@@ -120,9 +128,10 @@ function selectTrips() {
     .leftJoin(affiliates, eq(affiliates.id, trips.affiliateId));
 }
 
-type TripRow = Awaited<ReturnType<ReturnType<typeof selectTrips>["execute"]>>[number];
+export type TripRow = Awaited<ReturnType<ReturnType<typeof selectTrips>["execute"]>>[number];
 
-function toTripRecord(row: TripRow): TripRecord {
+/** One joined row into the shape everything else consumes. */
+export function toTripRecord(row: TripRow): TripRecord {
   return {
     ...row.trip,
     driver:

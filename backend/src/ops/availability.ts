@@ -15,6 +15,32 @@ import { affiliates, driverShifts, drivers, trips, vehicles } from "../db/schema
 
 export type VehicleClass = "SEDAN" | "SUV" | "VAN" | "SPRINTER";
 
+/** Milliseconds in an hour, spelled once. */
+const HOUR_MS = 3_600_000;
+
+/**
+ * Does a booking collide with a window?
+ *
+ * The single definition of "these two overlap", used both by the availability
+ * search below and by the double-booking refusal in `trips.ts`. Two versions of
+ * this would eventually disagree, and the disagreement would show up as a
+ * dispatcher being told a driver is free by one screen and double-booked by
+ * another.
+ *
+ * Touching at the edges is not an overlap: a trip ending at 3pm and one
+ * starting at 3pm are back to back, which is a normal day's work.
+ */
+export function overlapsWindow(
+  tripStart: Date,
+  tripHours: number,
+  windowStart: Date,
+  windowEnd: Date
+): boolean {
+  const start = tripStart.getTime();
+  const end = start + tripHours * HOUR_MS;
+  return start < windowEnd.getTime() && end > windowStart.getTime();
+}
+
 /** Bigger vehicles can cover a smaller booking; the reverse is not true. */
 const CLASS_RANK: Record<VehicleClass, number> = { SEDAN: 1, SUV: 2, VAN: 3, SPRINTER: 4 };
 
@@ -106,10 +132,9 @@ export async function findAvailableDrivers(query: AvailabilityQuery): Promise<Av
     if (trip.pickupAt >= dayStart && trip.pickupAt < dayEnd) {
       dayCount.set(trip.driverId, (dayCount.get(trip.driverId) ?? 0) + 1);
     }
-    const start = trip.pickupAt.getTime();
-    const end = start + trip.bookedHours * 3_600_000;
-    const overlaps = start < windowEnd.getTime() && end > windowStart.getTime();
-    if (overlaps) clashes.set(trip.driverId, (clashes.get(trip.driverId) ?? 0) + 1);
+    if (overlapsWindow(trip.pickupAt, trip.bookedHours, windowStart, windowEnd)) {
+      clashes.set(trip.driverId, (clashes.get(trip.driverId) ?? 0) + 1);
+    }
   }
 
   return rows
