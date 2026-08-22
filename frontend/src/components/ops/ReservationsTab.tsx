@@ -1,15 +1,15 @@
-// Browsing the reservations, and changing one.
+// The reservations, as a table you can read down.
 //
-// Cancelled trips are in the list rather than filtered out: "why was I charged
-// for a trip I cancelled" is a real email, and the record behind it is exactly
-// what somebody working that ticket needs to find.
+// Sorting is done by the server, not here. Reordering the fifty rows this
+// screen happens to be holding would put the first "A" of the current page at
+// the top of three hundred bookings and label the column alphabetical, which
+// is a wrong answer delivered confidently — the worst kind. Clicking a heading
+// re-asks the question and goes back to page one.
 //
-// The one rule the server enforces on a change is that a driver cannot be in
-// two places at once. When it refuses it says who is on what and when, and
-// that sentence is shown here word for word — replacing it with "could not
-// save" would throw away the only part a dispatcher can act on.
+// Cancelled trips stay in the list. "Why was I charged for a trip I cancelled"
+// is a real email and that record is exactly what answers it.
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   opsApi,
   toDateTimeInput,
@@ -20,20 +20,21 @@ import {
   type Affiliate,
   type Driver,
   type Trip,
+  type TripSort,
   type TripStatus,
   type Vehicle,
 } from "../../api/ops";
 import {
   Button,
-  Card,
-  Empty,
   ErrorNote,
   Field,
   Modal,
+  OPERATING_ZONE_LABEL,
   StatusPill,
   apiMessage,
+  atTime,
   inputClass,
-  shortAddress,
+  onDate,
   when,
 } from "./shared";
 
@@ -48,9 +49,80 @@ const STATUS_LABEL: Record<TripStatus, string> = {
 };
 
 function assignedTo(trip: Trip): string {
-  if (trip.driver) return `${trip.driver.name}${trip.vehicle ? ` · ${trip.vehicle.label}` : ""}`;
-  if (trip.affiliate) return `${trip.affiliate.company} (partner)`;
-  return "Unassigned";
+  if (trip.driver) return trip.driver.name;
+  if (trip.affiliate) return trip.affiliate.company;
+  return "—";
+}
+
+/** "230 Park Ave → JFK Terminal 4", short enough for a cell. */
+function shortStop(address: string): string {
+  return address.split(",")[0];
+}
+
+interface Sort {
+  by: TripSort;
+  dir: "asc" | "desc";
+}
+
+const COLUMNS: { key: TripSort | null; label: string; align?: "right"; className?: string }[] = [
+  { key: "reference", label: "Ref" },
+  { key: "pickupAt", label: `Pickup (${OPERATING_ZONE_LABEL})` },
+  { key: "bookedHours", label: "Hrs", align: "right" },
+  { key: "passengerName", label: "Passenger" },
+  { key: null, label: "From → To", className: "w-full" },
+  { key: "vehicle", label: "Car" },
+  { key: "driver", label: "Driver / partner" },
+  { key: "status", label: "Status" },
+];
+
+function HeaderCell({
+  column,
+  sort,
+  onSort,
+}: {
+  column: (typeof COLUMNS)[number];
+  sort: Sort;
+  onSort: (key: TripSort) => void;
+}) {
+  const active = column.key !== null && sort.by === column.key;
+  const base = `whitespace-nowrap px-3 py-2 text-[11px] font-medium ${
+    column.align === "right" ? "text-right" : "text-left"
+  } ${column.className ?? ""}`;
+
+  if (column.key === null) {
+    return <th className={`${base} text-gray-500`}>{column.label}</th>;
+  }
+  return (
+    <th className={`${base} p-0`}>
+      <button
+        onClick={() => onSort(column.key as TripSort)}
+        className={`inline-flex items-center gap-1 rounded px-1 py-0.5 transition-colors ${
+          active ? "text-indigo-700" : "text-gray-500 hover:text-gray-900"
+        }`}
+      >
+        {column.label}
+        <span className={active ? "" : "opacity-0 group-hover:opacity-40"}>
+          {active ? (sort.dir === "asc" ? "▲" : "▼") : "▲"}
+        </span>
+      </button>
+    </th>
+  );
+}
+
+function Cell({
+  children,
+  title,
+  className,
+}: {
+  children: ReactNode;
+  title?: string;
+  className?: string;
+}) {
+  return (
+    <td className={`px-3 py-1.5 align-middle ${className ?? ""}`} title={title}>
+      {children}
+    </td>
+  );
 }
 
 function TripEditor({
@@ -117,7 +189,7 @@ function TripEditor({
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Pickup">
+          <Field label={`Pickup (${OPERATING_ZONE_LABEL})`}>
             <input
               type="datetime-local"
               value={pickupAt}
@@ -230,6 +302,7 @@ export function ReservationsTab({
   const [driverId, setDriverId] = useState("");
   const [affiliateId, setAffiliateId] = useState("");
   const [q, setQ] = useState("");
+  const [sort, setSort] = useState<Sort>({ by: "pickupAt", dir: "desc" });
   const [offset, setOffset] = useState(0);
 
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -249,6 +322,8 @@ export function ReservationsTab({
         driverId: driverId || undefined,
         affiliateId: affiliateId || undefined,
         q: q.trim() || undefined,
+        sort: sort.by,
+        dir: sort.dir,
         limit: PAGE_SIZE,
         offset,
       });
@@ -261,20 +336,30 @@ export function ReservationsTab({
     } finally {
       setLoading(false);
     }
-  }, [from, to, status, driverId, affiliateId, q, offset]);
+  }, [from, to, status, driverId, affiliateId, q, sort, offset]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // Any change to the filters puts us back on the first page. Staying on page
-  // four of a result set that no longer has four pages shows an empty screen
-  // and looks like "no matches".
-  function filterSetter<T>(set: (v: T) => void) {
+  // Any change to the filters or the sort goes back to page one. Staying on
+  // page four of a result set that no longer has four pages shows an empty
+  // screen, which reads as "no matches".
+  function onFilter<T>(set: (v: T) => void) {
     return (v: T) => {
       setOffset(0);
       set(v);
     };
+  }
+
+  function onSort(key: TripSort) {
+    setOffset(0);
+    setSort((current) =>
+      current.by === key
+        ? { by: key, dir: current.dir === "asc" ? "desc" : "asc" }
+        : // Time reads newest-first; everything else reads A to Z.
+          { by: key, dir: key === "pickupAt" ? "desc" : "asc" }
+    );
   }
 
   const first = total === 0 ? 0 : offset + 1;
@@ -287,7 +372,7 @@ export function ReservationsTab({
           <Field label="Search" hint="Reference, passenger or booker email">
             <input
               value={q}
-              onChange={(e) => filterSetter(setQ)(e.target.value)}
+              onChange={(e) => onFilter(setQ)(e.target.value)}
               placeholder="T-10432, Costa, ana@…"
               className={inputClass}
             />
@@ -298,7 +383,7 @@ export function ReservationsTab({
             <input
               type="date"
               value={from}
-              onChange={(e) => filterSetter(setFrom)(e.target.value)}
+              onChange={(e) => onFilter(setFrom)(e.target.value)}
               className={inputClass}
             />
           </Field>
@@ -308,7 +393,7 @@ export function ReservationsTab({
             <input
               type="date"
               value={to}
-              onChange={(e) => filterSetter(setTo)(e.target.value)}
+              onChange={(e) => onFilter(setTo)(e.target.value)}
               className={inputClass}
             />
           </Field>
@@ -317,7 +402,7 @@ export function ReservationsTab({
           <Field label="Status">
             <select
               value={status}
-              onChange={(e) => filterSetter(setStatus)(e.target.value)}
+              onChange={(e) => onFilter(setStatus)(e.target.value)}
               className={inputClass}
             >
               <option value="">Any</option>
@@ -333,7 +418,7 @@ export function ReservationsTab({
           <Field label="Driver">
             <select
               value={driverId}
-              onChange={(e) => filterSetter(setDriverId)(e.target.value)}
+              onChange={(e) => onFilter(setDriverId)(e.target.value)}
               className={inputClass}
             >
               <option value="">Anyone</option>
@@ -349,7 +434,7 @@ export function ReservationsTab({
           <Field label="Partner">
             <select
               value={affiliateId}
-              onChange={(e) => filterSetter(setAffiliateId)(e.target.value)}
+              onChange={(e) => onFilter(setAffiliateId)(e.target.value)}
               className={inputClass}
             >
               <option value="">Any</option>
@@ -371,6 +456,7 @@ export function ReservationsTab({
               setDriverId("");
               setAffiliateId("");
               setQ("");
+              setSort({ by: "pickupAt", dir: "desc" });
             }}
           >
             Clear filters
@@ -380,10 +466,12 @@ export function ReservationsTab({
 
       <ErrorNote message={error} />
 
-      <Card
-        title={total === 0 ? "Reservations" : `Reservations · ${first}–${last} of ${total}`}
-        action={
-          total > PAGE_SIZE ? (
+      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-5 py-3">
+          <h2 className="text-sm font-semibold text-gray-900">
+            {total === 0 ? "Reservations" : `Reservations · ${first}–${last} of ${total}`}
+          </h2>
+          {total > PAGE_SIZE && (
             <span className="flex gap-2">
               <Button onClick={() => setOffset(Math.max(offset - PAGE_SIZE, 0))} disabled={offset === 0}>
                 Previous
@@ -392,44 +480,98 @@ export function ReservationsTab({
                 Next
               </Button>
             </span>
-          ) : undefined
-        }
-      >
-        {loading && <Empty>Loading…</Empty>}
-        {!loading && trips.length === 0 && <Empty>No reservations match those filters.</Empty>}
-        {!loading &&
-          trips.map((t) => (
-            <div key={t.id} className="border-t border-gray-100 px-5 py-3 first:border-t-0">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold tabular-nums text-gray-900">{t.reference}</span>
-                    <StatusPill status={t.status} />
-                    <span className="text-sm text-gray-700">{when(t.pickupAt)}</span>
-                    <span className="text-xs text-gray-500">{t.bookedHours}h</span>
-                  </div>
-                  <p className="mt-1 text-xs text-gray-600">
-                    {t.passengerName}
-                    {t.passengerCount != null && ` · ${t.passengerCount} pax`}
-                    {t.luggageCount != null && ` · ${t.luggageCount} bags`} · {t.vehicleClass}
-                  </p>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    {shortAddress(t.pickupAddress)} → {shortAddress(t.dropoffAddress)}
-                  </p>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    {assignedTo(t)}
-                    {t.farmOutReason && ` · ${t.farmOutReason === "OUT_OF_AREA" ? "outside our area" : "no car free"}`}
-                  </p>
-                </div>
-                {isAdmin && (
-                  <div className="shrink-0">
-                    <Button onClick={() => setEditing(t)}>Edit</Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-      </Card>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[64rem] border-collapse text-sm">
+            <thead className="border-b border-gray-200 bg-gray-50">
+              <tr>
+                {COLUMNS.map((c) => (
+                  <HeaderCell key={c.label} column={c} sort={sort} onSort={onSort} />
+                ))}
+                {isAdmin && <th className="w-px px-3 py-2" />}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr>
+                  <td colSpan={COLUMNS.length + 1} className="px-5 py-8 text-center text-sm text-gray-500">
+                    Loading…
+                  </td>
+                </tr>
+              )}
+
+              {!loading && trips.length === 0 && (
+                <tr>
+                  <td colSpan={COLUMNS.length + 1} className="px-5 py-8 text-center text-sm text-gray-500">
+                    No reservations match those filters.
+                  </td>
+                </tr>
+              )}
+
+              {!loading &&
+                trips.map((t) => (
+                  <tr key={t.id} className="border-b border-gray-100 last:border-b-0 hover:bg-indigo-50/40">
+                    <Cell className="whitespace-nowrap font-medium tabular-nums text-gray-900">
+                      {t.reference}
+                    </Cell>
+                    <Cell className="whitespace-nowrap tabular-nums text-gray-700" title={when(t.pickupAt)}>
+                      <span className="text-gray-500">{onDate(t.pickupAt)}</span>{" "}
+                      {atTime(t.pickupAt)}
+                    </Cell>
+                    <Cell className="whitespace-nowrap text-right tabular-nums text-gray-600">
+                      {t.bookedHours}h
+                    </Cell>
+                    <Cell className="whitespace-nowrap text-gray-800">
+                      {t.passengerName}
+                      {t.passengerCount != null && (
+                        <span className="ml-1 text-[11px] text-gray-400">{t.passengerCount}p</span>
+                      )}
+                    </Cell>
+                    <Cell
+                      className="max-w-0 truncate text-gray-600"
+                      title={`${t.pickupAddress} → ${t.dropoffAddress}`}
+                    >
+                      {shortStop(t.pickupAddress)} → {shortStop(t.dropoffAddress)}
+                    </Cell>
+                    <Cell className="whitespace-nowrap text-gray-600">
+                      {t.vehicle?.label ?? (
+                        <span className="text-gray-400">{t.vehicleClass.toLowerCase()}</span>
+                      )}
+                    </Cell>
+                    <Cell
+                      className="whitespace-nowrap text-gray-600"
+                      title={
+                        t.farmOutReason === "OUT_OF_AREA"
+                          ? "Farmed out — outside our service area"
+                          : t.farmOutReason === "NO_VEHICLE"
+                            ? "Farmed out — no car free"
+                            : undefined
+                      }
+                    >
+                      {assignedTo(t)}
+                      {t.affiliate && <span className="ml-1 text-[11px] text-violet-600">partner</span>}
+                    </Cell>
+                    <Cell className="whitespace-nowrap">
+                      <StatusPill status={t.status} />
+                    </Cell>
+                    {isAdmin && (
+                      <Cell className="whitespace-nowrap text-right">
+                        <button
+                          onClick={() => setEditing(t)}
+                          className="text-xs font-medium text-indigo-600 transition-colors hover:text-indigo-800"
+                        >
+                          Edit
+                        </button>
+                      </Cell>
+                    )}
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {editing && (
         <TripEditor

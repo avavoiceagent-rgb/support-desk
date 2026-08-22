@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db, pool } from "../../db/client";
 import { affiliates, driverShifts, drivers, invoiceLines, invoices, trips, vehicles } from "../../db/schema";
-import { searchTrips, updateTrip, findDriverClashes, MAX_TRIP_LIMIT, DEFAULT_TRIP_LIMIT } from "../trips";
+import { searchTrips, updateTrip, findDriverClashes, MAX_TRIP_LIMIT, DEFAULT_TRIP_LIMIT, TRIP_SORTS } from "../trips";
 import { updateDriver, listDrivers } from "../directory";
 import { overlapsWindow } from "../availability";
 
@@ -274,5 +274,68 @@ describe("searchTrips", () => {
     const result = await searchTrips({ limit: MAX_TRIP_LIMIT + 5_000 });
     expect(result.trips.length).toBeLessThanOrEqual(MAX_TRIP_LIMIT);
     expect(DEFAULT_TRIP_LIMIT).toBeLessThan(MAX_TRIP_LIMIT);
+  });
+});
+
+describe("sorting the reservations list", () => {
+  beforeEach(async () => {
+    await resetOps();
+    // Deliberately out of order, and with the alphabetical winner buried on
+    // the last page: this is the case that catches a sort applied to the rows
+    // already fetched rather than to the query.
+    const names = ["Mia Turner", "Zoe Vance", "Ana Costa", "Liam Ford", "Ben Adler"];
+    for (const [i, passengerName] of names.entries()) {
+      await makeTrip({
+        reference: `T-104${30 + i}`,
+        passengerName,
+        pickupAt: at(10 + i),
+        bookedHours: 5 - i,
+      });
+    }
+  });
+
+  it("orders by pickup, newest first, when nobody asks", async () => {
+    const { trips } = await searchTrips();
+    expect(trips.map((t) => t.reference)).toEqual([
+      "T-10434", "T-10433", "T-10432", "T-10431", "T-10430",
+    ]);
+  });
+
+  it("sorts by passenger across the whole list, not just the page", async () => {
+    // One row per page. If the sort were applied after paging, page one would
+    // hold whatever the default order put first — "Mia Turner" — rather than
+    // the alphabetical first, which lives on the last page.
+    const first = await searchTrips({ sort: "passengerName", dir: "asc", limit: 1 });
+    expect(first.trips[0].passengerName).toBe("Ana Costa");
+    expect(first.total).toBe(5);
+
+    const last = await searchTrips({ sort: "passengerName", dir: "asc", limit: 1, offset: 4 });
+    expect(last.trips[0].passengerName).toBe("Zoe Vance");
+  });
+
+  it("reverses cleanly", async () => {
+    const { trips } = await searchTrips({ sort: "passengerName", dir: "desc" });
+    expect(trips.map((t) => t.passengerName)).toEqual([
+      "Zoe Vance", "Mia Turner", "Liam Ford", "Ben Adler", "Ana Costa",
+    ]);
+  });
+
+  it("sorts by a number as a number", async () => {
+    const { trips } = await searchTrips({ sort: "bookedHours", dir: "asc" });
+    expect(trips.map((t) => t.bookedHours)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("gives the same answer twice when the sort column ties", async () => {
+    // Every one of these has no driver, so the column says nothing about the
+    // order. Two identical queries still have to agree.
+    const once = await searchTrips({ sort: "driver", dir: "asc" });
+    const twice = await searchTrips({ sort: "driver", dir: "asc" });
+    expect(once.trips.map((t) => t.reference)).toEqual(twice.trips.map((t) => t.reference));
+  });
+
+  it("offers exactly the columns the screen shows", () => {
+    expect(Object.keys(TRIP_SORTS).sort()).toEqual([
+      "bookedHours", "driver", "passengerName", "pickupAt", "reference", "status", "vehicle",
+    ]);
   });
 });

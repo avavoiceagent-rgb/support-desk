@@ -19,6 +19,27 @@ const HOUR_MS = 3_600_000;
 export const DEFAULT_TRIP_LIMIT = 50;
 export const MAX_TRIP_LIMIT = 200;
 
+/**
+ * Columns the reservations table can be ordered by.
+ *
+ * A whitelist rather than a column name off the wire, and it exists at all
+ * because the alternative is worse than untidy: sorting the fifty rows the
+ * screen happens to be holding would put "Aaron" at the top of a page drawn
+ * from the middle of three hundred bookings and call it alphabetical. Sorting
+ * belongs where the whole result set is.
+ */
+export const TRIP_SORTS = {
+  pickupAt: trips.pickupAt,
+  reference: trips.reference,
+  passengerName: trips.passengerName,
+  bookedHours: trips.bookedHours,
+  status: trips.status,
+  driver: drivers.name,
+  vehicle: vehicles.label,
+} as const;
+
+export type TripSort = keyof typeof TRIP_SORTS;
+
 export interface TripSearch {
   from?: Date;
   to?: Date;
@@ -27,6 +48,8 @@ export interface TripSearch {
   affiliateId?: string;
   /** Free text over the reference, passenger name and booker email. */
   q?: string;
+  sort?: TripSort;
+  dir?: "asc" | "desc";
   limit?: number;
   offset?: number;
 }
@@ -77,8 +100,19 @@ export async function searchTrips(search: TripSearch = {}): Promise<TripSearchRe
   const filters = searchFilters(search);
   const where = filters.length ? and(...filters) : undefined;
 
+  const column = TRIP_SORTS[search.sort ?? "pickupAt"];
+  const direction = search.dir === "asc" ? asc : desc;
+  // Reference last, always. Sorting by driver puts every one of Marco's trips
+  // together but says nothing about their order within that block, and a list
+  // that reshuffles under the reader between two identical queries is its own
+  // small bug.
+  const order =
+    column === trips.reference
+      ? [direction(column)]
+      : [direction(column), desc(trips.pickupAt), asc(trips.reference)];
+
   const [rows, [totals]] = await Promise.all([
-    selectTrips().where(where).orderBy(desc(trips.pickupAt)).limit(limit).offset(offset),
+    selectTrips().where(where).orderBy(...order).limit(limit).offset(offset),
     db.select({ value: count() }).from(trips).where(where),
   ]);
 

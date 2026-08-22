@@ -150,6 +150,16 @@ export interface DriverSchedule {
   unscheduledTrips: Trip[];
 }
 
+/** The columns the server will order by. Anything else is a 400. */
+export type TripSort =
+  | "pickupAt"
+  | "reference"
+  | "passengerName"
+  | "bookedHours"
+  | "status"
+  | "driver"
+  | "vehicle";
+
 export interface TripSearch {
   from?: string;
   to?: string;
@@ -157,6 +167,8 @@ export interface TripSearch {
   driverId?: string;
   affiliateId?: string;
   q?: string;
+  sort?: TripSort;
+  dir?: "asc" | "desc";
   limit?: number;
   offset?: number;
 }

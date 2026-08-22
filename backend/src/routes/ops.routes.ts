@@ -24,7 +24,13 @@ import {
   updateAffiliate,
 } from "../ops/directory";
 import { getDriverSchedule, createShift, updateShift, deleteShift } from "../ops/schedule";
-import { searchTrips, updateTrip, DEFAULT_TRIP_LIMIT, MAX_TRIP_LIMIT } from "../ops/trips";
+import {
+  searchTrips,
+  updateTrip,
+  DEFAULT_TRIP_LIMIT,
+  MAX_TRIP_LIMIT,
+  TRIP_SORTS,
+} from "../ops/trips";
 
 export const opsRouter = Router();
 opsRouter.use(requireAuth);
@@ -89,6 +95,10 @@ const tripSearchSchema = z.object({
   driverId: z.string().optional(),
   affiliateId: z.string().optional(),
   q: z.string().optional(),
+  sort: z
+    .enum(Object.keys(TRIP_SORTS) as [string, ...string[]], "That is not a column you can sort by.")
+    .optional(),
+  dir: z.enum(["asc", "desc"]).optional(),
   limit: z.coerce
     .number()
     .int()
@@ -102,7 +112,7 @@ const tripSearchSchema = z.object({
 opsRouter.get("/trips", async (req, res) => {
   const parsed = tripSearchSchema.safeParse(req.query);
   if (!parsed.success) return badRequest(res, parsed);
-  res.json(await searchTrips(parsed.data));
+  res.json(await searchTrips(parsed.data as Parameters<typeof searchTrips>[0]));
 });
 
 // --- Shifts ---------------------------------------------------------------
