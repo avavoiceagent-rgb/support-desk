@@ -245,6 +245,46 @@ function query(params: Record<string, string | number | undefined>): string {
   return s ? `?${s}` : "";
 }
 
+export type DispatchDirection = "OUT" | "IN";
+export type DispatchKind = "OFFER" | "ACCEPT" | "DECLINE" | "TEXT";
+
+export interface DispatchMessage {
+  id: string;
+  tripId: string | null;
+  driverId: string | null;
+  affiliateId: string | null;
+  direction: DispatchDirection;
+  kind: DispatchKind;
+  body: string;
+  respondsToId: string | null;
+  /** Who at the desk sent it, on an outbound message. */
+  authorName: string | null;
+  /** Who was standing in for the contact, on an inbound one. */
+  actedByName: string | null;
+  createdAt: string;
+}
+
+export type ContactKind = "DRIVER" | "AFFILIATE";
+
+export const dispatchApi = {
+  messages: (kind: ContactKind, id: string) =>
+    api
+      .get<{ messages: DispatchMessage[] }>(`/dispatch/${kind}/${id}/messages`)
+      .then((r) => r.messages),
+
+  sendText: (kind: ContactKind, id: string, body: string, direction: DispatchDirection) =>
+    api.post<{ message: DispatchMessage }>(`/dispatch/${kind}/${id}/messages`, { body, direction }),
+
+  sendOffer: (kind: ContactKind, id: string, tripId: string, note?: string | null) =>
+    api.post<{ message: DispatchMessage }>(`/dispatch/${kind}/${id}/offers`, { tripId, note }),
+
+  respond: (offerId: string, accept: boolean, note?: string | null) =>
+    api.post<{ message: DispatchMessage; trip: Trip | null }>(
+      `/dispatch/offers/${offerId}/response`,
+      { accept, note }
+    ),
+};
+
 export const opsApi = {
   drivers: () => api.get<{ drivers: Driver[] }>("/ops/drivers").then((r) => r.drivers),
   vehicles: () => api.get<{ vehicles: Vehicle[] }>("/ops/vehicles").then((r) => r.vehicles),

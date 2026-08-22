@@ -15,14 +15,16 @@ import { useAuth } from "../hooks/useAuth";
 import { ScheduleTab } from "../components/ops/ScheduleTab";
 import { AffiliatesTab } from "../components/ops/AffiliatesTab";
 import { ReservationsTab } from "../components/ops/ReservationsTab";
+import { MessagesTab } from "../components/ops/MessagesTab";
 import { ErrorNote, apiMessage } from "../components/ops/shared";
 
-type Tab = "schedule" | "affiliates" | "reservations";
+type Tab = "schedule" | "affiliates" | "reservations" | "messages";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "schedule", label: "Driver schedules" },
   { key: "affiliates", label: "Partners" },
   { key: "reservations", label: "Reservations" },
+  { key: "messages", label: "Messages" },
 ];
 
 export function OperationsPage() {
@@ -90,6 +92,7 @@ export function OperationsPage() {
           {tab === "affiliates" && (
             <AffiliatesTab affiliates={affiliates} isAdmin={isAdmin} onChanged={() => void load()} />
           )}
+          {tab === "messages" && <MessagesTab drivers={drivers} affiliates={affiliates} />}
           {tab === "reservations" && (
             <ReservationsTab
               drivers={drivers}

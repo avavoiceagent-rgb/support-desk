@@ -251,9 +251,16 @@ export async function updateTrip(id: string, patch: TripPatch, actor?: Actor): P
     }
   }
 
+  // `assignedKind` follows from who is actually on the job rather than being
+  // set by hand. It was drifting: assigning a driver from the Reservations
+  // screen left a trip reading UNASSIGNED with a driver's name beside it,
+  // because nothing on that path ever touched the column. Derived, it cannot.
+  const affiliateId = patch.affiliateId === undefined ? existing.affiliateId : patch.affiliateId;
+  const assignedKind = driverId ? "DRIVER" : affiliateId ? "AFFILIATE" : "UNASSIGNED";
+
   const [row] = await db
     .update(trips)
-    .set({ ...patch, updatedAt: new Date() } as Partial<typeof trips.$inferInsert>)
+    .set({ ...patch, assignedKind, updatedAt: new Date() } as Partial<typeof trips.$inferInsert>)
     .where(eq(trips.id, id))
     .returning();
 

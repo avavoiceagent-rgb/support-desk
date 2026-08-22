@@ -1,0 +1,311 @@
+// Talking to a driver or a partner about a job.
+//
+// Both sides are here on purpose. Until drivers have links of their own,
+// somebody at the desk plays both parts to test the flow, so the composer has
+// a switch: send as the desk, or answer as the contact. Everything typed as
+// the contact is recorded as having been typed by whoever was signed in —
+// nothing in this thread should ever read as though a real driver said it when
+// they did not.
+//
+// Accepting an offer really assigns the driver. It goes through the same
+// endpoint as the Reservations screen, so a driver who is already out gets the
+// same refusal, in the same words.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  dispatchApi,
+  opsApi,
+  type Affiliate,
+  type ContactKind,
+  type DispatchMessage,
+  type Driver,
+  type Trip,
+} from "../../api/ops";
+import { Button, ErrorNote, Field, apiMessage, inputClass, when } from "./shared";
+
+interface ContactOption {
+  kind: ContactKind;
+  id: string;
+  label: string;
+  detail: string;
+}
+
+function Bubble({ message }: { message: DispatchMessage }) {
+  const outbound = message.direction === "OUT";
+  const isOffer = message.kind === "OFFER";
+  const isAccept = message.kind === "ACCEPT";
+  const isDecline = message.kind === "DECLINE";
+
+  const tone = isOffer
+    ? "border-indigo-200 bg-indigo-50"
+    : isAccept
+      ? "border-emerald-200 bg-emerald-50"
+      : isDecline
+        ? "border-amber-200 bg-amber-50"
+        : outbound
+          ? "border-gray-200 bg-white"
+          : "border-gray-200 bg-gray-50";
+
+  return (
+    <div className={`flex ${outbound ? "justify-start" : "justify-end"}`}>
+      <div className={`max-w-[85%] rounded-xl border px-3 py-2 shadow-sm ${tone}`}>
+        <div className="mb-0.5 flex flex-wrap items-baseline gap-x-2">
+          <span className="text-[11px] font-medium text-gray-700">
+            {outbound ? (message.authorName ?? "The desk") : "Them"}
+          </span>
+          {isOffer && (
+            <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800">
+              Job offer
+            </span>
+          )}
+          {isAccept && (
+            <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+              Accepted
+            </span>
+          )}
+          {isDecline && (
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+              Declined
+            </span>
+          )}
+          <span className="text-[10px] text-gray-400">{when(message.createdAt)}</span>
+        </div>
+        <p className="whitespace-pre-wrap text-sm text-gray-800">{message.body}</p>
+        {message.actedByName && (
+          <p className="mt-1 text-[10px] italic text-gray-400">
+            typed by {message.actedByName} standing in
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function MessagesTab({
+  drivers,
+  affiliates,
+}: {
+  drivers: Driver[];
+  affiliates: Affiliate[];
+}) {
+  const contacts: ContactOption[] = useMemo(
+    () => [
+      ...drivers
+        .filter((d) => d.active)
+        .map((d) => ({
+          kind: "DRIVER" as const,
+          id: d.id,
+          label: d.name,
+          detail: d.defaultVehicle?.label ?? "Driver",
+        })),
+      ...affiliates
+        .filter((a) => a.active)
+        .map((a) => ({
+          kind: "AFFILIATE" as const,
+          id: a.id,
+          label: a.company,
+          detail: "Partner",
+        })),
+    ],
+    [drivers, affiliates]
+  );
+
+  const [selected, setSelected] = useState<string>("");
+  const [messages, setMessages] = useState<DispatchMessage[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [body, setBody] = useState("");
+  const [asContact, setAsContact] = useState(false);
+  const [offerTripId, setOfferTripId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const bottom = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!selected && contacts.length) setSelected(`${contacts[0].kind}:${contacts[0].id}`);
+  }, [contacts, selected]);
+
+  const contact = contacts.find((c) => `${c.kind}:${c.id}` === selected) ?? null;
+
+  const load = useCallback(async () => {
+    if (!contact) return;
+    try {
+      setMessages(await dispatchApi.messages(contact.kind, contact.id));
+      setError(null);
+    } catch (err) {
+      setError(apiMessage(err));
+    }
+  }, [contact]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Unassigned upcoming work is what there is to offer. A job somebody is
+  // already on is not an offer, it is a reassignment, and that belongs on the
+  // Reservations screen where the consequences are visible.
+  useEffect(() => {
+    opsApi
+      .trips({ from: new Date().toISOString(), status: "SCHEDULED", limit: 100 })
+      .then((r) => setTrips(r.trips.filter((t) => !t.driverId && !t.affiliateId)))
+      .catch(() => setTrips([]));
+  }, [messages.length]);
+
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ block: "nearest" });
+  }, [messages]);
+
+  async function run(work: () => Promise<unknown>) {
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      await work();
+      await load();
+    } catch (err) {
+      setError(apiMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const answered = new Set(messages.filter((m) => m.respondsToId).map((m) => m.respondsToId));
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
+      <div className="rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
+        <p className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+          Drivers and partners
+        </p>
+        <div className="max-h-[32rem] overflow-y-auto">
+          {contacts.map((c) => {
+            const key = `${c.kind}:${c.id}`;
+            return (
+              <button
+                key={key}
+                onClick={() => setSelected(key)}
+                className={`block w-full rounded-lg px-2 py-1.5 text-left transition-colors ${
+                  key === selected ? "bg-indigo-50 text-indigo-900" : "hover:bg-gray-50"
+                }`}
+              >
+                <span className="block truncate text-sm font-medium">{c.label}</span>
+                <span className="block truncate text-[11px] text-gray-500">{c.detail}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <section className="flex min-h-[32rem] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-5 py-3">
+          <h2 className="text-sm font-semibold text-gray-900">{contact?.label ?? "Nobody selected"}</h2>
+          <p className="text-xs text-gray-500">
+            Nothing here reaches a real phone. You are both sides for now.
+          </p>
+        </div>
+
+        <div className="flex-1 space-y-2 overflow-y-auto bg-gray-50/50 p-4">
+          {messages.length === 0 && (
+            <p className="py-10 text-center text-sm text-gray-500">No messages yet.</p>
+          )}
+          {messages.map((m) => (
+            <div key={m.id}>
+              <Bubble message={m} />
+              {m.kind === "OFFER" && !answered.has(m.id) && (
+                <div className="mt-1 flex justify-end gap-2">
+                  <Button
+                    kind="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        const r = await dispatchApi.respond(m.id, true);
+                        if (r.trip) setNote(`${r.trip.reference} is now ${r.trip.driver?.name ?? r.trip.affiliate?.company}.`);
+                      })
+                    }
+                  >
+                    Accept
+                  </Button>
+                  <Button disabled={busy} onClick={() => void run(() => dispatchApi.respond(m.id, false))}>
+                    Decline
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+          <div ref={bottom} />
+        </div>
+
+        <div className="space-y-2 border-t border-gray-100 p-3">
+          <ErrorNote message={error} />
+          {note && (
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {note}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-[16rem] flex-1">
+              <Field label="Offer a job">
+                <select
+                  value={offerTripId}
+                  onChange={(e) => setOfferTripId(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Choose an unassigned job…</option>
+                  {trips.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.reference} · {when(t.pickupAt)} · {t.bookedHours}h · {t.vehicleClass}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <Button
+              disabled={!offerTripId || !contact || busy}
+              onClick={() =>
+                void run(async () => {
+                  await dispatchApi.sendOffer(contact!.kind, contact!.id, offerTripId);
+                  setOfferTripId("");
+                })
+              }
+            >
+              Send offer
+            </Button>
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!contact || !body.trim()) return;
+              void run(async () => {
+                await dispatchApi.sendText(contact.kind, contact.id, body, asContact ? "IN" : "OUT");
+                setBody("");
+              });
+            }}
+            className="flex items-end gap-2"
+          >
+            <input
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder={asContact ? `Reply as ${contact?.label ?? "them"}…` : "Message from the desk…"}
+              className={inputClass}
+            />
+            <Button kind="primary" type="submit" disabled={busy || !body.trim()}>
+              Send
+            </Button>
+          </form>
+
+          <label className="flex items-center gap-2 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={asContact}
+              onChange={(e) => setAsContact(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            Answer as {contact?.label ?? "them"} — recorded as typed by you
+          </label>
+        </div>
+      </section>
+    </div>
+  );
+}

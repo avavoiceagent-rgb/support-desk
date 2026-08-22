@@ -436,6 +436,55 @@ export const trips = pgTable(
   ]
 );
 
+export const dispatchDirectionEnum = pgEnum("dispatch_direction", ["OUT", "IN"]);
+export const dispatchKindEnum = pgEnum("dispatch_kind", ["OFFER", "ACCEPT", "DECLINE", "TEXT"]);
+
+/**
+ * Messages between the desk and a driver or a partner.
+ *
+ * Not SMS. A driver-facing page costs nothing, needs no provider and no phone
+ * numbers, and is how most dispatch actually works now — the text message is
+ * the fallback, not the channel.
+ *
+ * While this is a training tool the same person plays both sides, so an
+ * inbound message records who was actually typing it as well as who it is
+ * from. Fabricated data that reads as though a real driver said something is
+ * the kind of thing somebody quotes back six months later.
+ */
+export const dispatchMessages = pgTable(
+  "dispatch_messages",
+  {
+    id: cuid(),
+    /** The job this is about. Null for anything that is just conversation. */
+    tripId: text("trip_id").references(() => trips.id, { onDelete: "cascade" }),
+    /** Exactly one of these is set — see assertOneContact in ops/dispatch.ts. */
+    driverId: text("driver_id").references(() => drivers.id, { onDelete: "cascade" }),
+    affiliateId: text("affiliate_id").references(() => affiliates.id, { onDelete: "cascade" }),
+    direction: dispatchDirectionEnum("direction").notNull(),
+    kind: dispatchKindEnum("kind").notNull().default("TEXT"),
+    body: text("body").notNull(),
+    /** The offer an ACCEPT or DECLINE is answering. */
+    respondsToId: text("responds_to_id"),
+    /** Staff member who sent it, for an outbound message. */
+    authorUserId: text("author_user_id").references(() => users.id, { onDelete: "set null" }),
+    authorName: text("author_name"),
+    /**
+     * Who typed an inbound message while standing in for the contact.
+     *
+     * Null would mean a real driver sent it. Until drivers have their own
+     * links, somebody at the desk is play-acting, and the record says so.
+     */
+    actedByUserId: text("acted_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    actedByName: text("acted_by_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("dispatch_driver_idx").on(t.driverId, t.createdAt),
+    index("dispatch_affiliate_idx").on(t.affiliateId, t.createdAt),
+    index("dispatch_trip_idx").on(t.tripId, t.createdAt),
+  ]
+);
+
 export const tripEventKindEnum = pgEnum("trip_event_kind", ["CREATED", "UPDATED", "CANCELLED"]);
 
 /**
