@@ -221,7 +221,7 @@ export function RateCardModal({
   const cell = "border-t border-gray-100 px-1.5 py-1.5";
 
   return (
-    <Modal title={`${affiliate.company} · rates`} onClose={onClose}>
+    <Modal title={`${affiliate.company} · rates`} onClose={onClose} size="xl">
       <div className="space-y-3">
         <p className="text-xs text-gray-500">
           Hourly, by distance from{" "}
@@ -232,7 +232,7 @@ export function RateCardModal({
         <ErrorNote message={error} />
 
         <div className="-mx-1 overflow-x-auto">
-          <table className="w-full min-w-[34rem] border-collapse text-sm">
+          <table className="w-full min-w-[40rem] border-collapse text-sm">
             <thead className="bg-gray-50">
               <tr>
                 <th className={`${head} text-left`}>Band</th>

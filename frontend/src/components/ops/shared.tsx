@@ -141,13 +141,28 @@ export function Empty({ children }: { children: ReactNode }) {
   return <p className="px-5 py-8 text-center text-sm text-gray-500">{children}</p>;
 }
 
+/**
+ * Widths, because a modal has to fit what is in it.
+ *
+ * A rate card is eight columns wide and the default put its Edit and Delete
+ * controls behind a horizontal scrollbar — the two things an admin opened it
+ * to use.
+ */
+const MODAL_WIDTH = {
+  md: "max-w-lg",
+  lg: "max-w-2xl",
+  xl: "max-w-4xl",
+} as const;
+
 export function Modal({
   title,
   onClose,
+  size = "md",
   children,
 }: {
   title: string;
   onClose: () => void;
+  size?: keyof typeof MODAL_WIDTH;
   children: ReactNode;
 }) {
   useEffect(() => {
@@ -160,7 +175,7 @@ export function Modal({
 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-gray-900/40 p-4 sm:p-8">
-      <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
+      <div className={`w-full ${MODAL_WIDTH[size]} rounded-xl bg-white shadow-xl`}>
         <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
           <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
           <button
