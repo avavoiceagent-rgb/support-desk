@@ -85,6 +85,29 @@ export interface DriverRow {
   createdAt: string;
 }
 
+/** One band of a partner's rate card: [fromMiles, toMiles) from their base. */
+export interface AffiliateZone {
+  id: string;
+  affiliateId: string;
+  label: string;
+  fromMiles: number;
+  /** null means "and everything beyond" — the band that catches the rest. */
+  toMiles: number | null;
+  minimumHours: number;
+  /** Hourly rate in cents, per class. A class absent is one they do not run. */
+  rateCents: Partial<Record<VehicleClass, number>>;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface ZoneInput {
+  label: string;
+  fromMiles: number;
+  toMiles: number | null;
+  minimumHours: number;
+  rateCents: Partial<Record<VehicleClass, number>>;
+}
+
 export interface Affiliate {
   id: string;
   company: string;
@@ -98,6 +121,10 @@ export interface Affiliate {
   preference: number;
   active: boolean;
   notes: string | null;
+  /** Where their cars sit — what the distance bands measure from. */
+  baseAddress: string | null;
+  baseLat: number | null;
+  baseLng: number | null;
   createdAt: string;
 }
 
@@ -239,6 +266,17 @@ export const opsApi = {
 
   updateAffiliate: (id: string, patch: Partial<Affiliate>) =>
     api.patch<{ affiliate: Affiliate }>(`/ops/affiliates/${id}`, patch),
+
+  zones: (affiliateId: string) =>
+    api.get<{ zones: AffiliateZone[] }>(`/ops/affiliates/${affiliateId}/zones`).then((r) => r.zones),
+
+  createZone: (affiliateId: string, input: ZoneInput) =>
+    api.post<{ zone: AffiliateZone }>(`/ops/affiliates/${affiliateId}/zones`, input),
+
+  updateZone: (id: string, patch: Partial<ZoneInput>) =>
+    api.patch<{ zone: AffiliateZone }>(`/ops/zones/${id}`, patch),
+
+  deleteZone: (id: string) => api.delete<void>(`/ops/zones/${id}`),
 
   updateTrip: (
     id: string,

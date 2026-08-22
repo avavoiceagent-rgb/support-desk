@@ -55,11 +55,19 @@ describe("ops route permissions", () => {
 
   it("offers no way to delete a driver, vehicle or affiliate", () => {
     // Trips point at these rows; deleting one puts a hole in the history.
-    // Retirement is `active: false`. Shifts are the deliberate exception.
+    // Retirement is `active: false`.
+    //
+    // The two exceptions are things nothing points at. A shift is recomputed
+    // availability, and a rate band is read at quoting time with the resulting
+    // figure written onto the invoice — so removing either leaves no record
+    // unreadable afterwards. Anything else appearing in this list is a
+    // question worth answering before it ships, which is why the assertion is
+    // an exact match rather than a "contains".
     const deletes = routes
       .filter((r) => r.methods.includes("DELETE"))
-      .map((r) => r.path);
-    expect(deletes).toEqual(["/shifts/:id"]);
+      .map((r) => r.path)
+      .sort();
+    expect(deletes).toEqual(["/shifts/:id", "/zones/:id"]);
   });
 });
 

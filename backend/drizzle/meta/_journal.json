@@ -57,6 +57,13 @@
       "when": 1787360035667,
       "tag": "0007_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787372868410,
+      "tag": "0008_affiliate_zones",
+      "breakpoints": true
     }
   ]
 }

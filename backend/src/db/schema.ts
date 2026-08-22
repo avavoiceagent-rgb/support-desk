@@ -6,6 +6,7 @@
 import {
   pgTable,
   pgEnum,
+  doublePrecision,
   text,
   timestamp,
   boolean,
@@ -226,6 +227,7 @@ export const notesRelations = relations(notes, ({ one }) => ({
 // ---------------------------------------------------------------------------
 
 export const vehicleClassEnum = pgEnum("vehicle_class", ["SEDAN", "SUV", "VAN", "SPRINTER"]);
+export type VehicleClass = (typeof vehicleClassEnum.enumValues)[number];
 export const tripStatusEnum = pgEnum("trip_status", [
   "SCHEDULED",
   "IN_PROGRESS",
@@ -297,13 +299,60 @@ export const affiliates = pgTable("affiliates", {
   coverageCities: jsonb("coverage_cities").$type<string[]>().notNull().default([]),
   /** True for local partners who take our overflow when every car is busy. */
   overflowPartner: boolean("overflow_partner").notNull().default(false),
+  /**
+   * Flat fallback rate, in whole dollars, from before rate cards existed.
+   * Used only when a partner has no zone covering the job.
+   */
   hourlyRateUsd: integer("hourly_rate_usd"),
+  /** Where their cars actually sit — the centre every distance band measures from. */
+  baseAddress: text("base_address"),
+  baseLat: doublePrecision("base_lat"),
+  baseLng: doublePrecision("base_lng"),
   /** 1 (first call) to 5 (last resort), from experience. */
   preference: integer("preference").notNull().default(3),
   active: boolean("active").notNull().default(true),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+/**
+ * A partner's rate card, one row per distance band.
+ *
+ * Bands rather than named neighbourhoods because an address then lands in a
+ * zone on its own: we already know where the partner is based and where the
+ * job goes, and a mileage is arithmetic. Named zones would price more exactly
+ * and need a person to decide which one "1 Hotel Brooklyn Bridge" belongs to
+ * every time an unfamiliar address turns up.
+ *
+ * `toMiles` null means "and everything beyond", so a card always has a last
+ * band that catches whatever the first ones did not.
+ */
+export const affiliateZones = pgTable(
+  "affiliate_zones",
+  {
+    id: cuid(),
+    affiliateId: text("affiliate_id")
+      .notNull()
+      .references(() => affiliates.id, { onDelete: "cascade" }),
+    /** What the partner calls it on their own sheet: "Metro", "North Shore". */
+    label: text("label").notNull(),
+    fromMiles: integer("from_miles").notNull().default(0),
+    toMiles: integer("to_miles"),
+    /** The shortest this band is ever billed at. */
+    minimumHours: integer("minimum_hours").notNull().default(2),
+    /**
+     * Hourly rate per class of car, in cents.
+     *
+     * Cents, like every other sum in this database. A class missing from here
+     * means the partner does not offer it in this band, which is different
+     * from offering it at nothing.
+     */
+    rateCents: jsonb("rate_cents").$type<Partial<Record<VehicleClass, number>>>().notNull().default({}),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("affiliate_zones_affiliate_idx").on(t.affiliateId, t.sortOrder)]
+);
 
 export const trips = pgTable(
   "trips",

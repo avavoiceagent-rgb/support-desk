@@ -1,21 +1,21 @@
-// The partner list.
+// The partner list, as a table.
 //
-// Two kinds of partner sit in one table on purpose. An overflow partner is a
-// local company that takes a job when every one of our cars is out; the rest
-// cover places we do not drive to at all. Which one a row is changes what a
-// dispatcher does with it, so it is a visible tag rather than a column of
-// true/false.
+// Sorted in the browser, and that is not the shortcut it looks like: the API
+// hands over every partner in one response, so the rows being ordered here are
+// the whole list. The reservations table deliberately does the opposite,
+// because there the page is fifty rows out of hundreds and sorting what
+// happens to be loaded would put the first "A" of page three at the top and
+// call it alphabetical.
 //
-// Nothing here is deleted. Trips point at partners and last month's history
-// has to stay readable, so "remove" means deactivate — out of every future
-// suggestion, still attached to the trips it ran.
+// Nothing here is ever deleted. Trips point at partners and last month's
+// history has to stay readable, so "remove" means deactivate: out of every
+// future suggestion, still attached to the work it ran.
 
 import { useMemo, useState, type FormEvent } from "react";
 import { opsApi, type Affiliate } from "../../api/ops";
+import { RateCardModal } from "./RateCardModal";
 import {
   Button,
-  Card,
-  Empty,
   ErrorNote,
   Field,
   Modal,
@@ -71,6 +71,7 @@ function AffiliateEditor({
   const [preference, setPreference] = useState(String(affiliate?.preference ?? 3));
   const [active, setActive] = useState(affiliate?.active ?? true);
   const [notes, setNotes] = useState(affiliate?.notes ?? "");
+  const [baseAddress, setBaseAddress] = useState(affiliate?.baseAddress ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -91,6 +92,7 @@ function AffiliateEditor({
         preference: Number(preference),
         active,
         notes: notes.trim() || null,
+        baseAddress: baseAddress.trim() || null,
       };
       if (affiliate) await opsApi.updateAffiliate(affiliate.id, body);
       else await opsApi.createAffiliate(body);
@@ -118,6 +120,15 @@ function AffiliateEditor({
           </Field>
         </div>
 
+        <Field label="Where their cars are based" hint="The centre every distance band measures from">
+          <input
+            value={baseAddress}
+            onChange={(e) => setBaseAddress(e.target.value)}
+            placeholder="Boston, MA"
+            className={inputClass}
+          />
+        </Field>
+
         <Field label="Email">
           <input
             type="email"
@@ -138,7 +149,7 @@ function AffiliateEditor({
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Hourly rate (USD)" hint="Leave blank if it varies by job">
+          <Field label="Fallback hourly rate (USD)" hint="Used only where the rate card has no band">
             <input
               type="number"
               min={0}
@@ -202,6 +213,86 @@ function AffiliateEditor({
   );
 }
 
+type SortKey = "company" | "preference" | "coverage" | "contactName" | "phone" | "email" | "rate" | "active";
+
+interface Sort {
+  by: SortKey;
+  dir: "asc" | "desc";
+}
+
+const COLUMNS: { key: SortKey; label: string; align?: "right"; className?: string }[] = [
+  { key: "company", label: "Company" },
+  { key: "preference", label: "Called" },
+  { key: "coverage", label: "Covers", className: "w-1/3" },
+  { key: "contactName", label: "Contact" },
+  { key: "phone", label: "Phone" },
+  { key: "email", label: "Email", className: "w-1/4" },
+  { key: "rate", label: "Fallback", align: "right" },
+  { key: "active", label: "Status" },
+];
+
+/** Where they work, in one line: states first, then the cities they name. */
+function coverage(a: Affiliate): string {
+  const states = a.coverageStates.join(", ");
+  const cities = a.coverageCities.join(", ");
+  if (!states && !cities) return "—";
+  if (!cities) return states;
+  return states ? `${states} · ${cities}` : cities;
+}
+
+/** What each column sorts on. Nulls sort last whichever way the arrow points. */
+function sortValue(a: Affiliate, key: SortKey): string | number {
+  switch (key) {
+    case "company":
+      return a.company.toLowerCase();
+    case "preference":
+      return a.preference;
+    case "coverage":
+      return coverage(a).toLowerCase();
+    case "contactName":
+      return (a.contactName ?? "\uffff").toLowerCase();
+    case "phone":
+      return a.phone;
+    case "email":
+      return a.email.toLowerCase();
+    case "rate":
+      // "Varies" is not a price, so it sits at the end rather than pretending
+      // to be zero and heading the cheapest-first list.
+      return a.hourlyRateUsd ?? Number.MAX_SAFE_INTEGER;
+    case "active":
+      return a.active ? 0 : 1;
+  }
+}
+
+function HeaderCell({
+  column,
+  sort,
+  onSort,
+}: {
+  column: (typeof COLUMNS)[number];
+  sort: Sort;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sort.by === column.key;
+  return (
+    <th
+      className={`whitespace-nowrap px-3 py-2 text-[11px] font-medium ${
+        column.align === "right" ? "text-right" : "text-left"
+      } ${column.className ?? ""}`}
+    >
+      <button
+        onClick={() => onSort(column.key)}
+        className={`inline-flex items-center gap-1 rounded px-1 py-0.5 transition-colors ${
+          active ? "text-indigo-700" : "text-gray-500 hover:text-gray-900"
+        }`}
+      >
+        {column.label}
+        <span className={active ? "" : "opacity-0"}>{sort.dir === "asc" ? "▲" : "▼"}</span>
+      </button>
+    </th>
+  );
+}
+
 export function AffiliatesTab({
   affiliates,
   isAdmin,
@@ -213,13 +304,15 @@ export function AffiliatesTab({
 }) {
   const [showInactive, setShowInactive] = useState(false);
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<Sort>({ by: "preference", dir: "asc" });
   const [editing, setEditing] = useState<Affiliate | null>(null);
   const [adding, setAdding] = useState(false);
+  const [ratesFor, setRatesFor] = useState<Affiliate | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return affiliates.filter((a) => {
+    const matched = affiliates.filter((a) => {
       if (!showInactive && !a.active) return false;
       if (!q) return true;
       return (
@@ -230,7 +323,24 @@ export function AffiliatesTab({
         a.coverageCities.join(" ").toLowerCase().includes(q)
       );
     });
-  }, [affiliates, showInactive, query]);
+
+    const flip = sort.dir === "asc" ? 1 : -1;
+    return [...matched].sort((x, y) => {
+      const a = sortValue(x, sort.by);
+      const b = sortValue(y, sort.by);
+      if (a < b) return -flip;
+      if (a > b) return flip;
+      // Company name breaks every tie, so the list never reshuffles between
+      // two identical renders.
+      return x.company.localeCompare(y.company);
+    });
+  }, [affiliates, showInactive, query, sort]);
+
+  function onSort(key: SortKey) {
+    setSort((current) =>
+      current.by === key ? { by: key, dir: current.dir === "asc" ? "desc" : "asc" } : { by: key, dir: "asc" }
+    );
+  }
 
   const inactiveCount = affiliates.filter((a) => !a.active).length;
 
@@ -273,52 +383,119 @@ export function AffiliatesTab({
 
       <ErrorNote message={error} />
 
-      <Card title={`Partners · ${visible.length} shown`}>
-        {visible.length === 0 && <Empty>No partners match that.</Empty>}
-        {visible.map((a) => (
-          <div
-            key={a.id}
-            className={`border-t border-gray-100 px-5 py-3 first:border-t-0 ${a.active ? "" : "bg-gray-50"}`}
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold text-gray-900">{a.company}</span>
-                  <PreferencePill value={a.preference} />
-                  {a.overflowPartner && (
-                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-800">
-                      Overflow
-                    </span>
-                  )}
-                  {!a.active && (
-                    <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600">
-                      Deactivated
-                    </span>
-                  )}
-                </div>
-                <p className="mt-1 text-xs text-gray-600">
-                  {a.contactName ? `${a.contactName} · ` : ""}
-                  {a.phone} · {a.email}
-                  {a.hourlyRateUsd != null && ` · $${a.hourlyRateUsd}/hr`}
-                </p>
-                <p className="mt-0.5 text-xs text-gray-500">
-                  {a.coverageStates.length > 0 ? a.coverageStates.join(", ") : "No states listed"}
-                  {a.coverageCities.length > 0 && ` · ${a.coverageCities.join(", ")}`}
-                </p>
-                {a.notes && <p className="mt-1 text-xs italic text-gray-500">{a.notes}</p>}
-              </div>
-              {isAdmin && (
-                <div className="flex shrink-0 gap-2">
-                  <Button onClick={() => setEditing(a)}>Edit</Button>
-                  <Button kind={a.active ? "danger" : "secondary"} onClick={() => void toggleActive(a)}>
-                    {a.active ? "Deactivate" : "Reactivate"}
-                  </Button>
-                </div>
+      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-5 py-3">
+          <h2 className="text-sm font-semibold text-gray-900">
+            Partners · {visible.length} shown
+          </h2>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[68rem] border-collapse text-sm">
+            <thead className="border-b border-gray-200 bg-gray-50">
+              <tr>
+                {COLUMNS.map((c) => (
+                  <HeaderCell key={c.label} column={c} sort={sort} onSort={onSort} />
+                ))}
+                <th className="whitespace-nowrap px-3 py-2 text-right text-[11px] font-medium text-gray-500">
+                  Rates
+                </th>
+                {isAdmin && <th className="w-px px-3 py-2" />}
+              </tr>
+            </thead>
+            <tbody>
+              {visible.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={COLUMNS.length + 2}
+                    className="px-5 py-8 text-center text-sm text-gray-500"
+                  >
+                    No partners match that.
+                  </td>
+                </tr>
               )}
-            </div>
-          </div>
-        ))}
-      </Card>
+              {visible.map((a) => (
+                <tr
+                  key={a.id}
+                  className={`border-b border-gray-100 last:border-b-0 hover:bg-indigo-50/40 ${
+                    a.active ? "" : "bg-gray-50/60 text-gray-500"
+                  }`}
+                >
+                  <td className="whitespace-nowrap px-3 py-1.5 font-medium text-gray-900">
+                    {a.company}
+                    {a.overflowPartner && (
+                      <span className="ml-2 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800">
+                        Overflow
+                      </span>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5">
+                    <PreferencePill value={a.preference} />
+                  </td>
+                  <td className="max-w-0 truncate px-3 py-1.5 text-gray-600" title={coverage(a)}>
+                    {coverage(a)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-gray-600">
+                    {a.contactName ?? "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 tabular-nums text-gray-600">{a.phone}</td>
+                  <td className="max-w-0 truncate px-3 py-1.5 text-gray-600" title={a.email}>
+                    {a.email}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-700">
+                    {a.hourlyRateUsd == null ? (
+                      <span className="text-gray-400">varies</span>
+                    ) : (
+                      `$${a.hourlyRateUsd}/hr`
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                    <button
+                      onClick={() => setRatesFor(a)}
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                    >
+                      Rate card
+                    </button>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5">
+                    {a.active ? (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                        Active
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                        Deactivated
+                      </span>
+                    )}
+                  </td>
+                  {isAdmin && (
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                      <button
+                        onClick={() => setEditing(a)}
+                        className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => void toggleActive(a)}
+                        className={`ml-3 text-xs font-medium ${
+                          a.active ? "text-red-600 hover:text-red-800" : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        {a.active ? "Deactivate" : "Reactivate"}
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {ratesFor && (
+        <RateCardModal affiliate={ratesFor} isAdmin={isAdmin} onClose={() => setRatesFor(null)} />
+      )}
 
       {(adding || editing) && (
         <AffiliateEditor

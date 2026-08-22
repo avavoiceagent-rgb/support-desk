@@ -24,6 +24,7 @@ import {
   updateAffiliate,
 } from "../ops/directory";
 import { getDriverSchedule, createShift, updateShift, deleteShift } from "../ops/schedule";
+import { listZones, createZone, updateZone, deleteZone, MAX_BAND_MILES } from "../ops/zones";
 import {
   searchTrips,
   updateTrip,
@@ -224,6 +225,9 @@ const affiliateSchema = z.object({
   overflowPartner: z.boolean().optional(),
   hourlyRateUsd: z.coerce.number().int().min(0).nullable().optional(),
   preference: z.coerce.number().int().min(1).max(5, "Preference runs from 1 to 5.").optional(),
+  baseAddress: z.string().nullable().optional(),
+  baseLat: z.coerce.number().min(-90).max(90).nullable().optional(),
+  baseLng: z.coerce.number().min(-180).max(180).nullable().optional(),
   active: z.boolean().optional(),
   notes: z.string().nullable().optional(),
 });
@@ -242,6 +246,61 @@ opsRouter.patch("/affiliates/:id", requireAdmin, async (req, res) => {
   await handle(res, async () =>
     res.json({ affiliate: await updateAffiliate(param(req, "id"), parsed.data) })
   );
+});
+
+// --- Partner rate cards ---------------------------------------------------
+//
+// A band is [from, to) miles from the partner's base, priced per class of car,
+// with the shortest it will ever be billed at. Overlaps are refused in
+// ops/zones.ts rather than resolved, because two bands claiming the same
+// distance is a typo and a quote that silently picks one is a bill nobody can
+// explain afterwards.
+
+// Spelled out rather than a record over the enum, so a class the partner does
+// not run is simply absent — which is not the same as being priced at zero —
+// and a misspelled class is rejected instead of silently stored.
+const rate = z.coerce.number().int().min(0, "A rate cannot be negative.").optional();
+const rateCentsSchema = z.strictObject({
+  SEDAN: rate,
+  SUV: rate,
+  VAN: rate,
+  SPRINTER: rate,
+});
+
+const zoneSchema = z.object({
+  label: z.string().min(1, "A band needs a name, like \"Metro\"."),
+  fromMiles: z.coerce.number().int().min(0).max(MAX_BAND_MILES),
+  toMiles: z.coerce.number().int().min(1).max(MAX_BAND_MILES).nullable().optional().default(null),
+  minimumHours: z.coerce.number().int().min(1, "A minimum of less than an hour is not a minimum.").default(2),
+  rateCents: rateCentsSchema.default({}),
+});
+
+opsRouter.get("/affiliates/:id/zones", async (req, res) => {
+  res.json({ zones: await listZones(param(req, "id")) });
+});
+
+opsRouter.post("/affiliates/:id/zones", requireAdmin, async (req, res) => {
+  const parsed = zoneSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed);
+  await handle(res, async () =>
+    res.status(201).json({ zone: await createZone(param(req, "id"), parsed.data) })
+  );
+});
+
+opsRouter.patch("/zones/:id", requireAdmin, async (req, res) => {
+  const parsed = zoneSchema.partial().safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed);
+  if (Object.keys(parsed.data).length === 0) {
+    return res.status(400).json({ error: "Nothing to update" });
+  }
+  await handle(res, async () => res.json({ zone: await updateZone(param(req, "id"), parsed.data) }));
+});
+
+opsRouter.delete("/zones/:id", requireAdmin, async (req, res) => {
+  await handle(res, async () => {
+    await deleteZone(param(req, "id"));
+    res.status(204).end();
+  });
 });
 
 // --- Reservations ---------------------------------------------------------

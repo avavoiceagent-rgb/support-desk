@@ -16,6 +16,7 @@ import { sql } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "./client";
 import {
+  affiliateZones,
   affiliates,
   driverShifts,
   drivers,
@@ -102,19 +103,19 @@ const DRIVER_NAMES = [
 
 const AFFILIATES = [
   // Nearby states — the drives that leave NY/NJ but stay regional.
-  { company: "Liberty Bell Executive", contactName: "Dana Whitfield", phone: "+1 215 555 0142", email: "dispatch@libertybellexec.example", coverageStates: ["PA", "DE"], coverageCities: ["Philadelphia", "Wilmington"], overflowPartner: false, hourlyRateUsd: 85, preference: 1, notes: "Reliable on Philadelphia airport runs. Invoices monthly." },
-  { company: "Charter Oak Livery", contactName: "Bill Marchetti", phone: "+1 860 555 0119", email: "ops@charteroaklivery.example", coverageStates: ["CT", "RI"], coverageCities: ["Hartford", "Stamford", "New Haven"], overflowPartner: false, hourlyRateUsd: 80, preference: 2, notes: "Good for Connecticut corporate work." },
-  { company: "Hudson Valley Cars", contactName: "Erin Doyle", phone: "+1 845 555 0177", email: "bookings@hudsonvalleycars.example", coverageStates: ["NY"], coverageCities: ["Poughkeepsie", "Albany", "Newburgh"], overflowPartner: false, hourlyRateUsd: 75, preference: 2, notes: "Upstate only — will not come below Westchester." },
+  { company: "Liberty Bell Executive", baseAddress: "Philadelphia, PA", baseLat: 39.9526, baseLng: -75.1652, contactName: "Dana Whitfield", phone: "+1 215 555 0142", email: "dispatch@libertybellexec.example", coverageStates: ["PA", "DE"], coverageCities: ["Philadelphia", "Wilmington"], overflowPartner: false, hourlyRateUsd: 85, preference: 1, notes: "Reliable on Philadelphia airport runs. Invoices monthly." },
+  { company: "Charter Oak Livery", baseAddress: "Hartford, CT", baseLat: 41.7658, baseLng: -72.6734, contactName: "Bill Marchetti", phone: "+1 860 555 0119", email: "ops@charteroaklivery.example", coverageStates: ["CT", "RI"], coverageCities: ["Hartford", "Stamford", "New Haven"], overflowPartner: false, hourlyRateUsd: 80, preference: 2, notes: "Good for Connecticut corporate work." },
+  { company: "Hudson Valley Cars", baseAddress: "Poughkeepsie, NY", baseLat: 41.7004, baseLng: -73.921, contactName: "Erin Doyle", phone: "+1 845 555 0177", email: "bookings@hudsonvalleycars.example", coverageStates: ["NY"], coverageCities: ["Poughkeepsie", "Albany", "Newburgh"], overflowPartner: false, hourlyRateUsd: 75, preference: 2, notes: "Upstate only — will not come below Westchester." },
   // Major US cities.
-  { company: "Beacon Hill Chauffeurs", contactName: "Maureen Kelly", phone: "+1 617 555 0163", email: "dispatch@beaconhillchauffeurs.example", coverageStates: ["MA"], coverageCities: ["Boston", "Cambridge"], overflowPartner: false, hourlyRateUsd: 95, preference: 1, notes: "Boston. Strong on Logan meet-and-greet." },
-  { company: "Capital Executive Transport", contactName: "Gregory Sims", phone: "+1 202 555 0188", email: "ops@capitalexectransport.example", coverageStates: ["DC", "VA", "MD"], coverageCities: ["Washington", "Arlington", "Bethesda"], overflowPartner: false, hourlyRateUsd: 100, preference: 1, notes: "DC and both airports. Security-cleared drivers available." },
-  { company: "Biscayne Luxury Rides", contactName: "Carla Mendes", phone: "+1 305 555 0155", email: "reservations@biscayneluxury.example", coverageStates: ["FL"], coverageCities: ["Miami", "Fort Lauderdale"], overflowPartner: false, hourlyRateUsd: 90, preference: 3, notes: "Miami. Slow to confirm in high season." },
-  { company: "Windy City Executive", contactName: "Ray Kowalski", phone: "+1 312 555 0134", email: "dispatch@windycityexec.example", coverageStates: ["IL"], coverageCities: ["Chicago", "Evanston"], overflowPartner: false, hourlyRateUsd: 85, preference: 2, notes: "Chicago, both airports." },
-  { company: "Pacific Coast Livery", contactName: "Sandra Nguyen", phone: "+1 310 555 0126", email: "ops@pacificcoastlivery.example", coverageStates: ["CA"], coverageCities: ["Los Angeles", "Santa Monica", "Beverly Hills"], overflowPartner: false, hourlyRateUsd: 105, preference: 2, notes: "LA. Three hours' notice minimum." },
+  { company: "Beacon Hill Chauffeurs", baseAddress: "Boston, MA", baseLat: 42.3601, baseLng: -71.0589, contactName: "Maureen Kelly", phone: "+1 617 555 0163", email: "dispatch@beaconhillchauffeurs.example", coverageStates: ["MA"], coverageCities: ["Boston", "Cambridge"], overflowPartner: false, hourlyRateUsd: 95, preference: 1, notes: "Boston. Strong on Logan meet-and-greet." },
+  { company: "Capital Executive Transport", baseAddress: "Washington, DC", baseLat: 38.9072, baseLng: -77.0369, contactName: "Gregory Sims", phone: "+1 202 555 0188", email: "ops@capitalexectransport.example", coverageStates: ["DC", "VA", "MD"], coverageCities: ["Washington", "Arlington", "Bethesda"], overflowPartner: false, hourlyRateUsd: 100, preference: 1, notes: "DC and both airports. Security-cleared drivers available." },
+  { company: "Biscayne Luxury Rides", baseAddress: "Miami, FL", baseLat: 25.7617, baseLng: -80.1918, contactName: "Carla Mendes", phone: "+1 305 555 0155", email: "reservations@biscayneluxury.example", coverageStates: ["FL"], coverageCities: ["Miami", "Fort Lauderdale"], overflowPartner: false, hourlyRateUsd: 90, preference: 3, notes: "Miami. Slow to confirm in high season." },
+  { company: "Windy City Executive", baseAddress: "Chicago, IL", baseLat: 41.8781, baseLng: -87.6298, contactName: "Ray Kowalski", phone: "+1 312 555 0134", email: "dispatch@windycityexec.example", coverageStates: ["IL"], coverageCities: ["Chicago", "Evanston"], overflowPartner: false, hourlyRateUsd: 85, preference: 2, notes: "Chicago, both airports." },
+  { company: "Pacific Coast Livery", baseAddress: "Los Angeles, CA", baseLat: 34.0522, baseLng: -118.2437, contactName: "Sandra Nguyen", phone: "+1 310 555 0126", email: "ops@pacificcoastlivery.example", coverageStates: ["CA"], coverageCities: ["Los Angeles", "Santa Monica", "Beverly Hills"], overflowPartner: false, hourlyRateUsd: 105, preference: 2, notes: "LA. Three hours' notice minimum." },
   // Overflow partners — local, for when every one of our own cars is out.
-  { company: "Metro Overflow Group", contactName: "Tony Barresi", phone: "+1 718 555 0198", email: "dispatch@metrooverflow.example", coverageStates: ["NY", "NJ"], coverageCities: ["New York", "Newark", "Jersey City"], overflowPartner: true, hourlyRateUsd: 70, preference: 1, notes: "First call when we are out of cars. Same-day usually fine." },
-  { company: "Garden State Chauffeur", contactName: "Priya Nair", phone: "+1 201 555 0171", email: "ops@gardenstatechauffeur.example", coverageStates: ["NJ", "NY"], coverageCities: ["Hoboken", "Newark", "Princeton"], overflowPartner: true, hourlyRateUsd: 72, preference: 2, notes: "Overflow, strongest in north Jersey." },
-  { company: "Five Boroughs Car Service", contactName: "Ahmed Hassan", phone: "+1 917 555 0149", email: "bookings@fiveboroughs.example", coverageStates: ["NY"], coverageCities: ["New York", "Queens", "Brooklyn"], overflowPartner: true, hourlyRateUsd: 68, preference: 3, notes: "Overflow. Sedans only — no SUVs." },
+  { company: "Metro Overflow Group", baseAddress: "New York, NY", baseLat: 40.7128, baseLng: -74.006, contactName: "Tony Barresi", phone: "+1 718 555 0198", email: "dispatch@metrooverflow.example", coverageStates: ["NY", "NJ"], coverageCities: ["New York", "Newark", "Jersey City"], overflowPartner: true, hourlyRateUsd: 70, preference: 1, notes: "First call when we are out of cars. Same-day usually fine." },
+  { company: "Garden State Chauffeur", baseAddress: "Newark, NJ", baseLat: 40.7357, baseLng: -74.1724, contactName: "Priya Nair", phone: "+1 201 555 0171", email: "ops@gardenstatechauffeur.example", coverageStates: ["NJ", "NY"], coverageCities: ["Hoboken", "Newark", "Princeton"], overflowPartner: true, hourlyRateUsd: 72, preference: 2, notes: "Overflow, strongest in north Jersey." },
+  { company: "Five Boroughs Car Service", baseAddress: "Queens, NY", baseLat: 40.7282, baseLng: -73.7949, contactName: "Ahmed Hassan", phone: "+1 917 555 0149", email: "bookings@fiveboroughs.example", coverageStates: ["NY"], coverageCities: ["New York", "Queens", "Brooklyn"], overflowPartner: true, hourlyRateUsd: 68, preference: 3, notes: "Overflow. Sedans only — no SUVs." },
 ] as const;
 
 const PICKUPS = [
@@ -170,6 +171,7 @@ export interface SeedSummary {
   drivers: number;
   shifts: number;
   affiliates: number;
+  rateBands: number;
   trips: number;
   invoices: number;
 }
@@ -198,6 +200,7 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
     await db.delete(trips);
     await db.delete(driverShifts);
     await db.delete(drivers);
+    await db.delete(affiliateZones);
     await db.delete(affiliates);
     await db.delete(vehicles);
   }
@@ -219,6 +222,50 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
       active: true,
     }))
   ).returning();
+
+  // --- Partner rate cards --------------------------------------------------
+  //
+  // Built off the flat rate each partner already had, so the numbers stay
+  // recognisable, then spread the way a real sheet is: dearer the further out
+  // you go, and a longer minimum with it, because a car sent forty miles has
+  // half a day gone whatever the job turns out to be.
+  //
+  // The multipliers are per class of car and are the same everywhere, which is
+  // the one thing here that is tidier than life. Five Boroughs is the
+  // exception the fixture needs: sedans only, so a quote for anything bigger
+  // has to come back empty rather than guessed.
+  const CLASS_MULTIPLIER = { SEDAN: 1, SUV: 1.35, VAN: 1.6, SPRINTER: 2.1 } as const;
+  const BANDS = [
+    { label: "Metro", fromMiles: 0, toMiles: 15, minimumHours: 2, uplift: 1 },
+    { label: "Suburban", fromMiles: 15, toMiles: 40, minimumHours: 3, uplift: 1.12 },
+    { label: "Regional", fromMiles: 40, toMiles: 100, minimumHours: 4, uplift: 1.25 },
+    { label: "Long haul", fromMiles: 100, toMiles: null, minimumHours: 6, uplift: 1.4 },
+  ] as const;
+
+  const zoneRows: (typeof affiliateZones.$inferInsert)[] = [];
+  for (const affiliate of insertedAffiliates) {
+    const baseCents = (affiliate.hourlyRateUsd ?? 80) * 100;
+    const sedanOnly = affiliate.company === "Five Boroughs Car Service";
+    for (const band of BANDS) {
+      const rateCents: Record<string, number> = {};
+      for (const [vehicleClass, multiplier] of Object.entries(CLASS_MULTIPLIER)) {
+        if (sedanOnly && vehicleClass !== "SEDAN") continue;
+        // Rounded to the nearest five dollars: nobody quotes $103.87 an hour.
+        const exact = baseCents * multiplier * band.uplift;
+        rateCents[vehicleClass] = Math.round(exact / 500) * 500;
+      }
+      zoneRows.push({
+        affiliateId: affiliate.id,
+        label: band.label,
+        fromMiles: band.fromMiles,
+        toMiles: band.toMiles,
+        minimumHours: band.minimumHours,
+        rateCents,
+        sortOrder: band.fromMiles,
+      });
+    }
+  }
+  await db.insert(affiliateZones).values(zoneRows);
 
   // --- Shifts -------------------------------------------------------------
   //
@@ -503,6 +550,7 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
     drivers: insertedDrivers.length,
     shifts: shiftRows.length,
     affiliates: insertedAffiliates.length,
+    rateBands: zoneRows.length,
     trips: insertedTrips.length,
     invoices: insertedInvoices.length,
   };
