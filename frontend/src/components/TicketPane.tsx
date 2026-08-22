@@ -20,6 +20,7 @@ import { Composer } from "./Composer";
 import { useDraft } from "../hooks/useDraft";
 import { useOpsContext } from "../hooks/useOpsContext";
 import { OpsContextPanel } from "./OpsContextPanel";
+import { ReservationPanel } from "./ReservationPanel";
 import { HistoryDrawer } from "./HistoryDrawer";
 import { usePolling } from "../hooks/usePolling";
 
@@ -237,6 +238,13 @@ export function TicketPane({
           )}
 
           <TriageReason ticket={ticket} className="border-b border-gray-100" />
+
+          {/* Here as well as on the standalone ticket page: this split view is
+              where the work actually happens, and a button that only exists on
+              a page nobody opens is not a feature. */}
+          <div className="border-b border-gray-100 px-4 pb-3">
+            <ReservationPanel ticketId={ticketId} />
+          </div>
 
           <OpsContextPanel context={opsContext} />
 
