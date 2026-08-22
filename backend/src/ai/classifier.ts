@@ -35,6 +35,13 @@ export interface Classification {
   /** Stored on the ticket so staff can see how sure the machine was. */
   confidence: "high" | "medium" | "low";
   reasoning: string;
+  /**
+   * Marketing mail, a newsletter, a supplier blast — anything sent to a list
+   * rather than written to this company. Header checks catch most of it before
+   * we ever get here, but Railway's own newsletter arrived carrying none of
+   * the headers we look for, and became an open ticket nobody could action.
+   */
+  isBulkMail: boolean;
 }
 
 export interface ClassifyInput {
@@ -86,6 +93,8 @@ Judge ONLY where the car goes. A flight's destination is irrelevant — a car to
 Answer null when the email does not say clearly enough where the trip starts and ends. Do NOT infer a location from the sender's address, their phone number, or the language they write in.
 Important: the company also farms out work when all its own vehicles happen to be busy. That is never visible in the email, so never take it into account.
 
+BULK MAIL: set isBulkMail true when this was sent to a list rather than written to this company — a newsletter, a product announcement, a marketing campaign, a supplier's mailshot, an event invitation. Tell-tales: an unsubscribe or "manage preferences" link, a "view in browser" line, a campaign-style sender such as news@ or hello@news.something, content addressed to nobody in particular. A message written by one person to this company is NOT bulk mail, however promotional it sounds — a limousine supplier personally pitching for work is a real email from a real person. When in doubt, answer false: a newsletter left open costs somebody ten seconds, and a real customer closed unread costs them a booking.
+
 CONFIDENCE: high when the email states it plainly, medium when you are reading between the lines, low when you are largely guessing. If you would answer low, prefer null for that label instead.
 
 REASONING: one short sentence, in plain language, naming the specific words in the email that decided it. This is shown to support staff, so write it for them, not for a developer.
@@ -108,6 +117,7 @@ const CLASSIFY_TOOL: Anthropic.Tool = {
       reservationSource: { type: "string", enum: [...ALL_RESERVATION_SOURCES] },
       confidence: { type: "string", enum: ["high", "medium", "low"] },
       reasoning: { type: "string" },
+      isBulkMail: { type: "boolean" },
     },
     required: ["confidence", "reasoning"],
   },
@@ -141,6 +151,10 @@ export function parseClassification(raw: unknown): Classification | null {
     reservationSource: isReservation ? oneOf(r.reservationSource, ALL_RESERVATION_SOURCES) : null,
     confidence: oneOf(r.confidence, ["high", "medium", "low"] as const) ?? "low",
     reasoning: typeof r.reasoning === "string" ? r.reasoning.trim().slice(0, 500) : "",
+    // Anything other than an explicit true means "not bulk". Closing a real
+    // customer's email unread is the expensive mistake here, so the default
+    // must be the harmless one.
+    isBulkMail: r.isBulkMail === true,
   };
 }
 

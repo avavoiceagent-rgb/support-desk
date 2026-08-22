@@ -54,7 +54,9 @@ function loadEnv() {
 function runTag() {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
-  return `${pad(now.getHours())}${pad(now.getMinutes())}`;
+  // Seconds included: two runs of the same scenario inside one minute would
+  // otherwise share a tag, and thread onto each other exactly as before.
+  return `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 }
 
 function printScenario(s, index, total) {

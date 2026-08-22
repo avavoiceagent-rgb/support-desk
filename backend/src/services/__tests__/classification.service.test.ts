@@ -50,6 +50,17 @@ const reservationResult = {
   reservationSource: "INTERNAL",
   confidence: "high",
   reasoning: "Asks for a car from Newark to midtown, both inside the service area.",
+  isBulkMail: false,
+};
+
+/** What the model says about a newsletter that carried no bulk headers. */
+const newsletterResult = {
+  queue: null,
+  reservationType: null,
+  reservationSource: null,
+  confidence: "high",
+  reasoning: "A product newsletter with an unsubscribe link, sent to a list rather than written to us.",
+  isBulkMail: true,
 };
 
 beforeEach(async () => {
@@ -114,6 +125,47 @@ describe("classifyNewTicket", () => {
     const [updated] = await db.select().from(tickets).where(eq(tickets.id, ticket.id));
     expect(updated.queue).toBeNull();
     expect(updated.autoClassified).toBe(false);
+  });
+
+  // Railway's own newsletter arrived from hello@news.railway.app carrying none
+  // of the six headers the bulk check looks at, and sat in Active as an open
+  // ticket. The model can see what the headers hid.
+  it("closes a newsletter the header check missed", async () => {
+    classifyEmail.mockResolvedValue(newsletterResult);
+    const ticket = await makeTicket();
+
+    expect(await classifyNewTicket(ticket.id)).toBe(true);
+
+    const [updated] = await db.select().from(tickets).where(eq(tickets.id, ticket.id));
+    expect(updated.isBulk).toBe(true);
+    expect(updated.status).toBe("UNRESOLVED_CLOSED");
+    expect(updated.queue).toBeNull();
+    expect(updated.classificationReason).toContain("unsubscribe");
+  });
+
+  it("will not close bulk mail that also fits a queue — a person decides that one", async () => {
+    // A supplier mailshot that reads like a booking request. Closing it unread
+    // is the expensive mistake, so a queue that fits always wins.
+    classifyEmail.mockResolvedValue({ ...reservationResult, isBulkMail: true });
+    const ticket = await makeTicket();
+
+    expect(await classifyNewTicket(ticket.id)).toBe(true);
+
+    const [updated] = await db.select().from(tickets).where(eq(tickets.id, ticket.id));
+    expect(updated.status).toBe("OPEN");
+    expect(updated.isBulk).toBe(false);
+    expect(updated.queue).toBe("RESERVATION");
+  });
+
+  it("will not close on a low-confidence hunch", async () => {
+    classifyEmail.mockResolvedValue({ ...newsletterResult, confidence: "low" });
+    const ticket = await makeTicket();
+
+    expect(await classifyNewTicket(ticket.id)).toBe(false);
+
+    const [updated] = await db.select().from(tickets).where(eq(tickets.id, ticket.id));
+    expect(updated.status).toBe("OPEN");
+    expect(updated.isBulk).toBe(false);
   });
 
   it("never overwrites a queue a person already chose", async () => {

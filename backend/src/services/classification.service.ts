@@ -43,9 +43,37 @@ export async function classifyNewTicket(ticketId: string): Promise<boolean> {
       bodyText: firstInbound.bodyText,
       fromAddress: firstInbound.fromAddress,
     });
+    if (!result) return false;
+
+    // A newsletter that hid its headers. Railway's own marketing mail arrived
+    // carrying none of the six headers the bulk check looks at, from
+    // hello@news.railway.app — a local part of "hello", so not a no-reply
+    // address either — and became an open ticket nobody could act on.
+    //
+    // Two conditions, deliberately: the model must call it bulk AND no queue
+    // may fit. A real customer's email nearly always lands in a queue, so
+    // requiring both means a misread of "bulk" alone cannot close a booking
+    // request. Low confidence doesn't close anything either.
+    if (result.isBulkMail && !result.queue && result.confidence !== "low") {
+      const [closed] = await db
+        .update(tickets)
+        .set({
+          isBulk: true,
+          status: "UNRESOLVED_CLOSED",
+          autoClassified: true,
+          classificationReason: result.reasoning || null,
+          classificationConfidence: result.confidence,
+        })
+        // Same race guard as below: if somebody opened it and picked a queue
+        // while the model was thinking, their judgement stands.
+        .where(and(eq(tickets.id, ticketId), isNull(tickets.queue), eq(tickets.status, "OPEN")))
+        .returning({ id: tickets.id });
+      return Boolean(closed);
+    }
+
     // No queue means the model declined to guess — leave the ticket for a
     // human rather than filing it somewhere arbitrary.
-    if (!result || !result.queue) return false;
+    if (!result.queue) return false;
 
     // The guard is repeated in the WHERE clause, not just checked above:
     // the AI call takes a second or two, and in that window an agent can

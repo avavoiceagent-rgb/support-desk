@@ -16,6 +16,15 @@ describe("toPlainText", () => {
 });
 
 describe("parseClassification", () => {
+  it("only treats an explicit true as bulk mail", () => {
+    // Closing a real customer's email unread is the expensive mistake, so
+    // anything ambiguous has to mean "not bulk".
+    expect(parseClassification({ ...good, isBulkMail: true })?.isBulkMail).toBe(true);
+    expect(parseClassification({ ...good, isBulkMail: "yes" })?.isBulkMail).toBe(false);
+    expect(parseClassification({ ...good, isBulkMail: 1 })?.isBulkMail).toBe(false);
+    expect(parseClassification(good)?.isBulkMail).toBe(false);
+  });
+
   const good = {
     queue: "RESERVATION",
     reservationType: "NEW",
@@ -25,7 +34,7 @@ describe("parseClassification", () => {
   };
 
   it("accepts a well-formed result", () => {
-    expect(parseClassification(good)).toEqual(good);
+    expect(parseClassification(good)).toEqual({ ...good, isBulkMail: false });
   });
 
   it("drops reservation sub-labels when the queue is not RESERVATION", () => {
