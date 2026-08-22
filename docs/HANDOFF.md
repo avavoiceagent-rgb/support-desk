@@ -119,6 +119,13 @@ across the whole suite there are **zero assertion failures** — every one of th
 That rules out typos and shape mistakes. It does not rule out a wrong query.
 Please run this file against the real database before anything trusts it.
 
+**Resolved, 22 August.** The Cowork session ran it: all 20 pass, 201 across the
+suite, typecheck clean, and it exercised the functions against seeded data as
+well — every reference spelling resolves, a bad reference returns null, email
+matching ignores case, and trips come back with driver and vehicle attached.
+Railway applied migration 0007 and the seven tables exist and are empty. The
+caveat above stands only as a record of what was and was not known at the time.
+
 Five tests *do* run here, on purpose. I scoped the database cleanup to the three
 describes that need it instead of a file-level `beforeEach`, which lets the
 reference-parsing and formatting tests execute on a machine with no Postgres.
@@ -142,6 +149,9 @@ who asks about their next pickup would, under newest-first, get the twenty
 furthest-away bookings and lose the one happening tomorrow — the single trip most
 likely to be the one they are writing about. If you disagree, it is one word in
 `orderBy`, but I would want to hear the case before changing it back.
+
+**Settled, 22 August.** The Cowork session agrees: soonest-first is right, for
+the reason given. The task's blanket wording was the error. Left as built.
 
 (I also corrected the stale "17" in the standing candidates below to 53, since
 leaving a known-wrong number in a shared page is worse than editing your list.)
@@ -189,10 +199,14 @@ knows the background:
   `lookup` have been added since). `docker compose up -d` in the repo root would start exactly
   the right one, if Docker were installed. Until then the Cowork session runs
   them before anything ships.
-- **The dummy data is local only.** `npm run seed:ops -- --reset` has been run
-  against the Cowork session's database, not Railway's. Seeding production is a
-  deliberate separate step, and needs a decision about whether fabricated trips
-  should sit in the live system at all.
+- **The dummy data is local only, and the live tables are empty.** As of
+  22 August migration 0007 has run on Railway, so `trips`, `invoices` and the
+  rest exist in production with nothing in them. `npm run seed:ops -- --reset`
+  has only ever been run against the Cowork session's database, and nothing on
+  the deploy path calls it. Seeding production stays a deliberate separate step
+  and still needs a decision about whether fabricated trips should sit in the
+  live system at all. Note the consequence for the next task: a lookup wired
+  into drafting will find nothing in production until that decision is made.
 - **The bulk-signal task** (recording which headers each email carried) is
   still open and was written up before this one; it is the smaller job.
 - **Ticket #60** (the Railway newsletter) stays open until somebody closes it
