@@ -11,6 +11,7 @@ import { db } from "../db/client";
 import { affiliates, drivers, trips, vehicles } from "../db/schema";
 import { overlapsWindow } from "./availability";
 import { selectTrips, toTripRecord, type TripRecord } from "./lookup";
+import { diffTrip, recordTripEvent, type Actor } from "./trip-events";
 import { OpsError } from "./errors";
 import { OPERATING_TIME_ZONE } from "../booking/pickup-time";
 
@@ -204,9 +205,13 @@ function describeClash(clash: TripClash): string {
  * moving the pickup time of an already-assigned trip can create a clash just
  * as assigning a driver can.
  */
-export async function updateTrip(id: string, patch: TripPatch): Promise<TripRecord> {
-  const [existing] = await db.select().from(trips).where(eq(trips.id, id)).limit(1);
-  if (!existing) throw new OpsError(`No trip with id ${id}.`, 404);
+export async function updateTrip(id: string, patch: TripPatch, actor?: Actor): Promise<TripRecord> {
+  // Read the joined record, not the bare row: the audit trail wants to say
+  // "Marco Rinaldi", and it can only do that if it knew the name before the
+  // change as well as after.
+  const [before] = await selectTrips().where(eq(trips.id, id)).limit(1);
+  if (!before) throw new OpsError(`No trip with id ${id}.`, 404);
+  const existing = before.trip;
 
   const driverId = patch.driverId === undefined ? existing.driverId : patch.driverId;
   const pickupAt = patch.pickupAt ?? existing.pickupAt;
@@ -253,5 +258,19 @@ export async function updateTrip(id: string, patch: TripPatch): Promise<TripReco
     .returning();
 
   const found = await selectTrips().where(eq(trips.id, row.id)).limit(1);
-  return toTripRecord(found[0]);
+  const after = toTripRecord(found[0]);
+
+  // Recorded after the write succeeds, so a refused change leaves no trace of
+  // having happened. An actor is optional only so the seed and the tests can
+  // build fixtures without inventing a person who did it.
+  if (actor) {
+    await recordTripEvent({
+      tripId: id,
+      actor,
+      kind: after.status === "CANCELLED" && before.trip.status !== "CANCELLED" ? "CANCELLED" : "UPDATED",
+      changes: diffTrip(toTripRecord(before), after),
+    });
+  }
+
+  return after;
 }

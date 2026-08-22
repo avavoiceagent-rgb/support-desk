@@ -25,6 +25,7 @@ import {
 } from "../ops/directory";
 import { getDriverSchedule, createShift, updateShift, deleteShift } from "../ops/schedule";
 import { listZones, createZone, updateZone, deleteZone, MAX_BAND_MILES } from "../ops/zones";
+import { actorFor, listTripEvents } from "../ops/trip-events";
 import {
   searchTrips,
   updateTrip,
@@ -321,5 +322,16 @@ opsRouter.patch("/trips/:id", requireAdmin, async (req, res) => {
   if (Object.keys(parsed.data).length === 0) {
     return res.status(400).json({ error: "Nothing to update" });
   }
-  await handle(res, async () => res.json({ trip: await updateTrip(param(req, "id"), parsed.data) }));
+  const actor = await actorFor(req.session?.userId);
+  await handle(res, async () =>
+    res.json({ trip: await updateTrip(param(req, "id"), parsed.data, actor) })
+  );
+});
+
+// Readable by anyone signed in, like every other read here. Who changed what
+// is not privileged information inside a desk of five people, and hiding it
+// from the dispatcher who has to explain the change to a customer would be
+// the wrong way round.
+opsRouter.get("/trips/:id/events", async (req, res) => {
+  res.json({ events: await listTripEvents(param(req, "id")) });
 });

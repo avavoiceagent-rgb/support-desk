@@ -400,6 +400,46 @@ export const trips = pgTable(
   ]
 );
 
+export const tripEventKindEnum = pgEnum("trip_event_kind", ["CREATED", "UPDATED", "CANCELLED"]);
+
+/**
+ * Who changed a reservation, when, and from what to what.
+ *
+ * Append-only: rows are written and never edited, because the value of an
+ * audit trail is entirely that nobody can tidy it afterwards.
+ *
+ * The actor's name is stored alongside their id rather than joined at read
+ * time. A join would rewrite history when somebody's name changes in Settings,
+ * and "who did this" means who did it under the name they had that day.
+ * The id is kept as well, so the person is still identifiable if two staff
+ * ever share a name.
+ */
+export const tripEvents = pgTable(
+  "trip_events",
+  {
+    id: cuid(),
+    tripId: text("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    /** Null for anything the desk did on its own rather than a person. */
+    actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    actorName: text("actor_name").notNull(),
+    kind: tripEventKindEnum("kind").notNull(),
+    /**
+     * What moved, already in words. "Marco Rinaldi", not a row id: an audit
+     * trail nobody can read without running a query is not an audit trail.
+     */
+    changes: jsonb("changes")
+      .$type<{ field: string; from: string | null; to: string | null }[]>()
+      .notNull()
+      .default([]),
+    /** Where it came from, when it did not come from this screen. */
+    source: text("source"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("trip_events_trip_idx").on(t.tripId, t.createdAt)]
+);
+
 export const invoices = pgTable("invoices", {
   id: cuid(),
   /** Quoted by customers in billing emails: "INV-10432". */

@@ -64,6 +64,13 @@
       "when": 1787372868410,
       "tag": "0008_affiliate_zones",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787373836166,
+      "tag": "0009_trip_events",
+      "breakpoints": true
     }
   ]
 }

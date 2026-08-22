@@ -200,6 +200,25 @@ export interface TripSearch {
   offset?: number;
 }
 
+export interface TripFieldChange {
+  field: string;
+  from: string | null;
+  to: string | null;
+}
+
+/** One line of a reservation's history. Append-only on the server. */
+export interface TripEvent {
+  id: string;
+  tripId: string;
+  actorUserId: string | null;
+  /** The name that person had when they made the change, not their name now. */
+  actorName: string;
+  kind: "CREATED" | "UPDATED" | "CANCELLED";
+  changes: TripFieldChange[];
+  source: string | null;
+  createdAt: string;
+}
+
 export interface TripSearchResult {
   trips: Trip[];
   total: number;
@@ -266,6 +285,9 @@ export const opsApi = {
 
   updateAffiliate: (id: string, patch: Partial<Affiliate>) =>
     api.patch<{ affiliate: Affiliate }>(`/ops/affiliates/${id}`, patch),
+
+  tripEvents: (tripId: string) =>
+    api.get<{ events: TripEvent[] }>(`/ops/trips/${tripId}/events`).then((r) => r.events),
 
   zones: (affiliateId: string) =>
     api.get<{ zones: AffiliateZone[] }>(`/ops/affiliates/${affiliateId}/zones`).then((r) => r.zones),

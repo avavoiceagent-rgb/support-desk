@@ -24,6 +24,7 @@ import {
   type TripStatus,
   type Vehicle,
 } from "../../api/ops";
+import { TripHistoryModal } from "./TripHistoryModal";
 import {
   Button,
   ErrorNote,
@@ -314,6 +315,7 @@ export function ReservationsTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Trip | null>(null);
+  const [historyFor, setHistoryFor] = useState<Trip | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -494,13 +496,16 @@ export function ReservationsTab({
                 {COLUMNS.map((c) => (
                   <HeaderCell key={c.label} column={c} sort={sort} onSort={onSort} />
                 ))}
+                <th className="whitespace-nowrap px-3 py-2 text-right text-[11px] font-medium text-gray-500">
+                  History
+                </th>
                 {isAdmin && <th className="w-px px-3 py-2" />}
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={COLUMNS.length + 1} className="px-5 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={COLUMNS.length + 2} className="px-5 py-8 text-center text-sm text-gray-500">
                     Loading…
                   </td>
                 </tr>
@@ -508,7 +513,7 @@ export function ReservationsTab({
 
               {!loading && trips.length === 0 && (
                 <tr>
-                  <td colSpan={COLUMNS.length + 1} className="px-5 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={COLUMNS.length + 2} className="px-5 py-8 text-center text-sm text-gray-500">
                     No reservations match those filters.
                   </td>
                 </tr>
@@ -560,6 +565,14 @@ export function ReservationsTab({
                     <Cell className="whitespace-nowrap">
                       <StatusPill status={t.status} />
                     </Cell>
+                    <Cell className="whitespace-nowrap text-right">
+                      <button
+                        onClick={() => setHistoryFor(t)}
+                        className="text-xs font-medium text-gray-500 transition-colors hover:text-indigo-700"
+                      >
+                        History
+                      </button>
+                    </Cell>
                     {isAdmin && (
                       <Cell className="whitespace-nowrap text-right">
                         <button
@@ -576,6 +589,8 @@ export function ReservationsTab({
           </table>
         </div>
       </section>
+
+      {historyFor && <TripHistoryModal trip={historyFor} onClose={() => setHistoryFor(null)} />}
 
       {editing && (
         <TripEditor
