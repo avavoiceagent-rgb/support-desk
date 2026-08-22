@@ -18,6 +18,8 @@ import { AssigneeSelect } from "./AssigneeSelect";
 import { ConversationTimeline } from "./ConversationTimeline";
 import { Composer } from "./Composer";
 import { useDraft } from "../hooks/useDraft";
+import { useOpsContext } from "../hooks/useOpsContext";
+import { OpsContextPanel } from "./OpsContextPanel";
 import { HistoryDrawer } from "./HistoryDrawer";
 import { usePolling } from "../hooks/usePolling";
 
@@ -43,6 +45,7 @@ export function TicketPane({
   const [seedBody, setSeedBody] = useState("");
   const [seedKey, setSeedKey] = useState(0);
   const { draft, markUsed, markDismissed } = useDraft(ticketId);
+  const { context: opsContext } = useOpsContext(ticketId);
   const [error, setError] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -234,6 +237,8 @@ export function TicketPane({
           )}
 
           <TriageReason ticket={ticket} className="border-b border-gray-100" />
+
+          <OpsContextPanel context={opsContext} />
 
           {/* Conversation (emails + notes) and composer */}
           <div className="flex-1 overflow-y-auto bg-gray-50/40 p-4">

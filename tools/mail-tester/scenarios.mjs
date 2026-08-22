@@ -174,6 +174,30 @@ Accounts Payable`,
     ],
   },
   {
+    id: "on-file",
+    title: "Quotes a booking and an invoice we already have",
+    subject: "Change to booking T-10005",
+    body: `Hi,
+
+Could we move booking T-10005 an hour later than planned?
+
+Separately, invoice 10032 looks like it charges twice for the same journey — could someone check it?
+
+One more: what happened with T-99999? I can't find it in my records.
+
+Regards,
+Daniel Weiss
++1 917 555 0134`,
+    check: [
+      'The "On file for this sender" panel appears above the conversation',
+      'T-10005 and INV-10032 are listed, both tagged "Named in this email"',
+      "The invoice shows its line and, if it is one of the disputed ones, the dispute note",
+      "T-99999 appears in the amber line as quoted but matching nothing",
+      "Nothing from the panel appears in any drafted reply — it is staff-only",
+      "Requires the operational tables to be seeded first, or the panel stays hidden",
+    ],
+  },
+  {
     id: "newsletter",
     title: "Bulk marketing mail",
     subject: "🚗 Your September fleet newsletter is here!",

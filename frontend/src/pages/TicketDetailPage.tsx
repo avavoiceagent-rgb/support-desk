@@ -18,6 +18,8 @@ import { AssigneeSelect } from "../components/AssigneeSelect";
 import { ConversationTimeline } from "../components/ConversationTimeline";
 import { Composer } from "../components/Composer";
 import { useDraft } from "../hooks/useDraft";
+import { useOpsContext } from "../hooks/useOpsContext";
+import { OpsContextPanel } from "../components/OpsContextPanel";
 import { Avatar } from "../components/Avatar";
 import { usePolling } from "../hooks/usePolling";
 import { formatDateTime } from "../lib/ui";
@@ -30,6 +32,7 @@ export function TicketDetailPage() {
   const [seedBody, setSeedBody] = useState("");
   const [seedKey, setSeedKey] = useState(0);
   const { draft, markUsed, markDismissed } = useDraft(id ?? "");
+  const { context: opsContext } = useOpsContext(id ?? "");
 
   const load = useCallback(() => {
     if (!id) return;
@@ -220,6 +223,10 @@ export function TicketDetailPage() {
               </div>
             </div>
             <TriageReason ticket={ticket} className="mt-3 rounded-lg" />
+
+            <div className="mt-3 overflow-hidden rounded-lg border border-gray-200">
+              <OpsContextPanel context={opsContext} />
+            </div>
           </div>
         </div>
       </div>
