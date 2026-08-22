@@ -132,9 +132,22 @@ function DriverRow({
   const shifts = schedule?.shifts ?? [];
   const uncovered = schedule?.unscheduledTrips ?? [];
 
+  // A night shift means two rows here — the tail of last night's and the whole
+  // of tonight's — and printed as bare clock times the two are word for word
+  // identical, which reads as a duplicate rather than as two separate shifts.
+  // The one that began before this date is dated.
   const windows = shifts
     .filter((s) => band(new Date(s.startsAt).getTime(), new Date(s.endsAt).getTime(), dayStart))
-    .map((s) => `${atTime(s.startsAt)} – ${atTime(s.endsAt)}${s.unavailable ? " (off)" : ""}`);
+    .map((s) => {
+      const carriedOver = new Date(s.startsAt).getTime() < dayStart;
+      const from = carriedOver
+        ? `${new Date(s.startsAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} · `
+        : "";
+      return {
+        id: s.id,
+        text: `${from}${atTime(s.startsAt)} – ${atTime(s.endsAt)}${s.unavailable ? " (off)" : ""}`,
+      };
+    });
 
   return (
     <div className="flex items-stretch border-t border-gray-100">
@@ -152,8 +165,8 @@ function DriverRow({
           <span className="text-[11px] text-gray-400">Not working</span>
         ) : (
           windows.map((w) => (
-            <span key={w} className="text-[11px] tabular-nums text-gray-600">
-              {w}
+            <span key={w.id} className="text-[11px] tabular-nums text-gray-600">
+              {w.text}
             </span>
           ))
         )}
@@ -598,7 +611,7 @@ export function ScheduleTab({
                     <div
                       key={h}
                       className={`flex-1 border-l py-1 text-center text-[10px] tabular-nums ${
-                        h % 6 === 0 ? "border-gray-300 text-gray-600" : "border-gray-100 text-gray-300"
+                        h % 6 === 0 ? "border-gray-300 text-gray-700" : "border-gray-100 text-gray-500"
                       }`}
                     >
                       {h % 3 === 0 ? hourLabel(h) : ""}

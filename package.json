@@ -7,6 +7,7 @@
   },
   "scripts": {
     "build": "cd backend && npm ci && npm run build && cd ../frontend && npm ci && npm run build",
-    "start": "cd backend && npm run start"
+    "start": "cd backend && npm run start",
+    "seed:ops": "node backend/dist/db/seed-ops.js"
   }
 }
