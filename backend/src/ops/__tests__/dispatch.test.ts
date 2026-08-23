@@ -288,3 +288,39 @@ describe("offering work to somebody who cannot take it", () => {
     expect(sent.body).toBe("Your last invoice went out today.");
   });
 });
+
+describe("an offer gets one answer", () => {
+  beforeEach(reset);
+
+  it("refuses the second of two acceptances landing together", async () => {
+    // respondToOffer reads for an existing answer and then writes, and those
+    // are two moments. Both used to pass the check and both wrote.
+    const marco = await makeDriver();
+    const trip = await makeTrip();
+    const actor = await actorFor(undefined);
+    const offer = await sendOffer({ contact: { kind: "DRIVER", id: marco.id }, tripId: trip.id, actor });
+
+    const results = await Promise.allSettled([
+      respondToOffer({ offerId: offer.id, accept: true, actor }),
+      respondToOffer({ offerId: offer.id, accept: true, actor }),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const answers = (await listMessages({ kind: "DRIVER", id: marco.id })).filter(
+      (m) => m.respondsToId === offer.id
+    );
+    expect(answers).toHaveLength(1);
+  });
+
+  it("tells the loser the same thing the polite check would have", async () => {
+    const marco = await makeDriver();
+    const trip = await makeTrip();
+    const actor = await actorFor(undefined);
+    const offer = await sendOffer({ contact: { kind: "DRIVER", id: marco.id }, tripId: trip.id, actor });
+
+    await respondToOffer({ offerId: offer.id, accept: false, actor });
+    await expect(respondToOffer({ offerId: offer.id, accept: true, actor })).rejects.toThrow(
+      /already declined|already been answered/
+    );
+  });
+});

@@ -497,6 +497,17 @@ export const dispatchMessages = pgTable(
     index("dispatch_driver_idx").on(t.driverId, t.createdAt),
     index("dispatch_affiliate_idx").on(t.affiliateId, t.createdAt),
     index("dispatch_trip_idx").on(t.tripId, t.createdAt),
+    /**
+     * One answer per offer, enforced by the database.
+     *
+     * `respondToOffer` checks for an existing answer and then writes, and
+     * those are two moments — two acceptances landing together both passed the
+     * check and both wrote, so an offer could be accepted twice. Partial,
+     * because every ordinary message has no `respondsToId` at all.
+     */
+    uniqueIndex("dispatch_one_answer_per_offer")
+      .on(t.respondsToId)
+      .where(sql`${t.respondsToId} is not null`),
   ]
 );
 

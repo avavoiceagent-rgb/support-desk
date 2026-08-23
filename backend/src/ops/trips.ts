@@ -291,31 +291,46 @@ export async function updateTrip(id: string, patch: TripPatch, actor?: Actor): P
   // because nothing on that path ever touched the column. Derived, it cannot.
   const assignedKind = driverId ? "DRIVER" : affiliateId ? "AFFILIATE" : "UNASSIGNED";
 
-  const [row] = await db
-    .update(trips)
-    .set({
-      ...patch,
-      ...sideEffects,
-      assignedKind,
-      updatedAt: new Date(),
-    } as Partial<typeof trips.$inferInsert>)
-    .where(eq(trips.id, id))
-    .returning();
+  // The change and the record of it, together or not at all.
+  //
+  // They were two statements with nothing binding them, so an event insert
+  // that failed left the change standing and the history with a hole. The file
+  // that writes those events says it out loud — "an audit trail that can be
+  // tidied afterwards is not evidence of anything" — and a hole is a tidying
+  // nobody chose.
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(trips)
+      .set({
+        ...patch,
+        ...sideEffects,
+        assignedKind,
+        updatedAt: new Date(),
+      } as Partial<typeof trips.$inferInsert>)
+      .where(eq(trips.id, id))
+      .returning();
 
-  const found = await selectTrips().where(eq(trips.id, row.id)).limit(1);
-  const after = toTripRecord(found[0]);
+    const found = await selectTrips(tx).where(eq(trips.id, row.id)).limit(1);
+    const after = toTripRecord(found[0]);
 
-  // Recorded after the write succeeds, so a refused change leaves no trace of
-  // having happened. An actor is optional only so the seed and the tests can
-  // build fixtures without inventing a person who did it.
-  if (actor) {
-    await recordTripEvent({
-      tripId: id,
-      actor,
-      kind: after.status === "CANCELLED" && before.trip.status !== "CANCELLED" ? "CANCELLED" : "UPDATED",
-      changes: diffTrip(toTripRecord(before), after),
-    });
-  }
+    // Still recorded only once the write has gone through, so a refused change
+    // leaves no trace of having happened. An actor is optional only so the seed
+    // and the tests can build fixtures without inventing a person who did it.
+    if (actor) {
+      await recordTripEvent(
+        {
+          tripId: id,
+          actor,
+          kind:
+            after.status === "CANCELLED" && before.trip.status !== "CANCELLED"
+              ? "CANCELLED"
+              : "UPDATED",
+          changes: diffTrip(toTripRecord(before), after),
+        },
+        tx
+      );
+    }
 
-  return after;
+    return after;
+  });
 }

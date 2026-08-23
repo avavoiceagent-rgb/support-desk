@@ -171,8 +171,15 @@ export async function sendOffer(params: {
   return row;
 }
 
-/** An offer that has not been answered yet, or null. */
-export async function pendingResponse(offerId: string): Promise<DispatchMessage | null> {
+/**
+ * The accept or decline already sitting against this offer, or null.
+ *
+ * Named `pendingResponse` and documented as "an offer that has not been
+ * answered yet", which is the opposite of what it returns. The caller was
+ * always right; the name and the comment were both backwards, which is the
+ * kind of thing that reads fine until somebody trusts it at speed.
+ */
+export async function answerTo(offerId: string): Promise<DispatchMessage | null> {
   const [row] = await db
     .select()
     .from(dispatchMessages)
@@ -200,6 +207,30 @@ export interface OfferOutcome {
  * because a thread showing an acceptance that never took effect is worse than
  * a thread showing nothing.
  */
+/**
+ * The answer, with the race the polite check above cannot close.
+ *
+ * Two acceptances arriving together both read "not answered yet" and both
+ * wrote. The unique index refuses the second; this turns that refusal into the
+ * same sentence the check would have used.
+ */
+async function insertAnswer(
+  values: typeof dispatchMessages.$inferInsert
+): Promise<DispatchMessage> {
+  try {
+    const [row] = await db.insert(dispatchMessages).values(values).returning();
+    return row;
+  } catch (err) {
+    for (let e = err as { code?: string; constraint?: string; cause?: unknown } | undefined; e; ) {
+      if (e.code === "23505" && e.constraint === "dispatch_one_answer_per_offer") {
+        throw new OpsError("That offer has already been answered.", 409);
+      }
+      e = e.cause as typeof e;
+    }
+    throw err;
+  }
+}
+
 export async function respondToOffer(params: {
   offerId: string;
   accept: boolean;
@@ -214,7 +245,7 @@ export async function respondToOffer(params: {
   if (!offer) throw new OpsError(`No offer with id ${params.offerId}.`, 404);
   if (offer.kind !== "OFFER") throw new OpsError("That message is not an offer.");
 
-  const already = await pendingResponse(offer.id);
+  const already = await answerTo(offer.id);
   if (already) {
     throw new OpsError(
       `That offer was already ${already.kind === "ACCEPT" ? "accepted" : "declined"}.`,
@@ -235,20 +266,17 @@ export async function respondToOffer(params: {
   }
 
   const note = params.note?.trim();
-  const [row] = await db
-    .insert(dispatchMessages)
-    .values({
-      tripId: offer.tripId,
-      driverId: offer.driverId,
-      affiliateId: offer.affiliateId,
-      direction: "IN",
-      kind: params.accept ? "ACCEPT" : "DECLINE",
-      body: note || (params.accept ? "Yes, I can take that." : "Sorry, I can't take that one."),
-      respondsToId: offer.id,
-      actedByUserId: params.actor.userId,
-      actedByName: params.actor.name,
-    })
-    .returning();
+  const row = await insertAnswer({
+    tripId: offer.tripId,
+    driverId: offer.driverId,
+    affiliateId: offer.affiliateId,
+    direction: "IN",
+    kind: params.accept ? "ACCEPT" : "DECLINE",
+    body: note || (params.accept ? "Yes, I can take that." : "Sorry, I can't take that one."),
+    respondsToId: offer.id,
+    actedByUserId: params.actor.userId,
+    actedByName: params.actor.name,
+  });
 
   return { message: row, trip };
 }

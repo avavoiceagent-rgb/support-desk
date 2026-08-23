@@ -107,8 +107,8 @@ export function normaliseReference(raw: string, prefix: "T" | "INV"): string | n
  * drift would show as a panel missing a driver's phone number for reasons
  * nobody could explain.
  */
-export function selectTrips() {
-  return db
+export function selectTrips(client: Pick<typeof db, "select"> = db) {
+  return client
     .select({
       trip: trips,
       driverId: drivers.id,

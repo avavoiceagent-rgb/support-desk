@@ -82,18 +82,22 @@ export async function actorFor(userId: string | undefined): Promise<Actor> {
   return { userId: user?.id ?? null, name: user?.name ?? SYSTEM_ACTOR };
 }
 
-export async function recordTripEvent(params: {
-  tripId: string;
-  actor: Actor;
-  kind: "CREATED" | "UPDATED" | "CANCELLED";
-  changes?: FieldChange[];
-  source?: string | null;
-}): Promise<TripEvent | null> {
+export async function recordTripEvent(
+  params: {
+    tripId: string;
+    actor: Actor;
+    kind: "CREATED" | "UPDATED" | "CANCELLED";
+    changes?: FieldChange[];
+    source?: string | null;
+  },
+  /** Pass the transaction so the change and its record stand or fall together. */
+  client: Pick<typeof db, "insert"> = db
+): Promise<TripEvent | null> {
   // An update that changed nothing is not history. Someone opening the editor
   // and pressing Save should not leave a footprint suggesting they did.
   if (params.kind === "UPDATED" && (params.changes ?? []).length === 0) return null;
 
-  const [row] = await db
+  const [row] = await client
     .insert(tripEvents)
     .values({
       tripId: params.tripId,
@@ -107,11 +111,18 @@ export async function recordTripEvent(params: {
   return row;
 }
 
-/** Oldest first: a history is read forwards. */
+/**
+ * Oldest first: a history is read forwards.
+ *
+ * The id breaks a tie. Two events written in the same millisecond had no
+ * defined order, so a history could read differently on two loads — which in
+ * an audit trail is worse than it sounds, because the whole value of one is
+ * that it says the same thing every time somebody looks.
+ */
 export async function listTripEvents(tripId: string): Promise<TripEvent[]> {
   return db
     .select()
     .from(tripEvents)
     .where(eq(tripEvents.tripId, tripId))
-    .orderBy(asc(tripEvents.createdAt));
+    .orderBy(asc(tripEvents.createdAt), asc(tripEvents.id));
 }

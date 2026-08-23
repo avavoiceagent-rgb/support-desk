@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "dispatch_one_answer_per_offer" ON "dispatch_messages" USING btree ("responds_to_id") WHERE "dispatch_messages"."responds_to_id" is not null;

@@ -318,3 +318,55 @@ describe("the minimum has a ceiling", () => {
     expect(made.minimumHours).toBe(MAX_BAND_MINIMUM_HOURS);
   });
 });
+
+describe("two people editing one card", () => {
+  let affiliateId: string;
+  beforeEach(async () => {
+    await db.delete(affiliateZones);
+    await db.delete(affiliates);
+    affiliateId = (await makeAffiliate()).id;
+  });
+
+  it("does not let two overlapping bands be added at the same moment", async () => {
+    // assertBandFits reads the other bands and then writes. Two adds landing
+    // together both passed, leaving a card with two bands claiming the same
+    // miles — the exact state the check exists to prevent.
+    // Six at once, all claiming miles the others claim.
+    //
+    // Honest limitation: this does NOT reproduce the race. It passes against
+    // the unlocked version too, because Postgres on localhost answers in under
+    // a millisecond and the six calls end up effectively serial. Against Neon,
+    // where every round trip is tens of milliseconds, the window between the
+    // check and the write is wide open — which is where it matters and where
+    // it cannot be tested from here.
+    //
+    // So this is a regression guard, not a proof: with the lock it must always
+    // hold, and if somebody removes the lock it will start failing the moment
+    // the timing does cooperate.
+    const results = await Promise.allSettled(
+      [0, 2, 4, 6, 8, 10].map((from, i) =>
+        createZone(affiliateId, {
+          label: `Band ${i}`, fromMiles: from, toMiles: from + 20,
+          minimumHours: 2, rateCents: { SEDAN: 7_500 },
+        })
+      )
+    );
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await listZones(affiliateId)).toHaveLength(1);
+  });
+
+  it("still lets bands that do not overlap go in together", async () => {
+    const results = await Promise.allSettled([
+      createZone(affiliateId, {
+        label: "Metro", fromMiles: 0, toMiles: 15, minimumHours: 2, rateCents: { SEDAN: 7_500 },
+      }),
+      createZone(affiliateId, {
+        label: "Suburban", fromMiles: 15, toMiles: 40, minimumHours: 3, rateCents: { SEDAN: 8_500 },
+      }),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+    expect((await listZones(affiliateId)).map((z) => z.label)).toEqual(["Metro", "Suburban"]);
+  });
+});

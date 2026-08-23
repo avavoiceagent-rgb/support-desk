@@ -143,6 +143,28 @@ describe("recording a change", () => {
     expect(event.kind).toBe("CANCELLED");
   });
 
+  it("reads the same way twice when two events share a timestamp", async () => {
+    // Ordering on createdAt alone left two events written in the same
+    // millisecond with no defined order, so a history could read differently
+    // on two loads. In an audit trail that is worse than it sounds: the whole
+    // value of one is that it says the same thing every time.
+    const trip = await makeTrip();
+    const actor = await actorFor(undefined);
+    const at = new Date("2026-09-22T12:00:00.000Z");
+
+    for (const to of ["3", "4", "5"]) {
+      await db.insert(tripEvents).values({
+        tripId: trip.id, actorName: actor.name, kind: "UPDATED",
+        changes: [{ field: "Hours booked", from: "2", to }], createdAt: at,
+      });
+    }
+
+    const once = (await listTripEvents(trip.id)).map((e) => e.id);
+    const twice = (await listTripEvents(trip.id)).map((e) => e.id);
+    expect(once).toEqual(twice);
+    expect(once).toHaveLength(3);
+  });
+
   it("reads forwards, oldest first", async () => {
     const user = await makeUser();
     const trip = await makeTrip();

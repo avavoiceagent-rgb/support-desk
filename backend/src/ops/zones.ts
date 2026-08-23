@@ -9,7 +9,7 @@
 // arithmetic and a neighbourhood is a judgement. "Which zone is 1 Hotel
 // Brooklyn Bridge in?" needs a person the first time and every time after.
 
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { affiliateZones, affiliates, type VehicleClass } from "../db/schema";
 import { OpsError } from "./errors";
@@ -147,7 +147,12 @@ export interface ZoneInput {
  * bands both claiming twenty miles means somebody typed the card wrong, and a
  * quote that silently picks one of them is a bill nobody can explain later.
  */
-async function assertBandFits(affiliateId: string, input: ZoneInput, excludeId?: string) {
+async function assertBandFits(
+  affiliateId: string,
+  input: ZoneInput,
+  excludeId?: string,
+  client: Pick<typeof db, "select"> = db
+) {
   if (input.fromMiles < 0) throw new OpsError("A band cannot start below zero miles.");
   if (input.toMiles !== null && input.toMiles <= input.fromMiles) {
     throw new OpsError("A band has to end further out than it starts.");
@@ -162,7 +167,7 @@ async function assertBandFits(affiliateId: string, input: ZoneInput, excludeId?:
     );
   }
 
-  const existing = await db
+  const existing = await client
     .select()
     .from(affiliateZones)
     .where(
@@ -188,14 +193,46 @@ async function requireAffiliate(affiliateId: string) {
   return row;
 }
 
+/**
+ * Edits to one partner's card, one at a time.
+ *
+ * `assertBandFits` reads the other bands and then writes, which two people
+ * adding a band together both pass — leaving a card with two bands claiming
+ * the same miles, the exact state the check exists to prevent. Locking the
+ * partner's row makes the read-then-write one thing.
+ *
+ * A row lock rather than a constraint because the rule is about ranges
+ * overlapping, which no unique index expresses; Postgres has an EXCLUDE
+ * constraint for it, but that needs an extension enabled on the live database
+ * and this does not.
+ */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function withCardLocked<T>(
+  affiliateId: string,
+  work: (tx: Tx) => Promise<T>
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select 1 from affiliates where id = ${affiliateId} for update`);
+    // Everything inside runs on `tx`, not on `db`. Reaching for the pool here
+    // would take a second connection while this transaction holds the first
+    // and the lock — which is not a slower version of the same thing, it is a
+    // deadlock waiting for a busy afternoon. The first draft of this did
+    // exactly that and hung the test run.
+    return work(tx);
+  });
+}
+
 export async function createZone(affiliateId: string, input: ZoneInput): Promise<AffiliateZone> {
   await requireAffiliate(affiliateId);
-  await assertBandFits(affiliateId, input);
-  const [row] = await db
-    .insert(affiliateZones)
-    .values({ ...input, affiliateId, sortOrder: input.fromMiles })
-    .returning();
-  return row;
+  return withCardLocked(affiliateId, async (tx) => {
+    await assertBandFits(affiliateId, input, undefined, tx);
+    const [row] = await tx
+      .insert(affiliateZones)
+      .values({ ...input, affiliateId, sortOrder: input.fromMiles })
+      .returning();
+    return row;
+  });
 }
 
 export async function updateZone(id: string, patch: Partial<ZoneInput>): Promise<AffiliateZone> {
@@ -211,14 +248,16 @@ export async function updateZone(id: string, patch: Partial<ZoneInput>): Promise
     minimumHours: patch.minimumHours ?? existing.minimumHours,
     rateCents: patch.rateCents ?? existing.rateCents,
   };
-  await assertBandFits(existing.affiliateId, merged, id);
+  return withCardLocked(existing.affiliateId, async (tx) => {
+    await assertBandFits(existing.affiliateId, merged, id, tx);
 
-  const [row] = await db
-    .update(affiliateZones)
-    .set({ ...merged, sortOrder: merged.fromMiles })
-    .where(eq(affiliateZones.id, id))
-    .returning();
-  return row;
+    const [row] = await tx
+      .update(affiliateZones)
+      .set({ ...merged, sortOrder: merged.fromMiles })
+      .where(eq(affiliateZones.id, id))
+      .returning();
+    return row;
+  });
 }
 
 /**

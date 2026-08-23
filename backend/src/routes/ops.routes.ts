@@ -100,7 +100,17 @@ opsRouter.get("/drivers/:id/schedule", async (req, res) => {
 const tripSearchSchema = z.object({
   from: isoDate.optional(),
   to: isoDate.optional(),
-  status: z.string().optional(),
+  // Whitelisted, like `sort` two lines down. It was a bare string going into
+  // a comparison against an enum column, so Postgres rejected the value, the
+  // error was not an OpsError, and a mistyped filter came back as a 500
+  // instead of saying which statuses exist. Parameterised throughout, so this
+  // was never an injection — just an unhelpful failure.
+  status: z
+    .enum(
+      ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_SHOW"],
+      "That is not a status a reservation can have."
+    )
+    .optional(),
   driverId: z.string().optional(),
   affiliateId: z.string().optional(),
   q: z.string().optional(),
