@@ -35,148 +35,118 @@ it.
 
 ---
 
-## Where things stand — 22 August
+## Where things stand — 23 August
 
-The previous task (the operations API) is done, shipped and in use. What has
-landed since, all live on Railway:
+Two days of work, all live on Railway.
 
-- **Operations screen**, three tabs. Driver schedules is a dispatch board:
-  every driver a row, the day running left to right, green for the window they
-  offered, red for the part sold, amber for a trip no shift covers, grey for
-  time off. Partners and Reservations are sortable tables.
-- **Roster-aware dummy data.** The seed used to pick drivers on vehicle class
-  alone and never read the rota, so trips landed on people who were off, on
-  leave, or already out — double-bookings the API itself refuses, shipped as
-  training data. 14 vehicles, 16 drivers, ~308 trips, no contradictions.
-- **One timezone.** Everything operational renders in `America/New_York`
-  through `frontend/src/lib/time.ts`. It used to use the browser's zone, which
-  on a laptop in Berlin put the staff screens six hours from the email Adam had
-  just written.
-- **Partner rate cards** — distance bands from the partner's base, priced per
-  class of car, with a minimum per band. `backend/src/ops/zones.ts`.
-- **Trip history** — append-only, written in words at the moment of change.
-  `backend/src/ops/trip-events.ts`.
-- **Create reservation** — a ticket can become a trip. The draft now keeps the
-  facts behind its prose (`ticket_drafts.facts`) so nobody has to re-read the
-  English or ask the model twice.
+**22 August** built the operations surface: the Operations screen with a
+dispatch board, a partner table and a reservations table; roster-aware dummy
+data; one timezone (`America/New_York`) everywhere; partner rate cards priced
+by distance band and class of car; an append-only history on every
+reservation; a ticket becoming a reservation; and messages to drivers and
+partners with offers that really assign.
 
-341 tests, of which 146 need Postgres and only run in the Cowork session.
-Migrations 0008 through 0011.
+**23 August** was Claude Code's audit of all of that, and the fixing of it.
+Fourteen findings, all closed — see `## What the audit found` below.
+
+**400 backend tests**, of which 146 need Postgres and only run in the Cowork
+session. **26 frontend tests**, which are new: `npm test` in `frontend` now
+exists and runs `lib/time.ts` and `lib/bookings.ts` from any machine timezone.
+Migrations 0008 through 0013.
 
 ---
 
 ## The list
 
-Merged 23 August, after Claude Code's audit. The eight items that were here
-before are all still in it — most moved down, because the audit found things
-that can go wrong today and they did not exist yesterday.
-
-Numbers in brackets point at the audit finding under `## Reply`, where the
-evidence is. **verified** means somebody ran it; the Cowork session re-ran the
-five biggest against a real database and against production before this list
-was written.
-
-### Fix now — a real operational error today
-
-The first three are the same failure wearing three different hats: **two cars
-turn up for one job.**
-
-1. **Assigning a driver does not clear the partner.** Both stay on the trip,
-   `assignedKind` shows only one, and `farmOutReason` still says the job went
-   out. The Messages tab promises "if this offer is accepted they come off it",
-   which is false for a partner offer. *Verified against a database.* [3]
-2. **Two people can make two reservations from one ticket.** The guard reads
-   then writes with no unique index behind it, so a staggered second press
-   succeeds. *No index on `trips.ticketId` at all — verified.* [5]
-3. **Change-to-existing tickets offer to create a duplicate booking.** Both live
-   reservation tickets are "move T-10005 an hour later", and the button beside
-   them would make a second booking rather than move the first. *(was pending 1)*
-4. **Any signed-in non-admin can assign any driver to any trip.** Two calls to
-   `/api/dispatch` do what `PATCH /ops/trips/:id` refuses without an admin
-   session. The acceptance is an administrative act wearing dispatch clothes. [2]
-
-### Fix soon — silently wrong data
-
-5. **Renaming a rate band wipes every price on it**, resets the minimum to 2,
-   and turns a 0–15 band into 0-and-everything. `.partial()` does not remove
-   `.default()`. *Verified.* Latent today because the modal sends whole objects,
-   but `updateZone` is typed `Partial<ZoneInput>`. [1]
-6. **A typo in a rate box deletes that class from the card**, with no error
-   anywhere. *Verified:* `"9o"` → `NaN` → `null` over the wire → coerced to `0`
-   → read as "does not offer it". [9]
-7. **`minimumHours` has no upper bound.** A typo of 20 instead of 2 quotes a
-   three-hour job at twenty hours and every check passes. `MAX_SHIFT_HOURS`
-   guards exactly this shape for shifts. [8]
-8. **A driver is told "0 bags" when nobody said 0.** One of the few places an
-   invented fact leaves the building — the CLAUDE.md rule, broken. The same line
-   silently drops a known luggage count when the passenger count is unknown. [4]
-9. **A booker email can be stored as a raw `From` header**, so that customer's
-   trips never match their history again. `ops-context.service.ts` avoids that
-   fallback on purpose and `draft.service.ts` uses it. [11]
-10. **A booking in the ambiguous November hour moves an hour earlier** if opened
-    in a form and saved unchanged. The spring-forward gap also resolves
-    backwards. Everything else in `lib/time.ts` matched luxon in 382 of 384
-    cases from five machine timezones. [7]
-
-### Ugly, not dangerous
-
-11. **The reference race gives a 500** rather than a clean message. It cannot
-    produce duplicate references — the unique index sees to that — so this is a
-    UX bug where item 2 is a data one. A bounded retry on SQLSTATE 23505 fixes
-    both, and needs no coordination with the seed. [6]
-12. **`?status=banana` returns 500 instead of 400.** Parameterised, so no
-    injection — but `sort` on the next line is whitelisted and `status` is not.
-    *Verified against production.* [10]
-13. **A change can take effect with no audit record.** The row write and the
-    event insert are two statements with no transaction around them. [13]
-14. **Five smaller ones:** `pendingResponse` is named and documented backwards;
-    two simultaneous acceptances both write; two overlapping rate bands can be
-    added at once; `trips.ticketId` has no index and is read on every ticket
-    load; tied event timestamps have no defined order. [14]
+What is genuinely still open, after the audit work. Everything from the audit
+itself is done; the numbering below is what survived.
 
 ### Judgement calls, not defects
 
-15. **The vehicle class is regexed out of the model's prose.** Returning null
-    rather than guessing is right, but "an SUV or a van" resolves to VAN by
-    position. Passenger and luggage counts are already extracted and the
-    sedan-3/3, SUV-6/6 rule is already written down — the class looks computable
-    from the numbers, with prose as the tiebreak. [12]
-16. **Trips carry no coordinates**, so nothing can decide which rate band a job
-    falls in. `zones.quote()` is written, tested and called by nothing. Storing
-    pickup and dropoff lat-lng at reservation time would connect it. *(was
-    pending 3)*
+1. ~~**The vehicle class is regexed out of the model's prose.**~~ **Done, 23
+   August.** The class now comes from the passenger and luggage counts —
+   `backend/src/booking/vehicles.ts` — with what the customer wrote used only
+   as a floor. Six people who write "sedan" get an SUV; one person who asks
+   for an SUV still gets one. A party too big for any car returns nothing at
+   all rather than the largest thing we run, so it reaches a person instead of
+   looking settled. `questions.ts` now reads its sedan-3/3 and SUV-6/6 numbers
+   from the same table, so the capacities Adam quotes to a customer cannot
+   drift from the ones that pick the car. "An SUV or a van" still resolves to
+   the van, deliberately: it is a car they named, and the direction that would
+   have hurt — resolving it smaller than the party — is what the counts now
+   prevent. [audit 12]
+
+2. **Trips carry no coordinates**, so nothing can decide which rate band a job
+   falls in. `zones.quote()` is written, tested and called by nothing. Storing
+   pickup and dropoff lat-lng at reservation time would connect it.
 
 ### Housekeeping
 
-17. **The frontend has no test runner.** Add vitest to `frontend` and wire
-    `npm test`. Everything in item 10 is testable without a browser — `time.ts`
-    is pure and needs only `Intl`, which is how Claude Code ran it. *(was
-    pending 2)*
-18. **Rotate the Google Maps API key.** It appeared in a screenshot. Deferred
-    twice, and it becomes load-bearing the moment item 16 happens. *(was
-    pending 4)*
-19. **Two headings nobody could read.** `Hrs` on reservations should be **Booked
-    hours**; `Called` on partners should be **Call order**. Text only. *(was
-    pending 6)*
-20. **Ticket #60**, the Railway newsletter, still needs closing by hand. Triage
-    only runs on brand-new tickets so a person's judgement is never overwritten.
-    *(was pending 7)*
-21. **The bulk-signal task** — record which headers each email carried, so a
-    decision made from evidence keeps the evidence. *(was pending 8)*
+3. **Rotate the Google Maps API key.** It appeared in a screenshot. Deferred
+   three times now, and it becomes load-bearing the moment item 2 happens.
+
+4. ~~**Two headings nobody could read.**~~ **Done, 23 August.** `Hrs` is now
+   **Booked hours** and `Called` is **Call order**.
+
+5. **Ticket #60**, the Railway newsletter, still needs closing by hand. Triage
+   only runs on brand-new tickets so a person's judgement is never overwritten.
+
+6. **The bulk-signal task** — record which headers each email carried, so a
+   decision made from evidence keeps the evidence. Open since 21 August, still
+   the smallest job here.
 
 ### Yours to decide
 
-- **Railway: 11 days or $4.43**, whichever goes first. Hobby is about $5/month.
-  The only item with a deadline attached. *(was pending 5)*
+- **Railway: 9 days or $4.31**, whichever goes first. Hobby is about $5/month.
+  The only item with a deadline attached, and it is closer than it was.
 - The two parked decisions below: the trip-duration model, and how dispatch
   communication should work.
 
 ### Not bugs, but they look like them
 
-- **History starts at the 22 August deploy.** The ~308 seeded trips have no
-  events, and the modal says so rather than showing an empty panel.
+- **History starts at the 22 August deploy.** The seeded trips have no events,
+  and the modal says so rather than showing an empty panel.
 - **Drafts written before migration 0010 have no stored facts**, so those
   tickets open a blank reservation form and say so.
+- **A completed booking can still be edited**, on purpose — that is how a
+  billing dispute gets answered — but the screen now says what changing it
+  actually does before you do.
+
+---
+
+## What the audit found
+
+All fourteen closed. Kept as a record of what was wrong and what was done,
+because the next person to touch this code will want to know why some of it
+looks the way it does. The full findings, with the evidence, are under
+`## Reply` further down.
+
+| # | Finding | What was done |
+|---|---|---|
+| 1 | Renaming a rate band wiped every price on it | Fields declared once with no defaults; the patch schema cannot carry them |
+| 2 | Any signed-in user could assign any driver to any trip | Changing a trip needs an admin, whichever screen it is done from |
+| 3 | A trip could hold a driver and a partner at once | Whichever side is assigned clears the other, with what belonged to it |
+| 4 | Drivers told "0 bags" when nobody said 0 | Both counts listed independently, with "not stated" where it is not |
+| 5 | Two people could make two reservations from one ticket | Partial unique index on `trips.ticketId` |
+| 6 | The reference race returned a 500 | Bounded retry on the unique violation |
+| 7 | Two DST edges in `lib/time.ts` | Gap steps forward; untouched fields are not reinterpreted |
+| 8 | `minimumHours` had no ceiling | Capped at 12 — half a day, not the 24 shifts use |
+| 9 | A typo in a rate box deleted a class | Rates are not coerced; the modal names the offending box |
+| 10 | `?status=banana` returned a 500 | Whitelisted, like `sort` on the line below it |
+| 11 | A raw `From` header could be stored as a booker email | Parsed, and null when it cannot be |
+| 12 | Vehicle class regexed out of model prose | **Open** — item 1 above |
+| 13 | A change could take effect with no audit record | The change and its record are one transaction |
+| 14 | Five smaller ones | All closed: `answerTo` renamed, double-accept indexed, card edits locked, `ticketId` indexed, event ties broken on id |
+
+Two things worth carrying forward from doing the work:
+
+- **Three separate bugs produced the same real-world failure** — two cars for
+  one job. That only became visible once the audit and the old list sat in the
+  same document.
+- **A test that passes before the fix proves nothing.** Every fix above was
+  checked against the previous commit. Where that could not be made to fail —
+  the rate-card race, because local Postgres is too fast to open the window —
+  the test says so in a comment rather than implying more.
 
 ---
 
@@ -237,9 +207,9 @@ without creating that many mailboxes and phone numbers.
 
 ## Task
 
-**Answered — see `## Reply` below. Left here so the exchange reads in order.**
-The findings it produced are folded into `## The list` near the top of this
-file; the detail and the evidence stay down here.
+**Answered, and everything it found has since been fixed.** Left here so the
+exchange reads in order. The outcomes are summarised under `## What the audit
+found` near the top; the evidence stays down here.
 
 **Audit the operations work, adversarially.** Written 23 August by the Cowork
 session, about code the Cowork session mostly wrote. Read it as somebody

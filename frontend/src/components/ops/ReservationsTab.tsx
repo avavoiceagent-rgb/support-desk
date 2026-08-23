@@ -69,7 +69,7 @@ interface Sort {
 const COLUMNS: { key: TripSort | null; label: string; align?: "right"; className?: string }[] = [
   { key: "reference", label: "Ref" },
   { key: "pickupAt", label: `Pickup (${OPERATING_ZONE_LABEL})` },
-  { key: "bookedHours", label: "Hrs", align: "right" },
+  { key: "bookedHours", label: "Booked hours", align: "right" },
   { key: "passengerName", label: "Passenger" },
   // Two columns rather than one "A → B": the eye scans a column of pickups
   // for the one it wants, and cannot do that when every cell starts with a

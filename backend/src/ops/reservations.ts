@@ -52,28 +52,10 @@ function uniqueViolation(err: unknown): string | null {
   return null;
 }
 
-const CLASS_WORDS: [RegExp, VehicleClass][] = [
-  // Order matters: "executive sprinter van" is a Sprinter, not a van.
-  [/\bsprinter\b/i, "SPRINTER"],
-  [/\b(?:mini)?van\b/i, "VAN"],
-  [/\b(?:suv|escalade|suburban|navigator)\b/i, "SUV"],
-  [/\b(?:sedan|saloon|town\s*car)\b/i, "SEDAN"],
-];
-
-/**
- * The class of car a free-text request means, or null.
- *
- * Null rather than a guess. "Something comfortable" is not a vehicle class,
- * and defaulting it to a sedan would quietly commit us to the cheapest car
- * for a customer who may have meant the largest.
- */
-export function vehicleClassFromText(text: string | null | undefined): VehicleClass | null {
-  if (!text) return null;
-  for (const [pattern, cls] of CLASS_WORDS) {
-    if (pattern.test(text)) return cls;
-  }
-  return null;
-}
+// Moved to booking/vehicles.ts, where it sits beside the capacity rules that
+// should have been deciding this all along. Re-exported because draft.service
+// and the tests already import it from here.
+export { vehicleClassFromText, vehicleClassFor } from "../booking/vehicles";
 
 /** The next T- reference, one past the highest already used. */
 export async function nextTripReference(): Promise<string> {

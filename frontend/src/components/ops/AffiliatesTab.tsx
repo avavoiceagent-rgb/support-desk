@@ -222,7 +222,7 @@ interface Sort {
 
 const COLUMNS: { key: SortKey; label: string; align?: "right"; className?: string }[] = [
   { key: "company", label: "Company" },
-  { key: "preference", label: "Called" },
+  { key: "preference", label: "Call order" },
   { key: "coverage", label: "Covers", className: "w-1/3" },
   { key: "contactName", label: "Contact" },
   { key: "phone", label: "Phone" },

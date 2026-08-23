@@ -9,10 +9,14 @@ import { tidyAddress } from "./maps";
 import type { VerifiedAddress } from "./maps";
 import { describeLocal } from "./pickup-time";
 import type { PickupPlan } from "./pickup-time";
+import { CAPACITY } from "./vehicles";
 
-/** Capacities Adam quotes when recommending a vehicle. */
-export const SEDAN_CAPACITY = { passengers: 3, bags: 3 };
-export const SUV_CAPACITY = { passengers: 6, bags: 6 };
+// Capacities Adam quotes when recommending a vehicle. The numbers themselves
+// live in vehicles.ts, which is what actually picks the car — two copies of
+// "a sedan takes three" is one copy too many, and the wrong one would show up
+// in a customer's inbox.
+export const SEDAN_CAPACITY = CAPACITY.SEDAN;
+export const SUV_CAPACITY = CAPACITY.SUV;
 
 export interface BookingReview {
   /** Facts we are sure of, phrased for the customer to check. */

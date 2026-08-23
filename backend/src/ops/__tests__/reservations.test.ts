@@ -11,35 +11,12 @@ import {
   nextTripReference,
   reservationForTicket,
   suggestedReservation,
-  vehicleClassFromText,
 } from "../reservations";
 import { actorFor, listTripEvents } from "../trip-events";
 import { OpsError } from "../errors";
 
 afterAll(async () => {
   await pool.end();
-});
-
-describe("vehicleClassFromText", () => {
-  it("reads the plain words", () => {
-    expect(vehicleClassFromText("Sedan")).toBe("SEDAN");
-    expect(vehicleClassFromText("a large SUV please")).toBe("SUV");
-    expect(vehicleClassFromText("minivan")).toBe("VAN");
-  });
-
-  it("prefers Sprinter over van when both appear", () => {
-    // "Executive Sprinter van" is a Sprinter. Reading it as a van would send
-    // a seven-seater to collect twelve people.
-    expect(vehicleClassFromText("executive sprinter van")).toBe("SPRINTER");
-  });
-
-  it("refuses to guess at something that is not a class", () => {
-    // "Something comfortable" defaulted to a sedan would quietly commit us to
-    // the cheapest car for a customer who may have meant the largest.
-    expect(vehicleClassFromText("something comfortable")).toBeNull();
-    expect(vehicleClassFromText(null)).toBeNull();
-    expect(vehicleClassFromText("")).toBeNull();
-  });
 });
 
 async function reset() {

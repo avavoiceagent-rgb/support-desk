@@ -10,7 +10,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { tickets, messages, ticketDrafts, users } from "../db/schema";
-import { vehicleClassFromText } from "../ops/reservations";
+import { vehicleClassFor } from "../booking/vehicles";
 import { isClassificationEnabled } from "../ai/classifier";
 import { extractBooking } from "../booking/extract";
 import { verifyAddress, estimateRoute, isMapsEnabled, resolveServiceArea } from "../booking/maps";
@@ -206,7 +206,15 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
             .map((stop, i) => stop?.formattedAddress ?? booking.stops[i]?.addressText ?? null)
             .filter((a): a is string => Boolean(a)),
           pickupAtLocal: plan.recommendedPickupLocal ?? booking.requestedPickupLocal,
-          vehicleClass: vehicleClassFromText(review.vehicleSuggestion),
+          // From the counts, with what they asked for as a floor. Reading the
+          // class out of the model's own sentence made "an SUV or a van" a VAN
+          // by regex ordering, and asked a model for something already
+          // computable from two numbers we had extracted.
+          vehicleClass: vehicleClassFor({
+            passengerCount: booking.passengerCount,
+            luggageCount: booking.luggageCount,
+            requested: booking.vehicleRequested ?? review.vehicleSuggestion,
+          }),
           passengerCount: booking.passengerCount,
           luggageCount: booking.luggageCount,
           flightNumber: booking.flightNumber,
