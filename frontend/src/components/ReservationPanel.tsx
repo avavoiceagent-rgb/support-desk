@@ -19,6 +19,7 @@ import type { Trip, VehicleClass } from "../api/ops";
 import { VEHICLE_CLASSES, OPERATING_ZONE_LABEL, opsApi } from "../api/ops";
 import { when, toDateTimeInput, fromDateTimeInput } from "../lib/time";
 import { useAuth } from "../hooks/useAuth";
+import { pastBookingWarning } from "../lib/bookings";
 
 /** A booking this email names by reference. */
 interface QuotedTrip {
@@ -255,6 +256,11 @@ export function ReservationPanel({ ticketId }: { ticketId: string }) {
 
               {changing?.id === q.id ? (
                 <form onSubmit={saveChange} className="mt-2 space-y-2">
+                  {pastBookingWarning(q, q.reference) && (
+                    <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
+                      {pastBookingWarning(q, q.reference)}
+                    </p>
+                  )}
                   <label className="block">
                     <Label hint={`(${OPERATING_ZONE_LABEL})`}>New pickup</Label>
                     <input

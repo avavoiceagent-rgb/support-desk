@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db, pool } from "../../db/client";
 import { affiliateZones, affiliates, type VehicleClass } from "../../db/schema";
+import { z } from "zod";
 import {
+  MAX_BAND_MINIMUM_HOURS,
   milesBetween,
   zoneForMiles,
   hourlyRateCents,
@@ -196,5 +198,123 @@ describe("rate card writes", () => {
     await createZone(affiliateId, metro);
     await db.delete(affiliates);
     expect(await listZones(affiliateId)).toEqual([]);
+  });
+});
+
+// --- The schema in front of the pricing -----------------------------------
+//
+// The arithmetic in this file held up under attack. What did not was the shape
+// of the request reaching it: a rename wiped every price on a band, and a typo
+// in a rate box deleted a class. Both were invisible, because quote() then
+// correctly refuses rather than guessing — so the partner simply became
+// unpriceable and nothing said why.
+//
+// These rebuild the route's schemas rather than importing them, because
+// importing ops.routes.ts drags in the database. Keep them in step; if they
+// drift, the test is guarding a shape nothing uses.
+
+const rate = z
+  .number("A rate has to be a number.")
+  .int("A rate is in whole cents.")
+  .min(1, "A rate of nothing is not a rate — leave it blank if they do not offer it.")
+  .optional();
+
+const rateCentsSchema = z.strictObject({ SEDAN: rate, SUV: rate, VAN: rate, SPRINTER: rate });
+
+const zoneFields = {
+  label: z.string().min(1),
+  fromMiles: z.coerce.number().int().min(0).max(1000),
+  toMiles: z.coerce.number().int().min(1).max(1000).nullable(),
+  minimumHours: z.coerce.number().int().min(1).max(MAX_BAND_MINIMUM_HOURS),
+  rateCents: rateCentsSchema,
+};
+
+const zoneSchema = z.object({
+  ...zoneFields,
+  toMiles: zoneFields.toMiles.optional().default(null),
+  minimumHours: zoneFields.minimumHours.default(2),
+  rateCents: zoneFields.rateCents.default({}),
+});
+
+const zonePatchSchema = z.object(zoneFields).partial();
+
+describe("patching a band changes only what was sent", () => {
+  it("does not smuggle defaults in behind a rename", () => {
+    // `.partial()` does not strip `.default()`. Renaming a band used to send
+    // rateCents {}, minimumHours 2 and toMiles null along with the new label —
+    // wiping every price, resetting the minimum, and turning a 0-15 band into
+    // 0-and-everything.
+    const patch = zonePatchSchema.parse({ label: "Metro" });
+    expect(patch).toEqual({ label: "Metro" });
+    expect("rateCents" in patch).toBe(false);
+    expect("minimumHours" in patch).toBe(false);
+    expect("toMiles" in patch).toBe(false);
+  });
+
+  it("still lets a band be deliberately opened at the far end", () => {
+    // An explicit null is a change; an absent field is not. updateZone tells
+    // them apart, so the schema has to keep the difference.
+    expect(zonePatchSchema.parse({ toMiles: null })).toEqual({ toMiles: null });
+  });
+
+  it("keeps the defaults where they belong, on creating a band", () => {
+    const created = zoneSchema.parse({ label: "Metro", fromMiles: 0, rateCents: { SEDAN: 7500 } });
+    expect(created.minimumHours).toBe(2);
+    expect(created.toMiles).toBeNull();
+  });
+});
+
+describe("a rate is a price or it is absent", () => {
+  it("refuses what a typo turns into", () => {
+    // "9o" -> NaN -> null over the wire. Coercion read that as 0, which
+    // hourlyRateCents reads as "does not offer it", so the class disappeared
+    // from the card and nothing said so.
+    expect(rateCentsSchema.safeParse({ SEDAN: null }).success).toBe(false);
+    expect(rateCentsSchema.safeParse({ SEDAN: Number.NaN }).success).toBe(false);
+    expect(rateCentsSchema.safeParse({ SEDAN: "9o" }).success).toBe(false);
+  });
+
+  it("refuses zero, which looked like a price and meant the opposite", () => {
+    expect(rateCentsSchema.safeParse({ SEDAN: 0 }).success).toBe(false);
+  });
+
+  it("takes a real rate, and takes silence for an answer", () => {
+    expect(rateCentsSchema.parse({ SEDAN: 7_500 })).toEqual({ SEDAN: 7_500 });
+    expect(rateCentsSchema.parse({})).toEqual({});
+  });
+
+  it("refuses a class nobody has heard of", () => {
+    expect(rateCentsSchema.safeParse({ LIMO: 9_000 }).success).toBe(false);
+  });
+});
+
+describe("the minimum has a ceiling", () => {
+  let affiliateId: string;
+  beforeEach(async () => {
+    await db.delete(affiliateZones);
+    await db.delete(affiliates);
+    affiliateId = (await makeAffiliate()).id;
+  });
+
+  const band = { label: "Metro", fromMiles: 0, toMiles: 15, rateCents: { SEDAN: 7_500 } };
+
+  it("refuses a minimum longer than a day, wherever it comes from", async () => {
+    // 20 instead of 2 quoted a three-hour job at twenty hours, and every check
+    // passed. MAX_SHIFT_HOURS guards this exact typo for shifts.
+    expect(zoneFields.minimumHours.safeParse(20).success).toBe(false);
+    await expect(
+      createZone(affiliateId, { ...band, minimumHours: 48 })
+    ).rejects.toThrow(/longer than half a day/);
+  });
+
+  it("still allows the longest minimum a real card uses", async () => {
+    // The seed's longest is six hours, on the long-haul band.
+    const made = await createZone(affiliateId, { ...band, minimumHours: 6 });
+    expect(made.minimumHours).toBe(6);
+  });
+
+  it("allows a genuinely long minimum up to the ceiling", async () => {
+    const made = await createZone(affiliateId, { ...band, minimumHours: MAX_BAND_MINIMUM_HOURS });
+    expect(made.minimumHours).toBe(MAX_BAND_MINIMUM_HOURS);
   });
 });

@@ -24,7 +24,14 @@ import {
   updateAffiliate,
 } from "../ops/directory";
 import { getDriverSchedule, createShift, updateShift, deleteShift } from "../ops/schedule";
-import { listZones, createZone, updateZone, deleteZone, MAX_BAND_MILES } from "../ops/zones";
+import {
+  listZones,
+  createZone,
+  updateZone,
+  deleteZone,
+  MAX_BAND_MILES,
+  MAX_BAND_MINIMUM_HOURS,
+} from "../ops/zones";
 import { actorFor, listTripEvents } from "../ops/trip-events";
 import {
   searchTrips,
@@ -260,7 +267,19 @@ opsRouter.patch("/affiliates/:id", requireAdmin, async (req, res) => {
 // Spelled out rather than a record over the enum, so a class the partner does
 // not run is simply absent — which is not the same as being priced at zero —
 // and a misspelled class is rejected instead of silently stored.
-const rate = z.coerce.number().int().min(0, "A rate cannot be negative.").optional();
+// Not coerced, and at least a penny.
+//
+// `z.coerce.number()` turns null into 0, and a rate box holding a typo sends
+// null — so "9o" became 0, which `hourlyRateCents` reads as "does not offer
+// it", and the class vanished from the card with no error anywhere. A rate is
+// a number or it is absent; absent means they do not run that car, and zero is
+// not a price.
+const rate = z
+  .number("A rate has to be a number.")
+  .int("A rate is in whole cents.")
+  .min(1, "A rate of nothing is not a rate — leave it blank if they do not offer it.")
+  .optional();
+
 const rateCentsSchema = z.strictObject({
   SEDAN: rate,
   SUV: rate,
@@ -268,13 +287,35 @@ const rateCentsSchema = z.strictObject({
   SPRINTER: rate,
 });
 
-const zoneSchema = z.object({
+// The fields, once, with no defaults on them.
+//
+// Defaults belong to creating a band, never to patching one: `.partial()` does
+// NOT strip `.default()`, so renaming a band sent `rateCents: {}`,
+// `minimumHours: 2` and `toMiles: null` along with the new name — wiping every
+// price, resetting the minimum, and turning a 0-15 band into
+// 0-and-everything. Splitting them is what makes that impossible rather than
+// merely unlikely.
+const zoneFields = {
   label: z.string().min(1, "A band needs a name, like \"Metro\"."),
   fromMiles: z.coerce.number().int().min(0).max(MAX_BAND_MILES),
-  toMiles: z.coerce.number().int().min(1).max(MAX_BAND_MILES).nullable().optional().default(null),
-  minimumHours: z.coerce.number().int().min(1, "A minimum of less than an hour is not a minimum.").default(2),
-  rateCents: rateCentsSchema.default({}),
+  toMiles: z.coerce.number().int().min(1).max(MAX_BAND_MILES).nullable(),
+  minimumHours: z.coerce
+    .number()
+    .int()
+    .min(1, "A minimum of less than an hour is not a minimum.")
+    .max(MAX_BAND_MINIMUM_HOURS, `The most a band can ask for is ${MAX_BAND_MINIMUM_HOURS} hours.`),
+  rateCents: rateCentsSchema,
+};
+
+const zoneSchema = z.object({
+  ...zoneFields,
+  toMiles: zoneFields.toMiles.optional().default(null),
+  minimumHours: zoneFields.minimumHours.default(2),
+  rateCents: zoneFields.rateCents.default({}),
 });
+
+/** Only what was actually sent. No defaults, so nothing is wiped by omission. */
+const zonePatchSchema = z.object(zoneFields).partial();
 
 opsRouter.get("/affiliates/:id/zones", async (req, res) => {
   res.json({ zones: await listZones(param(req, "id")) });
@@ -289,7 +330,7 @@ opsRouter.post("/affiliates/:id/zones", requireAdmin, async (req, res) => {
 });
 
 opsRouter.patch("/zones/:id", requireAdmin, async (req, res) => {
-  const parsed = zoneSchema.partial().safeParse(req.body);
+  const parsed = zonePatchSchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed);
   if (Object.keys(parsed.data).length === 0) {
     return res.status(400).json({ error: "Nothing to update" });

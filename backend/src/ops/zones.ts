@@ -19,6 +19,20 @@ export type AffiliateZone = typeof affiliateZones.$inferSelect;
 /** Nobody's partner network reaches further than this; past it, it's a typo. */
 export const MAX_BAND_MILES = 1_000;
 
+/**
+ * The longest a band's minimum can be.
+ *
+ * There was no ceiling, so a minimum typed as 20 instead of 2 quoted a
+ * three-hour job at twenty hours and every check passed.
+ *
+ * Twelve, not the 24 that `MAX_SHIFT_HOURS` uses. A shift and a billing
+ * minimum are different things: a driver can legitimately work eleven hours,
+ * but a *minimum* longer than half a day is a day rate somebody has typed into
+ * the wrong box. Set at 24 this constant would have let the very typo it exists
+ * to catch straight through — which is what the test found.
+ */
+export const MAX_BAND_MINIMUM_HOURS = 12;
+
 const EARTH_RADIUS_MILES = 3_958.8;
 
 /**
@@ -58,7 +72,14 @@ export function zoneForMiles(zones: AffiliateZone[], miles: number): AffiliateZo
   );
 }
 
-/** What this band charges for this size of car, or null if they do not offer it. */
+/**
+ * What this band charges for this size of car, or null if they do not offer it.
+ *
+ * A class absent from the card means they do not run it out there. Zero used
+ * to mean the same thing here while looking like a price everywhere else,
+ * which made the distinction the schema comment draws impossible to express —
+ * so a rate of zero is now refused at the route and cannot reach this.
+ */
 export function hourlyRateCents(zone: AffiliateZone, vehicleClass: VehicleClass): number | null {
   const rate = zone.rateCents?.[vehicleClass];
   return typeof rate === "number" && rate > 0 ? rate : null;
@@ -135,6 +156,11 @@ async function assertBandFits(affiliateId: string, input: ZoneInput, excludeId?:
     throw new OpsError(`Bands stop at ${MAX_BAND_MILES} miles — check the numbers.`);
   }
   if (input.minimumHours < 1) throw new OpsError("A minimum of less than an hour is not a minimum.");
+  if (input.minimumHours > MAX_BAND_MINIMUM_HOURS) {
+    throw new OpsError(
+      `A minimum of ${input.minimumHours} hours is longer than half a day. The most a band can ask for is ${MAX_BAND_MINIMUM_HOURS} — check the number.`
+    );
+  }
 
   const existing = await db
     .select()

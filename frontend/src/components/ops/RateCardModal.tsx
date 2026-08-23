@@ -59,12 +59,27 @@ function toDraft(zone: AffiliateZone): Draft {
 
 const EMPTY: Draft = { label: "", fromMiles: "", toMiles: "", minimumHours: "3", rates: {} };
 
+/** Anything in a rate box that is not a price, so it can be said out loud. */
+function badRates(draft: Draft): VehicleClass[] {
+  return VEHICLE_CLASSES.filter((c) => {
+    const typed = draft.rates[c]?.trim();
+    if (!typed) return false;
+    const n = Number(typed);
+    return !Number.isFinite(n) || n <= 0;
+  });
+}
+
 function toInput(draft: Draft): ZoneInput {
   const rateCents: Partial<Record<VehicleClass, number>> = {};
   for (const c of VEHICLE_CLASSES) {
     const typed = draft.rates[c]?.trim();
-    // Blank means they do not run it. Zero would mean they run it for nothing.
-    if (typed) rateCents[c] = Math.round(Number(typed) * 100);
+    if (!typed) continue;
+    const n = Number(typed);
+    // Blank means they do not run it. A typo means nothing at all — it used to
+    // become NaN, then null over the wire, then 0, which reads as "does not
+    // offer it", so a slip of the finger deleted a class from the card with no
+    // error anywhere. badRates() stops it before it is sent.
+    if (Number.isFinite(n) && n > 0) rateCents[c] = Math.round(n * 100);
   }
   return {
     label: draft.label.trim(),
@@ -202,7 +217,14 @@ export function RateCardModal({
     void load();
   }, [load]);
 
-  async function run(work: () => Promise<unknown>) {
+  async function run(work: () => Promise<unknown>, draft?: Draft) {
+    const bad = draft ? badRates(draft) : [];
+    if (bad.length > 0) {
+      setError(
+        `${bad.map((c) => CLASS_LABEL[c]).join(" and ")} — that is not a price. Type a number, or leave it blank if they do not run that car here.`
+      );
+      return;
+    }
     setError(null);
     setSaving(true);
     try {
@@ -273,7 +295,7 @@ export function RateCardModal({
                       saving={saving}
                       saveLabel="Save"
                       onCancel={() => setEditingId(null)}
-                      onSave={() => void run(() => opsApi.updateZone(z.id, toInput(draft)))}
+                      onSave={() => void run(() => opsApi.updateZone(z.id, toInput(draft)), draft)}
                     />
                   ) : (
                     <tr key={z.id} className="hover:bg-gray-50">
@@ -327,7 +349,7 @@ export function RateCardModal({
                   saving={saving}
                   saveLabel="Add"
                   onCancel={() => setAdding(null)}
-                  onSave={() => void run(() => opsApi.createZone(affiliate.id, toInput(adding)))}
+                  onSave={() => void run(() => opsApi.createZone(affiliate.id, toInput(adding)), adding)}
                 />
               )}
             </tbody>

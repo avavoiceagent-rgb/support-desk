@@ -25,6 +25,7 @@ import {
   type Vehicle,
 } from "../../api/ops";
 import { TripHistoryModal } from "./TripHistoryModal";
+import { pastBookingWarning } from "../../lib/bookings";
 import {
   Button,
   ErrorNote,
@@ -192,6 +193,12 @@ function TripEditor({
           </p>
           {trip.bookerEmail && <p className="mt-1">Booked by {trip.bookerName ?? trip.bookerEmail}</p>}
         </div>
+
+        {pastBookingWarning(trip, trip.reference) && (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {pastBookingWarning(trip, trip.reference)}
+          </p>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={`Pickup (${OPERATING_ZONE_LABEL})`}>
