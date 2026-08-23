@@ -279,7 +279,9 @@ const reservationSchema = z.object({
   passengerName: z.string().min(1, "A reservation needs a passenger name."),
   passengerPhone: z.string().nullable().optional(),
   bookerName: z.string().nullable().optional(),
-  bookerEmail: z.string().nullable().optional(),
+  // Every other email field in this API is validated; this one was not, so a
+  // raw From header could arrive here too.
+  bookerEmail: z.string().email("That email address does not look right.").nullable().optional(),
   pickupAddress: z.string().min(1, "Where is the pickup?"),
   dropoffAddress: z.string().min(1, "Where are they going?"),
   stops: z.array(z.string()).optional(),

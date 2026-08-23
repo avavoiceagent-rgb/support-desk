@@ -23,6 +23,7 @@ import { toPlainText } from "../ai/classifier";
 import { SERVICE_AREA_STATES } from "../types";
 import { DateTime } from "luxon";
 import { OPERATING_TIME_ZONE } from "../booking/pickup-time";
+import { emailFromHeader } from "../mail/address";
 
 /** Filled in with the name of whoever opens the draft. */
 export const AGENT_NAME_PLACEHOLDER = "{{AGENT_NAME}}";
@@ -193,7 +194,12 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
             booking.passengerPhone ??
             (booking.useBookerPhoneForPassenger ? booking.bookerPhone : null),
           bookerName: booking.bookerName ?? ticket.requesterName ?? null,
-          bookerEmail: ticket.requesterEmail ?? first.fromAddress ?? null,
+          // Parsed, never the raw header. `booker_email` is matched with
+          // `lower(...) = ...` when a customer's history is looked up, so
+          // storing "Ana Costa <ana@…>" means those trips never surface for
+          // that customer again. Null when it cannot be parsed: not knowing is
+          // recoverable, a wrong key is not.
+          bookerEmail: ticket.requesterEmail ?? emailFromHeader(first.fromAddress),
           pickupAddress: pickup?.formattedAddress ?? booking.pickupAddressText,
           dropoffAddress: dropoff?.formattedAddress ?? booking.dropoffAddressText,
           stops: stops

@@ -78,6 +78,11 @@ function contactColumns(contact: Contact) {
  * rather than shortened — a driver needs the whole thing, not enough of it to
  * recognise.
  */
+/** "1 bag", "4 bags", or null when nobody said. Zero is a fact; absent is not. */
+function count(n: number | null, noun: string): string | null {
+  return n === null ? null : `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
 export function describeOffer(trip: TripRecord): string {
   const start = DateTime.fromJSDate(trip.pickupAt).setZone(OPERATING_TIME_ZONE);
   const lines = [
@@ -86,7 +91,20 @@ export function describeOffer(trip: TripRecord): string {
     `Drop off: ${trip.dropoffAddress}`,
     `Passenger: ${trip.passengerName}`,
   ];
-  if (trip.passengerCount != null) lines.push(`${trip.passengerCount} passengers, ${trip.luggageCount ?? 0} bags`);
+  // What we know, and — where the other half is missing — that we do not know
+  // it. `luggageCount ?? 0` told drivers "0 bags" when nobody had said 0, which
+  // is a car arriving too small for the boot it has to fill; and the whole line
+  // was skipped when only the bag count was known, losing a real number. A
+  // driver reading "4 passengers" and nothing else will assume hand luggage.
+  const load = [
+    count(trip.passengerCount, "passenger"),
+    count(trip.luggageCount, "bag"),
+  ];
+  if (load.some(Boolean)) {
+    lines.push(
+      [load[0] ?? "passengers not stated", load[1] ?? "bag count not stated"].join(", ")
+    );
+  }
   if (trip.flightNumber) lines.push(`Flight ${trip.flightNumber}`);
   return lines.join("\n");
 }

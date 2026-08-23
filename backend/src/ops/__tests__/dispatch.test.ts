@@ -56,6 +56,45 @@ async function record(id: string) {
   return toTripRecord(rows[0]);
 }
 
+describe("describeOffer, on what it does not know", () => {
+  beforeEach(reset);
+
+  it("does not tell a driver there are no bags when nobody said so", async () => {
+    // "0 bags" was invented from a null, and a driver reading it brings a car
+    // too small for the boot it has to fill. One of the few places in this
+    // system where a made-up fact leaves the building.
+    const trip = await makeTrip({ passengerCount: 4, luggageCount: null });
+    const text = describeOffer(await record(trip.id));
+    expect(text).toContain("4 passengers, bag count not stated");
+    expect(text).not.toContain("0 bags");
+  });
+
+  it("still says zero when zero is what the customer told us", async () => {
+    const trip = await makeTrip({ passengerCount: 2, luggageCount: 0 });
+    expect(describeOffer(await record(trip.id))).toContain("2 passengers, 0 bags");
+  });
+
+  it("does not throw away a bag count it has", async () => {
+    // The whole line used to be skipped unless the passenger count was known,
+    // so four bags could go unmentioned entirely.
+    const trip = await makeTrip({ passengerCount: null, luggageCount: 4 });
+    const text = describeOffer(await record(trip.id));
+    expect(text).toContain("passengers not stated, 4 bags");
+  });
+
+  it("says nothing at all when it knows neither", async () => {
+    const trip = await makeTrip({ passengerCount: null, luggageCount: null });
+    const text = describeOffer(await record(trip.id));
+    expect(text).not.toContain("stated");
+    expect(text).not.toContain("bag");
+  });
+
+  it("counts one of something as one", async () => {
+    const trip = await makeTrip({ passengerCount: 1, luggageCount: 1 });
+    expect(describeOffer(await record(trip.id))).toContain("1 passenger, 1 bag");
+  });
+});
+
 describe("describeOffer", () => {
   it("writes the job in New York time, with the addresses in full", async () => {
     await reset();
