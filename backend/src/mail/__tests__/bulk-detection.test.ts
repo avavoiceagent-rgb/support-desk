@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isAutoReply, isNoReplySender } from "../gmail/gmail.provider";
+import { bulkSignalsFor, isAutoReply, isNoReplySender } from "../gmail/gmail.provider";
 
 const h = (pairs: Record<string, string>) => Object.entries(pairs).map(([name, value]) => ({ name, value }));
 
@@ -85,5 +85,70 @@ describe("isNoReplySender", () => {
 describe("isAutoReply via sender address", () => {
   it("flags mail from a no-reply address even with no List-* headers", () => {
     expect(isAutoReply(h({ From: "noreply-apps-scripts-notifications@google.com", Subject: "Summary of failures" }))).toBe(true);
+  });
+});
+
+describe("bulkSignalsFor (keeping the evidence, not just the verdict)", () => {
+  it("names the header that made the call", () => {
+    expect(bulkSignalsFor(h({ "List-Unsubscribe": "<https://news.example/u/123>" }))).toEqual([
+      "List-Unsubscribe",
+    ]);
+    expect(bulkSignalsFor(h({ "List-Id": "<announce.example.com>" }))).toEqual(["List-Id"]);
+  });
+
+  it("keeps a short value where the value is the evidence", () => {
+    // "Precedence: bulk" and "Precedence: junk" are different stories.
+    expect(bulkSignalsFor(h({ Precedence: "bulk" }))).toEqual(["Precedence: bulk"]);
+    expect(bulkSignalsFor(h({ "Auto-Submitted": "auto-generated" }))).toEqual([
+      "Auto-Submitted: auto-generated",
+    ]);
+  });
+
+  it("drops a value too long to read", () => {
+    // A List-Unsubscribe is a URL. Pasting it into a badge tooltip tells a
+    // dispatcher nothing the header name did not already say.
+    const long = "<https://news.example/unsubscribe?token=" + "a".repeat(80) + ">";
+    expect(bulkSignalsFor(h({ "Auto-Submitted": long }))).toEqual(["Auto-Submitted"]);
+  });
+
+  it("lists every marker, not just the first", () => {
+    // A real newsletter usually sets several. Stopping at the first would
+    // make two quite different senders look identical afterwards.
+    expect(
+      bulkSignalsFor(
+        h({
+          From: "Acme News <no-reply@news.acme.example>",
+          Precedence: "bulk",
+          "List-Unsubscribe": "<https://news.acme.example/u>",
+          "List-Id": "<news.acme.example>",
+        })
+      )
+    ).toEqual(["Precedence: bulk", "List-Unsubscribe", "List-Id", "no-reply sender"]);
+  });
+
+  it("returns nothing for the newsletter that hid its headers", () => {
+    // This is ticket #60: Railway's product mail, from a local part of
+    // "hello", carrying none of the six markers. An empty list is the honest
+    // answer and the one that explains why it sat open for two days.
+    expect(
+      bulkSignalsFor(
+        h({
+          From: "Railway <hello@news.railway.app>",
+          Subject: "Railway for Everyone, Cloud Agents Everywhere",
+        })
+      )
+    ).toEqual([]);
+  });
+
+  it("agrees with isAutoReply, which is now just 'did anything say bulk'", () => {
+    const cases = [
+      h({ From: "jane@customer.example" }),
+      h({ Precedence: "bulk" }),
+      h({ "Auto-Submitted": "no" }),
+      h({ From: "bounces@mailer.example" }),
+    ];
+    for (const headers of cases) {
+      expect(isAutoReply(headers)).toBe(bulkSignalsFor(headers).length > 0);
+    }
   });
 });

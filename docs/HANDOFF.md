@@ -49,10 +49,10 @@ partners with offers that really assign.
 **23 August** was Claude Code's audit of all of that, and the fixing of it.
 Fourteen findings, all closed — see `## What the audit found` below.
 
-**400 backend tests**, of which 146 need Postgres and only run in the Cowork
+**424 backend tests**, of which 146 need Postgres and only run in the Cowork
 session. **26 frontend tests**, which are new: `npm test` in `frontend` now
 exists and runs `lib/time.ts` and `lib/bookings.ts` from any machine timezone.
-Migrations 0008 through 0013.
+Migrations 0008 through 0015.
 
 ---
 
@@ -76,24 +76,39 @@ itself is done; the numbering below is what survived.
    have hurt — resolving it smaller than the party — is what the counts now
    prevent. [audit 12]
 
-2. **Trips carry no coordinates**, so nothing can decide which rate band a job
-   falls in. `zones.quote()` is written, tested and called by nothing. Storing
-   pickup and dropoff lat-lng at reservation time would connect it.
+2. ~~**Trips carry no coordinates.**~~ **Done, 23 August.** The geocode was
+   always being run and its `geometry.location` thrown away; `VerifiedAddress`
+   now keeps it, the draft's stored facts carry it, and
+   `createReservationFromTicket` writes it onto the trip — but only when the
+   address in the form is still the one that was geocoded, so a corrected
+   address stores no point rather than a wrong one. `ops/pricing.ts` joins that
+   to the rate cards, and the trip editor shows the price under the Partner
+   box as soon as one is chosen, with a sentence instead of a blank whenever
+   it cannot be worked out. Seeded trips get their coordinates from
+   `backfill-trip-coords.ts`; a `seed-ops --reset` would have priced them too
+   but would have deleted the real reservations along the way.
 
 ### Housekeeping
 
 3. **Rotate the Google Maps API key.** It appeared in a screenshot. Deferred
-   three times now, and it becomes load-bearing the moment item 2 happens.
+   three times now, and item 2 has happened — the geocode it authorises is
+   what every partner quote is measured from, so this is the last item here
+   that only Amar can do.
 
 4. ~~**Two headings nobody could read.**~~ **Done, 23 August.** `Hrs` is now
    **Booked hours** and `Called` is **Call order**.
 
-5. **Ticket #60**, the Railway newsletter, still needs closing by hand. Triage
-   only runs on brand-new tickets so a person's judgement is never overwritten.
+5. ~~**Ticket #60**, the Railway newsletter.~~ **Closed by hand, 23 August**,
+   as Unresolved · Closed. Triage only runs on brand-new tickets, so nothing
+   was going to reach it on its own.
 
-6. **The bulk-signal task** — record which headers each email carried, so a
-   decision made from evidence keeps the evidence. Open since 21 August, still
-   the smallest job here.
+6. ~~**The bulk-signal task.**~~ **Done, 23 August.** `isAutoReply` was six
+   header checks collapsed into a boolean; the checks now name themselves in
+   `mail/bulk-signals.ts`, the names are stored on the message (migration
+   0014) and the Auto-reply badge in the timeline explains itself on hover.
+   Same verdict as before on every input — the boolean is now
+   `bulkSignals(...).length > 0`. An empty list on a bulk-flagged ticket is
+   the interesting case and is exactly what ticket #60 would have recorded.
 
 ### Yours to decide
 
@@ -101,6 +116,16 @@ itself is done; the numbering below is what survived.
   The only item with a deadline attached, and it is closer than it was.
 - The two parked decisions below: the trip-duration model, and how dispatch
   communication should work.
+- **Which end of the trip a rate band measures from.** `quoteTripForAffiliate`
+  measures from the partner's base to the PICKUP, on the reasoning that a band
+  is about how far they must send a car to start the job. That is plainly
+  right for an overflow partner taking a local job — Metro Overflow quotes 4
+  miles on a Manhattan pickup. It reads oddly for a trip whose whole point is
+  the far end: Pacific Coast Livery, based in Los Angeles, prices a New York
+  pickup at 2,447 miles and their "Long haul" band answers with a real number.
+  Whether a distant partner should be measured to the drop-off instead is a
+  business rule, not a coding decision, so it has been left alone rather than
+  guessed at.
 
 ### Not bugs, but they look like them
 

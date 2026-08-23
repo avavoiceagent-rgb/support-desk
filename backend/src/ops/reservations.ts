@@ -192,6 +192,30 @@ export function quotedTripsFrom(context: {
     }));
 }
 
+/**
+ * The coordinates for an address, but only if it is still the same address.
+ *
+ * The draft geocoded what the customer wrote; the dispatcher may then have
+ * corrected it in the form before pressing Create. Carrying the old
+ * coordinates over would price the job from a place nobody is going to, and
+ * silently — a wrong number that looks exactly like a right one. So the
+ * address has to match what was geocoded, or the trip stores no point and
+ * simply cannot be priced from a rate card.
+ */
+export function coordsForAddress(
+  address: string,
+  geocoded: string | null | undefined,
+  lat: number | null | undefined,
+  lng: number | null | undefined
+): { lat: number | null; lng: number | null } {
+  const same =
+    Boolean(geocoded) && address.trim().toLowerCase() === geocoded!.trim().toLowerCase();
+  if (!same || typeof lat !== "number" || typeof lng !== "number") {
+    return { lat: null, lng: null };
+  }
+  return { lat, lng };
+}
+
 export async function createReservationFromTicket(
   ticketId: string,
   input: ReservationInput,
@@ -215,6 +239,22 @@ export async function createReservationFromTicket(
     throw new OpsError("That pickup time is not a time. Use the date and time boxes.");
   }
 
+  // Reuse the geocode the draft already paid for, rather than asking Google
+  // the same question twice.
+  const facts = await suggestedReservation(ticketId);
+  const from = coordsForAddress(
+    input.pickupAddress,
+    facts?.pickupAddress,
+    facts?.pickupLat,
+    facts?.pickupLng
+  );
+  const to = coordsForAddress(
+    input.dropoffAddress,
+    facts?.dropoffAddress,
+    facts?.dropoffLat,
+    facts?.dropoffLng
+  );
+
   const row = await insertReservation({
     ticketId,
     passengerName: input.passengerName,
@@ -230,6 +270,10 @@ export async function createReservationFromTicket(
     passengerCount: input.passengerCount ?? null,
     luggageCount: input.luggageCount ?? null,
     flightNumber: input.flightNumber ?? null,
+    pickupLat: from.lat,
+    pickupLng: from.lng,
+    dropoffLat: to.lat,
+    dropoffLng: to.lng,
     status: "SCHEDULED",
     assignedKind: "UNASSIGNED",
     notes: input.notes ?? null,

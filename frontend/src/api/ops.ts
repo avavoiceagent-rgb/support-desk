@@ -86,6 +86,22 @@ export interface DriverRow {
 }
 
 /** One band of a partner's rate card: [fromMiles, toMiles) from their base. */
+export type TripQuote =
+  | {
+      priced: true;
+      /** Straight-line miles from the partner's base to the pickup. */
+      miles: number;
+      quote: {
+        zone: AffiliateZone;
+        hourlyRateCents: number;
+        requestedHours: number;
+        /** What they will bill once the band's minimum is applied. */
+        billableHours: number;
+        totalCents: number;
+      };
+    }
+  | { priced: false; reason: string };
+
 export interface AffiliateZone {
   id: string;
   affiliateId: string;
@@ -353,4 +369,14 @@ export const opsApi = {
       notes?: string | null;
     }
   ) => api.patch<{ trip: Trip }>(`/ops/trips/${id}`, patch),
+
+  /**
+   * What one partner's rate card says this job costs.
+   *
+   * `priced: false` always carries a sentence explaining why, because "no
+   * price" and "no price because nobody has entered their card" send a
+   * dispatcher to different places.
+   */
+  quoteTrip: (tripId: string, affiliateId: string) =>
+    api.get<TripQuote>(`/ops/trips/${tripId}/quote?affiliateId=${encodeURIComponent(affiliateId)}`),
 };

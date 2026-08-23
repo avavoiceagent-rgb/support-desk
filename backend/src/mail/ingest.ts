@@ -134,6 +134,7 @@ export async function ingestEmail(
         inReplyToHeader: email.inReplyToHeader,
         referencesHeader: email.referencesHeader,
         isAutoReply: email.isAutoReply,
+        bulkSignals: email.bulkSignals,
         sentAt: email.receivedAt,
       })
       .returning({ id: messages.id });

@@ -118,22 +118,34 @@ const AFFILIATES = [
   { company: "Five Boroughs Car Service", baseAddress: "Queens, NY", baseLat: 40.7282, baseLng: -73.7949, contactName: "Ahmed Hassan", phone: "+1 917 555 0149", email: "bookings@fiveboroughs.example", coverageStates: ["NY"], coverageCities: ["New York", "Queens", "Brooklyn"], overflowPartner: true, hourlyRateUsd: 68, preference: 3, notes: "Overflow. Sedans only — no SUVs." },
 ] as const;
 
-const PICKUPS = [
-  "245 Park Avenue, New York, NY 10167",
-  "40 Wall Street, New York, NY 10005",
-  "The Plaza Hotel, 768 5th Ave, New York, NY 10019",
-  "1 Hotel Brooklyn Bridge, 60 Furman St, Brooklyn, NY 11201",
-  "101 Hudson St, Jersey City, NJ 07302",
-  "The Ritz-Carlton, 50 Central Park S, New York, NY 10019",
-  "200 West St, New York, NY 10282",
-  "30 Hudson Yards, New York, NY 10001",
+/**
+ * Seeded places carry coordinates because real ones do.
+ *
+ * A trip created from an email keeps the point Google returned when the
+ * address was geocoded, and the partner rate cards price by distance from
+ * that point. Fixtures without coordinates would leave every seeded job
+ * unpriceable and make a working feature look broken.
+ *
+ * These are approximate — good to a few hundred yards, which is far inside
+ * any band boundary on a card. They are fixture data and are never shown to
+ * a customer; nothing in the app takes a coordinate from this file.
+ */
+export const PICKUPS = [
+  { address: "245 Park Avenue, New York, NY 10167", lat: 40.7548, lng: -73.9757 },
+  { address: "40 Wall Street, New York, NY 10005", lat: 40.7069, lng: -74.009 },
+  { address: "The Plaza Hotel, 768 5th Ave, New York, NY 10019", lat: 40.7644, lng: -73.9744 },
+  { address: "1 Hotel Brooklyn Bridge, 60 Furman St, Brooklyn, NY 11201", lat: 40.7005, lng: -73.9962 },
+  { address: "101 Hudson St, Jersey City, NJ 07302", lat: 40.7215, lng: -74.0347 },
+  { address: "The Ritz-Carlton, 50 Central Park S, New York, NY 10019", lat: 40.7658, lng: -73.9761 },
+  { address: "200 West St, New York, NY 10282", lat: 40.7145, lng: -74.0145 },
+  { address: "30 Hudson Yards, New York, NY 10001", lat: 40.7539, lng: -74.0013 },
 ] as const;
 
-const AIRPORTS = [
-  "JFK Terminal 4, Jamaica, NY 11430",
-  "LaGuardia Airport Terminal B, East Elmhurst, NY 11371",
-  "Newark Liberty International Airport Terminal C, Newark, NJ 07114",
-  "Teterboro Airport, Teterboro, NJ 07608",
+export const AIRPORTS = [
+  { address: "JFK Terminal 4, Jamaica, NY 11430", lat: 40.6446, lng: -73.7822 },
+  { address: "LaGuardia Airport Terminal B, East Elmhurst, NY 11371", lat: 40.7731, lng: -73.872 },
+  { address: "Newark Liberty International Airport Terminal C, Newark, NJ 07114", lat: 40.6903, lng: -74.1775 },
+  { address: "Teterboro Airport, Teterboro, NJ 07608", lat: 40.8501, lng: -74.0608 },
 ] as const;
 
 /**
@@ -146,13 +158,13 @@ const AIRPORTS = [
  * disagrees with the rules it is meant to demonstrate teaches a tester the
  * wrong thing about the system.
  */
-const OUT_OF_AREA = [
-  { address: "Sheraton Philadelphia Downtown, 201 N 17th St, Philadelphia, PA 19103", state: "PA" },
-  { address: "Boston Logan Airport Terminal B, Boston, MA 02128", state: "MA" },
-  { address: "The Willard InterContinental, 1401 Pennsylvania Ave NW, Washington, DC 20004", state: "DC" },
-  { address: "Foxwoods Resort, 350 Trolley Line Blvd, Mashantucket, CT 06338", state: "CT" },
-  { address: "The Breakers, 44 Ochre Point Ave, Newport, RI 02840", state: "RI" },
-  { address: "Hotel du Pont, 42 W 11th St, Wilmington, DE 19801", state: "DE" },
+export const OUT_OF_AREA = [
+  { address: "Sheraton Philadelphia Downtown, 201 N 17th St, Philadelphia, PA 19103", state: "PA", lat: 39.956, lng: -75.167 },
+  { address: "Boston Logan Airport Terminal B, Boston, MA 02128", state: "MA", lat: 42.3656, lng: -71.017 },
+  { address: "The Willard InterContinental, 1401 Pennsylvania Ave NW, Washington, DC 20004", state: "DC", lat: 38.8963, lng: -77.0316 },
+  { address: "Foxwoods Resort, 350 Trolley Line Blvd, Mashantucket, CT 06338", state: "CT", lat: 41.4746, lng: -71.96 },
+  { address: "The Breakers, 44 Ochre Point Ave, Newport, RI 02840", state: "RI", lat: 41.4696, lng: -71.2985 },
+  { address: "Hotel du Pont, 42 W 11th St, Wilmington, DE 19801", state: "DE", lat: 39.746, lng: -75.547 },
 ] as const;
 
 const CUSTOMERS = [
@@ -360,10 +372,11 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
       const pickupAt = date.set({ hour: pickupHour, minute: rng.pick([0, 15, 30, 45]) });
 
       const destination = outOfArea
-        ? rng.pick(OUT_OF_AREA).address
+        ? rng.pick(OUT_OF_AREA)
         : airportRun
           ? rng.pick(AIRPORTS)
           : rng.pick(PICKUPS);
+      const origin = rng.pick(PICKUPS);
 
       // The occasional roadshow or crew move. Without these the company owns
       // two Sprinters that never turn a wheel, and the largest vehicle class
@@ -471,8 +484,12 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
         passengerPhone: `+1 917 555 ${String(3000 + rng.int(0, 999)).slice(-4)}`,
         bookerName: customer.name,
         bookerEmail: customer.email,
-        pickupAddress: rng.pick(PICKUPS),
-        dropoffAddress: destination,
+        pickupAddress: origin.address,
+        dropoffAddress: destination.address,
+        pickupLat: origin.lat,
+        pickupLng: origin.lng,
+        dropoffLat: destination.lat,
+        dropoffLng: destination.lng,
         stops: rng.chance(0.15) ? ["40 Wall Street, New York, NY 10005"] : [],
         pickupAt: pickupAt.toJSDate(),
         bookedHours,

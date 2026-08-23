@@ -12,6 +12,8 @@ const verified = (over: Partial<VerifiedAddress> = {}): VerifiedAddress => ({
   state: "NY",
   partialMatch: false,
   query: "245 park ave",
+  lat: 40.7554,
+  lng: -73.9757,
   ...over,
 });
 

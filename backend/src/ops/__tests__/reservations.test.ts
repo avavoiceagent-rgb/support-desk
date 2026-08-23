@@ -206,6 +206,78 @@ describe("what the form opens with", () => {
   });
 });
 
+describe("coordinates from the draft", () => {
+  beforeEach(reset);
+
+  async function draftWithCoords(ticketId: string) {
+    await db.insert(ticketDrafts).values({
+      ticketId,
+      bodyHtml: "<p>hello</p>",
+      confirmations: [], questions: [], internalNotes: [],
+      facts: {
+        passengerName: "Ana Costa", passengerPhone: null, bookerName: "Ana Costa",
+        bookerEmail: "ana@customer.example",
+        pickupAddress: "230 Park Ave, New York, NY 10169",
+        dropoffAddress: "JFK Terminal 4, Jamaica, NY 11430",
+        pickupLat: 40.7548, pickupLng: -73.9757,
+        dropoffLat: 40.6446, dropoffLng: -73.7822,
+        stops: [], pickupAtLocal: "2026-09-24T09:00", vehicleClass: "SEDAN",
+        passengerCount: 2, luggageCount: 2, flightNumber: "DL404",
+      },
+    });
+  }
+
+  it("keeps the geocode the draft already paid for", async () => {
+    // Without this the rate cards have nothing to measure and quote() stays
+    // written, tested and called by nothing.
+    const ticket = await makeTicket();
+    await draftWithCoords(ticket.id);
+    const trip = await createReservationFromTicket(ticket.id, INPUT, await actorFor(undefined));
+
+    const [row] = await db.select().from(trips).where(eq(trips.id, trip.id));
+    expect(row.pickupLat).toBeCloseTo(40.7548, 4);
+    expect(row.dropoffLng).toBeCloseTo(-73.7822, 4);
+  });
+
+  it("drops them when the dispatcher changed the address", async () => {
+    // The coordinates belong to the address that was geocoded. Carried onto a
+    // corrected address they would price the job from the wrong place, and
+    // there would be nothing on the screen to say so.
+    const ticket = await makeTicket();
+    await draftWithCoords(ticket.id);
+    const trip = await createReservationFromTicket(
+      ticket.id,
+      { ...INPUT, pickupAddress: "30 Hudson Yards, New York, NY 10001" },
+      await actorFor(undefined)
+    );
+
+    const [row] = await db.select().from(trips).where(eq(trips.id, trip.id));
+    expect(row.pickupLat).toBeNull();
+    expect(row.pickupLng).toBeNull();
+    // The drop-off was not touched, so it keeps its point.
+    expect(row.dropoffLat).toBeCloseTo(40.6446, 4);
+  });
+
+  it("stores nothing when the draft predates coordinates", async () => {
+    const ticket = await makeTicket();
+    await db.insert(ticketDrafts).values({
+      ticketId: ticket.id, bodyHtml: "<p>hello</p>",
+      confirmations: [], questions: [], internalNotes: [],
+      facts: {
+        passengerName: "Ana Costa", passengerPhone: null, bookerName: null, bookerEmail: null,
+        pickupAddress: "230 Park Ave, New York, NY 10169",
+        dropoffAddress: "JFK Terminal 4, Jamaica, NY 11430",
+        stops: [], pickupAtLocal: "2026-09-24T09:00", vehicleClass: "SEDAN",
+        passengerCount: null, luggageCount: null, flightNumber: null,
+      },
+    });
+    const trip = await createReservationFromTicket(ticket.id, INPUT, await actorFor(undefined));
+    const [row] = await db.select().from(trips).where(eq(trips.id, trip.id));
+    expect(row.pickupLat).toBeNull();
+    expect(row.dropoffLat).toBeNull();
+  });
+});
+
 describe("two people, one ticket", () => {
   beforeEach(reset);
 

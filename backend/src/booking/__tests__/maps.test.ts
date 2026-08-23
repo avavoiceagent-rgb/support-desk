@@ -17,6 +17,7 @@ const parkAve = {
       formatted_address: "245 Park Ave, New York, NY 10167, USA",
       place_id: "ChIJ_park_ave",
       types: ["street_address"],
+      geometry: { location: { lat: 40.7548, lng: -73.9757 } },
       address_components: [
         { long_name: "245", types: ["street_number"] },
         { long_name: "Park Avenue", types: ["route"] },
@@ -54,6 +55,43 @@ describe("parseGeocodeResponse", () => {
       partialMatch: false,
       query: "245 park ave manhattan",
     });
+  });
+
+  it("keeps the coordinates Google returned", () => {
+    // These used to be dropped on the floor, which left the partner rate
+    // cards — priced by distance from a base — with nothing to measure.
+    const a = parseGeocodeResponse(parkAve, "245 park ave manhattan");
+    expect(a?.lat).toBeCloseTo(40.7548, 4);
+    expect(a?.lng).toBeCloseTo(-73.9757, 4);
+  });
+
+  it("takes no point at all rather than half of one", () => {
+    // A response with one coordinate, or with a string where a number should
+    // be, would sail through a cast and become a distance measured from
+    // nowhere. Better to have no point and say the job cannot be priced.
+    const half = {
+      status: "OK",
+      results: [
+        {
+          formatted_address: "Somewhere, NY, USA",
+          place_id: "p",
+          geometry: { location: { lat: 40.7 } },
+        },
+      ],
+    };
+    expect(parseGeocodeResponse(half, "somewhere")).toMatchObject({ lat: null, lng: null });
+
+    const stringy = {
+      status: "OK",
+      results: [
+        {
+          formatted_address: "Somewhere, NY, USA",
+          place_id: "p",
+          geometry: { location: { lat: "40.7", lng: "-74.0" } },
+        },
+      ],
+    };
+    expect(parseGeocodeResponse(stringy, "somewhere")).toMatchObject({ lat: null, lng: null });
   });
 
   it("recognises an airport, so no postcode confirmation is needed", () => {
@@ -176,6 +214,8 @@ describe("resolveServiceArea", () => {
     placeId: "p",
     isAirport: false,
     partialMatch: false,
+    lat: null,
+    lng: null,
     query: "somewhere",
   });
 

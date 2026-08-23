@@ -10,6 +10,7 @@ import {
 } from "../provider.interface";
 import { buildAuthUrl, exchangeCodeForTokens, clientWithRefreshToken } from "./gmail.auth";
 import { buildRawMimeMessage } from "./gmail.mime";
+import { bulkSignals, isNoReplySender } from "../bulk-signals";
 
 const SYNCED_LABEL_NAME = "TicketSystem/Synced";
 
@@ -72,59 +73,29 @@ function findBody(part: gmail_v1.Schema$MessagePart | undefined): { text?: strin
   return result;
 }
 
-/**
- * Sender addresses nobody can reply to. Service notifications (Google Apps
- * Script failure summaries, security alerts, and similar) are machine-
- * generated but carry none of the List-* headers below, so the address is
- * the only signal we have. Matched against the local part with punctuation
- * stripped, which catches things like
- * "noreply-apps-scripts-notifications@google.com" and "do-not-reply@...".
- */
-const NO_REPLY_LOCAL_PARTS = [
-  "noreply",
-  "donotreply",
-  "notification", // also matches "notifications"
-  "mailerdaemon",
-  "postmaster",
-  "bounce", // also matches "bounces"
-];
-
-export function isNoReplySender(fromHeader: string | undefined): boolean {
-  if (!fromHeader) return false;
-  const angle = fromHeader.match(/<(.+?)>/);
-  const address = (angle ? angle[1] : fromHeader).trim().toLowerCase();
-  const localPart = address.split("@")[0] ?? "";
-  const normalized = localPart.replace(/[^a-z0-9]/g, "");
-  if (!normalized) return false;
-  return NO_REPLY_LOCAL_PARTS.some((p) => normalized.includes(p));
-}
 
 /**
  * True for machine-generated mail: vacation auto-replies, delivery reports,
  * and — importantly for ticket hygiene — newsletters and marketing blasts.
  *
- * Newsletters very often set ONLY the RFC 2369 List-* headers, so checking
- * Auto-Submitted / Precedence alone (as we did originally) let every
- * newsletter through and it became a permanently unanswered ticket.
+ * The reasoning, and the six checks themselves, live in `bulk-signals.ts` so
+ * that the ticket can keep them. This is the same answer as before, phrased
+ * as "did anything at all say bulk".
  */
 export function isAutoReply(headers: gmail_v1.Schema$MessagePartHeader[] | undefined): boolean {
-  const autoSubmitted = header(headers, "Auto-Submitted");
-  const precedence = header(headers, "Precedence");
-  const xAutoreply = header(headers, "X-Autoreply");
-  // RFC 2369 mailing-list / bulk-sender headers.
-  const listUnsubscribe = header(headers, "List-Unsubscribe");
-  const listId = header(headers, "List-Id");
-  const listPost = header(headers, "List-Post");
-  return Boolean(
-    (autoSubmitted && autoSubmitted.toLowerCase() !== "no") ||
-      (precedence && ["bulk", "list", "auto_reply", "junk"].includes(precedence.toLowerCase())) ||
-      xAutoreply ||
-      listUnsubscribe ||
-      listId ||
-      listPost ||
-      isNoReplySender(header(headers, "From"))
-  );
+  return bulkSignalsFor(headers).length > 0;
 }
+
+/** Which bulk markers this message carried, by name. */
+export function bulkSignalsFor(
+  headers: gmail_v1.Schema$MessagePartHeader[] | undefined
+): string[] {
+  return bulkSignals((name) => header(headers, name));
+}
+
+// Re-exported: this used to live here, and the tests and callers still look
+// for it at this address.
+export { isNoReplySender };
 
 export class GmailProvider implements MailProvider {
   readonly type = "GMAIL" as const;
@@ -198,6 +169,7 @@ export class GmailProvider implements MailProvider {
         attachments,
         receivedAt: full.data.internalDate ? new Date(Number(full.data.internalDate)) : new Date(),
         isAutoReply: isAutoReply(headers),
+        bulkSignals: bulkSignalsFor(headers),
       });
 
       await gmail.users.messages.modify({ userId: "me", id, requestBody: { addLabelIds: [labelId] } });

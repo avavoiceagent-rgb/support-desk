@@ -115,6 +115,15 @@ export const messages = pgTable(
     inReplyToHeader: text("in_reply_to_header"),
     referencesHeader: text("references_header"),
     isAutoReply: boolean("is_auto_reply").notNull().default(false),
+    /**
+     * The bulk markers this email carried, by name — "List-Unsubscribe",
+     * "Precedence: bulk", "no-reply sender".
+     *
+     * `isAutoReply` says a decision was made; this says on what. Empty on a
+     * message flagged bulk means no header said so and a person or the model
+     * decided, which is worth being able to see two days later.
+     */
+    bulkSignals: jsonb("bulk_signals").$type<string[]>().notNull().default([]),
     sentAt: timestamp("sent_at").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -140,6 +149,21 @@ export interface DraftFacts {
   bookerEmail: string | null;
   pickupAddress: string | null;
   dropoffAddress: string | null;
+  /**
+   * Where those two addresses are, from the same geocode that tidied them.
+   *
+   * Kept because a partner's rate card is priced by distance from their base,
+   * and a distance needs two points. Null when maps are switched off or the
+   * address never resolved — in which case the job simply cannot be priced
+   * from a card, which is a better answer than a made-up mileage.
+   */
+  // Optional, not just nullable: drafts written between migration 0010 and
+  // 0015 have facts with no coordinate fields at all, and pretending
+  // otherwise would type absent data as present-and-null.
+  pickupLat?: number | null;
+  pickupLng?: number | null;
+  dropoffLat?: number | null;
+  dropoffLng?: number | null;
   stops: string[];
   /** New York wall clock, "2026-09-22T09:00". */
   pickupAtLocal: string | null;
@@ -416,6 +440,20 @@ export const trips = pgTable(
     passengerCount: integer("passenger_count"),
     luggageCount: integer("luggage_count"),
     flightNumber: text("flight_number"),
+
+    /**
+     * Where this job starts and ends.
+     *
+     * Stored on the trip rather than looked up when needed: a rate card is
+     * priced by distance from the partner's base, and re-geocoding an address
+     * months later can quietly answer differently — a bill has to be
+     * reproducible. Null for trips created before this existed and for any
+     * address that never resolved.
+     */
+    pickupLat: doublePrecision("pickup_lat"),
+    pickupLng: doublePrecision("pickup_lng"),
+    dropoffLat: doublePrecision("dropoff_lat"),
+    dropoffLng: doublePrecision("dropoff_lng"),
 
     status: tripStatusEnum("status").notNull().default("SCHEDULED"),
     assignedKind: assignedToEnum("assigned_kind").notNull().default("UNASSIGNED"),

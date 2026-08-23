@@ -74,6 +74,8 @@ export interface TicketMessage {
   bodyHtml: string;
   bodyText: string | null;
   isAutoReply: boolean;
+  /** Which bulk markers the email carried, by name. Empty for older messages. */
+  bulkSignals: string[];
   sentAt: string;
   attachments: Attachment[];
 }

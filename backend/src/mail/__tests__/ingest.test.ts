@@ -19,6 +19,7 @@ function makeEmail(overrides: Partial<NormalizedEmail> = {}): NormalizedEmail {
     attachments: [],
     receivedAt: new Date(),
     isAutoReply: false,
+    bulkSignals: [],
     ...overrides,
   };
 }
@@ -112,6 +113,29 @@ describe("ingestEmail", () => {
     const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
     expect(ticket.isBulk).toBe(true);
     expect(ticket.status).toBe("UNRESOLVED_CLOSED");
+  });
+
+  it("keeps the markers that made it bulk, on the message", async () => {
+    // The verdict lives on the ticket and the evidence lives here, so
+    // "why was this closed?" has an answer after the fact.
+    const { ticketId } = await ingestEmail(
+      accountId,
+      makeEmail({
+        providerThreadId: "thread-evidence",
+        isAutoReply: true,
+        bulkSignals: ["Precedence: bulk", "List-Unsubscribe"],
+      })
+    );
+    const [msg] = await db.select().from(messages).where(eq(messages.ticketId, ticketId));
+    expect(msg.bulkSignals).toEqual(["Precedence: bulk", "List-Unsubscribe"]);
+  });
+
+  it("stores an empty list for ordinary mail rather than null", async () => {
+    // Empty means "we looked and the envelope said nothing", which is a
+    // different claim from "we never looked". Older rows say the latter.
+    const { ticketId } = await ingestEmail(accountId, makeEmail({ providerThreadId: "thread-plain" }));
+    const [msg] = await db.select().from(messages).where(eq(messages.ticketId, ticketId));
+    expect(msg.bulkSignals).toEqual([]);
   });
 
   it("clears the bulk flag when a real person writes in on that thread", async () => {

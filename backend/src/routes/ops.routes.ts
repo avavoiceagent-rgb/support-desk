@@ -40,6 +40,8 @@ import {
   MAX_TRIP_LIMIT,
   TRIP_SORTS,
 } from "../ops/trips";
+import { findTripById } from "../ops/lookup";
+import { quoteTripForAffiliate } from "../ops/pricing";
 
 export const opsRouter = Router();
 opsRouter.use(requireAuth);
@@ -385,4 +387,22 @@ opsRouter.patch("/trips/:id", requireAdmin, async (req, res) => {
 // the wrong way round.
 opsRouter.get("/trips/:id/events", async (req, res) => {
   res.json({ events: await listTripEvents(param(req, "id")) });
+});
+
+/**
+ * What one partner's card says this job costs.
+ *
+ * A read, so anyone signed in can see it: knowing the price before the work
+ * is handed over is the point, and hiding it behind admin would mean the
+ * person doing the handing over is the one who cannot look.
+ */
+opsRouter.get("/trips/:id/quote", async (req, res) => {
+  const affiliateId = typeof req.query.affiliateId === "string" ? req.query.affiliateId : "";
+  if (!affiliateId) return res.status(400).json({ error: "affiliateId is required" });
+
+  await handle(res, async () => {
+    const trip = await findTripById(param(req, "id"));
+    if (!trip) return res.status(404).json({ error: "No trip with that id." });
+    res.json(await quoteTripForAffiliate(trip, affiliateId));
+  });
 });

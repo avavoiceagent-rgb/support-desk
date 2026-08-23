@@ -202,6 +202,12 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
           bookerEmail: ticket.requesterEmail ?? emailFromHeader(first.fromAddress),
           pickupAddress: pickup?.formattedAddress ?? booking.pickupAddressText,
           dropoffAddress: dropoff?.formattedAddress ?? booking.dropoffAddressText,
+          // The coordinates behind those addresses, so a partner quote can be
+          // measured later without geocoding the same place twice.
+          pickupLat: pickup?.lat ?? null,
+          pickupLng: pickup?.lng ?? null,
+          dropoffLat: dropoff?.lat ?? null,
+          dropoffLng: dropoff?.lng ?? null,
           stops: stops
             .map((stop, i) => stop?.formattedAddress ?? booking.stops[i]?.addressText ?? null)
             .filter((a): a is string => Boolean(a)),

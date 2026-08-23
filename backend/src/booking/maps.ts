@@ -33,6 +33,16 @@ export interface VerifiedAddress {
   partialMatch: boolean;
   /** What the customer originally wrote, kept so Adam can quote it back. */
   query: string;
+  /**
+   * Where the place actually is.
+   *
+   * Google returns this on every geocode and we used to drop it, which left
+   * the rate cards — priced by distance from a partner's base — with no way
+   * to measure the distance. Null only when a response somehow arrives
+   * without a location, which Google's own contract says should not happen.
+   */
+  lat: number | null;
+  lng: number | null;
 }
 
 export interface RouteEstimate {
@@ -85,6 +95,7 @@ interface GeocodeResult {
   types?: string[];
   partial_match?: boolean;
   address_components?: GeocodeComponent[];
+  geometry?: { location?: { lat?: number; lng?: number } };
 }
 
 /** Exported for tests: turns Google's response into our own shape. */
@@ -110,11 +121,19 @@ export function parseGeocodeResponse(raw: unknown, query: string): VerifiedAddre
     top.address_components?.find((c) => c.types?.includes("administrative_area_level_1"))?.short_name ??
     null;
 
+  // Checked rather than cast: a string "40.7" or a missing pair would sail
+  // through the type assertion and become a distance measured from nowhere.
+  const rawLat = top.geometry?.location?.lat;
+  const rawLng = top.geometry?.location?.lng;
+  const hasPoint = typeof rawLat === "number" && typeof rawLng === "number";
+
   return {
     formattedAddress: top.formatted_address,
     postalCode,
     state,
     placeId: top.place_id,
+    lat: hasPoint ? rawLat : null,
+    lng: hasPoint ? rawLng : null,
     // Airports don't need a postcode confirmed — the terminal is the address.
     isAirport: looksLikeAirport(top.types, top.formatted_address, query),
     partialMatch: Boolean(top.partial_match),

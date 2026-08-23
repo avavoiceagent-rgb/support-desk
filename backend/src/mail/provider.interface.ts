@@ -34,6 +34,12 @@ export interface NormalizedEmail {
    * List-Unsubscribe / List-Id / List-Post headers.
    */
   isAutoReply: boolean;
+  /**
+   * Which of those markers it actually carried, by name, so the reason a
+   * ticket was filed as bulk survives the filing. Empty is the interesting
+   * case: nothing in the envelope said bulk.
+   */
+  bulkSignals: string[];
 }
 
 export interface SendReplyParams {

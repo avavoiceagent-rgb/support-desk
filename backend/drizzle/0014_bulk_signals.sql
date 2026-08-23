@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ADD COLUMN "bulk_signals" jsonb DEFAULT '[]'::jsonb NOT NULL;

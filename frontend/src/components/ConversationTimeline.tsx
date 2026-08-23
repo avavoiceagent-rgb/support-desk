@@ -102,7 +102,17 @@ export function ConversationTimeline({
                     </span>
                   )}
                   {m.isAutoReply && (
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-500">
+                    <span
+                      className="cursor-help rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-500"
+                      // What the envelope actually said. Hovering answers
+                      // "why is this filed as automated mail?" without
+                      // anybody having to go and read raw headers.
+                      title={
+                        m.bulkSignals?.length
+                          ? `Marked automated by: ${m.bulkSignals.join(", ")}`
+                          : "Marked automated when it arrived. This message predates header recording, so the markers were not kept."
+                      }
+                    >
                       Auto-reply
                     </span>
                   )}

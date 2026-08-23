@@ -20,6 +20,7 @@ import {
   type Affiliate,
   type Driver,
   type Trip,
+  type TripQuote,
   type TripSort,
   type TripStatus,
   type Vehicle,
@@ -264,6 +265,8 @@ function TripEditor({
               ))}
           </select>
         </Field>
+
+        <PartnerQuote tripId={trip.id} affiliateId={affiliateId} />
 
         <Field label="Status">
           <select
@@ -613,6 +616,68 @@ export function ReservationsTab({
           }}
         />
       )}
+    </div>
+  );
+}
+
+const money = (cents: number) => `$${(cents / 100).toLocaleString("en-US")}`;
+
+/**
+ * What the chosen partner's card says this job costs, shown before the job is
+ * handed over rather than when their invoice turns up.
+ *
+ * It never blocks the save. A price we cannot work out is a thing to agree on
+ * the phone, not a reason to stop somebody assigning the work.
+ */
+function PartnerQuote({ tripId, affiliateId }: { tripId: string; affiliateId: string }) {
+  const [result, setResult] = useState<TripQuote | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!affiliateId) {
+      setResult(null);
+      return;
+    }
+    let live = true;
+    setLoading(true);
+    opsApi
+      .quoteTrip(tripId, affiliateId)
+      // A failed lookup is not worth an error box next to a form somebody is
+      // in the middle of filling in.
+      .then((r) => live && setResult(r))
+      .catch(() => live && setResult(null))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+  }, [tripId, affiliateId]);
+
+  if (!affiliateId) return null;
+  if (loading && !result) {
+    return <p className="text-xs text-gray-400">Checking their rate card…</p>;
+  }
+  if (!result) return null;
+
+  if (!result.priced) {
+    return (
+      <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+        {result.reason}
+      </p>
+    );
+  }
+
+  const { quote, miles } = result;
+  const minimumApplied = quote.billableHours > quote.requestedHours;
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+      <p className="font-semibold">
+        {money(quote.totalCents)} — {quote.billableHours}h at {money(quote.hourlyRateCents)}/hr
+      </p>
+      <p className="mt-1">
+        {quote.zone.label} band · {miles} miles from their base
+        {minimumApplied &&
+          ` · ${quote.requestedHours}h booked, billed at their ${quote.zone.minimumHours}h minimum`}
+      </p>
     </div>
   );
 }
