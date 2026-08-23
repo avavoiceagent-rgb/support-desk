@@ -164,6 +164,52 @@ async function insertReservation(
   }
 }
 
+export interface QuotedTrip {
+  id: string;
+  reference: string;
+  pickupAt: Date;
+  bookedHours: number;
+  vehicleClass: string;
+  status: string;
+  passengerName: string;
+  pickupAddress: string;
+  dropoffAddress: string;
+  driverName: string | null;
+  affiliateCompany: string | null;
+}
+
+/**
+ * The bookings this email actually names.
+ *
+ * "Can we move T-10005 an hour later" is not a new reservation, and offering
+ * to make one beside the booking they want moved is how a customer ends up
+ * with two cars. The desk already resolves the reference — this is what lets a
+ * screen act on it.
+ *
+ * Quoted only. A trip that merely belongs to the same sender is not what they
+ * are talking about, and guessing from history is how the wrong booking gets
+ * changed.
+ */
+export function quotedTripsFrom(context: {
+  trips: { reason: string; trip: TripRecord }[];
+}): QuotedTrip[] {
+  return context.trips
+    .filter((t) => t.reason === "QUOTED_IN_EMAIL")
+    .map(({ trip }) => ({
+      id: trip.id,
+      reference: trip.reference,
+      pickupAt: trip.pickupAt,
+      bookedHours: trip.bookedHours,
+      vehicleClass: trip.vehicleClass,
+      status: trip.status,
+      passengerName: trip.passengerName,
+      pickupAddress: trip.pickupAddress,
+      dropoffAddress: trip.dropoffAddress,
+      driverName: trip.driver?.name ?? null,
+      affiliateCompany: trip.affiliate?.company ?? null,
+    }));
+}
+
 export async function createReservationFromTicket(
   ticketId: string,
   input: ReservationInput,

@@ -15,6 +15,7 @@ import { getDraftForTicket, setDraftStatus } from "../services/draft.service";
 import { getOpsContext } from "../services/ops-context.service";
 import {
   createReservationFromTicket,
+  quotedTripsFrom,
   reservationForTicket,
   suggestedReservation,
 } from "../ops/reservations";
@@ -250,14 +251,28 @@ ticketsRouter.get("/:ticketId/attachments/:attachmentId", async (req, res) => {
 // the ticket. Making a booking is not an administrative act; changing the
 // roster is.
 
-/** What the form should open with: the existing trip, or what the draft kept. */
+/**
+ * What the panel should offer on this ticket.
+ *
+ * `trip` — a reservation already made from it. `quoted` — bookings the email
+ * names, which means this is a change to one of them rather than a new one.
+ * `unresolved` — references the customer quoted that match nothing, worth
+ * saying out loud because a mistyped booking number looks exactly like a
+ * booking we have lost.
+ */
 ticketsRouter.get("/:id/reservation", async (req, res) => {
   const ticketId = param(req, "id");
-  const [trip, suggested] = await Promise.all([
+  const [trip, suggested, context] = await Promise.all([
     reservationForTicket(ticketId),
     suggestedReservation(ticketId),
+    getOpsContext(ticketId).catch(() => null),
   ]);
-  res.json({ trip, suggested });
+  res.json({
+    trip,
+    suggested,
+    quoted: context ? quotedTripsFrom(context) : [],
+    unresolved: context?.unresolvedReferences ?? [],
+  });
 });
 
 const reservationSchema = z.object({

@@ -6,6 +6,7 @@ import {
   ticketDrafts, tickets, tripEvents, trips, users, vehicles,
 } from "../../db/schema";
 import {
+  quotedTripsFrom,
   createReservationFromTicket,
   nextTripReference,
   reservationForTicket,
@@ -304,5 +305,55 @@ describe("two people, one ticket", () => {
     );
 
     expect(new Set(made.map((m) => m.reference)).size).toBe(6);
+  });
+});
+
+describe("which booking an email is about", () => {
+  // "Can we move T-10005 an hour later" is not a new reservation. Offering to
+  // make one beside the booking they want moved is how a customer ends up with
+  // two cars — the third of the three ways this system had of doing that.
+  const trip = (over: Record<string, unknown> = {}) =>
+    ({
+      id: "t1", reference: "T-10005", pickupAt: new Date("2026-07-23T20:30:00Z"),
+      bookedHours: 3, vehicleClass: "SUV", status: "COMPLETED",
+      passengerName: "Ana Costa", pickupAddress: "1 Hotel Brooklyn Bridge",
+      dropoffAddress: "Teterboro Airport",
+      driver: { name: "Kwame Boateng" }, affiliate: null,
+      ...over,
+    }) as never;
+
+  it("offers the booking the customer named", () => {
+    const quoted = quotedTripsFrom({ trips: [{ reason: "QUOTED_IN_EMAIL", trip: trip() }] });
+    expect(quoted).toHaveLength(1);
+    expect(quoted[0].reference).toBe("T-10005");
+    expect(quoted[0].driverName).toBe("Kwame Boateng");
+  });
+
+  it("ignores bookings that merely belong to the same sender", () => {
+    // Guessing from history is how the wrong booking gets changed. Only a
+    // reference the customer actually wrote counts.
+    const quoted = quotedTripsFrom({
+      trips: [
+        { reason: "SENDER_RECENT", trip: trip({ id: "t2", reference: "T-10001" }) },
+        { reason: "SENDER_UPCOMING", trip: trip({ id: "t3", reference: "T-10002" }) },
+        { reason: "QUOTED_IN_EMAIL", trip: trip() },
+      ],
+    });
+    expect(quoted.map((q) => q.reference)).toEqual(["T-10005"]);
+  });
+
+  it("says nothing when the email names no booking", () => {
+    expect(quotedTripsFrom({ trips: [] })).toEqual([]);
+  });
+
+  it("carries the partner through when a job was farmed out", () => {
+    const quoted = quotedTripsFrom({
+      trips: [{
+        reason: "QUOTED_IN_EMAIL",
+        trip: trip({ driver: null, affiliate: { company: "Beacon Hill Chauffeurs" } }),
+      }],
+    });
+    expect(quoted[0].driverName).toBeNull();
+    expect(quoted[0].affiliateCompany).toBe("Beacon Hill Chauffeurs");
   });
 });
