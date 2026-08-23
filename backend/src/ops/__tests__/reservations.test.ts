@@ -13,6 +13,7 @@ import {
   vehicleClassFromText,
 } from "../reservations";
 import { actorFor, listTripEvents } from "../trip-events";
+import { OpsError } from "../errors";
 
 afterAll(async () => {
   await pool.end();
@@ -224,5 +225,84 @@ describe("what the form opens with", () => {
       confirmations: [], questions: [], internalNotes: [],
     });
     expect(await suggestedReservation(ticket.id)).toBeNull();
+  });
+});
+
+describe("two people, one ticket", () => {
+  beforeEach(reset);
+
+  it("lets the database have the final say, not the check above it", async () => {
+    // createReservationFromTicket reads then writes, and those are two
+    // moments. The polite refusal is for the message; the unique index is what
+    // makes it true.
+    const ticket = await makeTicket();
+    const first = await createReservationFromTicket(ticket.id, INPUT, await actorFor(undefined));
+
+    // The constraint name lives on the driver error, which Drizzle wraps in a
+    // generic "Failed query" — so the chain has to be walked. That wrapping is
+    // exactly what stopped the retry working on the first attempt at this fix.
+    const constraint = await db
+      .insert(trips)
+      .values({
+        reference: "T-19999", ticketId: ticket.id, passengerName: "Ana Costa",
+        pickupAddress: "a", dropoffAddress: "b", pickupAt: new Date(),
+        bookedHours: 2, vehicleClass: "SEDAN",
+      })
+      .then(() => null)
+      .catch((err) => {
+        for (let e = err; e; e = e.cause) if (e.code === "23505") return e.constraint;
+        return `not a unique violation: ${err.message}`;
+      });
+    expect(constraint).toBe("trips_ticket_unique");
+
+    expect((await db.select().from(trips)).map((t) => t.reference)).toEqual([first.reference]);
+  });
+
+  it("makes one reservation, not two, when both presses land together", async () => {
+    const ticket = await makeTicket();
+    const actor = await actorFor(undefined);
+
+    const results = await Promise.allSettled([
+      createReservationFromTicket(ticket.id, INPUT, actor),
+      createReservationFromTicket(ticket.id, INPUT, actor),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect((await db.select().from(trips))).toHaveLength(1);
+
+    // And the loser is told which reservation already exists, not handed a 500.
+    const refused = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(refused.reason).toBeInstanceOf(OpsError);
+    expect(refused.reason.status).toBe(409);
+    expect(refused.reason.message).toMatch(/already created from this ticket/);
+  });
+
+  it("gives two different tickets two different references, at the same instant", async () => {
+    // Both draw the same highest number, one loses on trips_reference_unique,
+    // and the retry re-reads a maximum the winner has already moved. Before
+    // the retry this was a 500 for whoever came second.
+    const a = await makeTicket();
+    const b = await makeTicket();
+    const actor = await actorFor(undefined);
+
+    const [one, two] = await Promise.all([
+      createReservationFromTicket(a.id, INPUT, actor),
+      createReservationFromTicket(b.id, INPUT, actor),
+    ]);
+
+    expect(one.reference).not.toBe(two.reference);
+    expect(new Set([one.reference, two.reference]).size).toBe(2);
+    expect((await db.select().from(trips))).toHaveLength(2);
+  });
+
+  it("survives a crowd", async () => {
+    const tickets = await Promise.all([1, 2, 3, 4, 5, 6].map(() => makeTicket()));
+    const actor = await actorFor(undefined);
+
+    const made = await Promise.all(
+      tickets.map((t) => createReservationFromTicket(t.id, INPUT, actor))
+    );
+
+    expect(new Set(made.map((m) => m.reference)).size).toBe(6);
   });
 });

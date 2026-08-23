@@ -16,7 +16,7 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 
 import type { TicketStatus, TicketQueue, TicketChannel, ReservationType, ReservationSource } from "../types";
@@ -433,6 +433,21 @@ export const trips = pgTable(
     index("trips_pickup_idx").on(t.pickupAt),
     index("trips_driver_pickup_idx").on(t.driverId, t.pickupAt),
     index("trips_booker_email_idx").on(t.bookerEmail),
+    /**
+     * One reservation per ticket, enforced by the database.
+     *
+     * `createReservationFromTicket` checks first and refuses politely, but a
+     * check and a write are two moments: two people working the same ticket
+     * both read "nothing here yet" and both insert. That is two cars for one
+     * job, which is the failure this whole group of fixes is about. The check
+     * stays for the message; this is what makes it true.
+     *
+     * Partial, because most trips have no ticket at all — the seeded ones, and
+     * anything a dispatcher creates directly.
+     */
+    uniqueIndex("trips_ticket_unique")
+      .on(t.ticketId)
+      .where(sql`${t.ticketId} is not null`),
   ]
 );
 

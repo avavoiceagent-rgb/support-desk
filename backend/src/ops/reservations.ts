@@ -25,6 +25,33 @@ import { recordTripEvent, type Actor } from "./trip-events";
 /** Where the reference numbers start, when there are none yet. */
 const FIRST_REFERENCE = 10_000;
 
+/**
+ * How many times to re-draw a reference before giving up.
+ *
+ * Two people creating a reservation in the same second both read the same
+ * highest number and the second insert loses on the unique index. Retrying
+ * re-reads the maximum, which the first insert has now moved, so the second
+ * attempt succeeds. Five is far more than a desk of this size will ever need
+ * and still terminates if something else is wrong.
+ */
+const REFERENCE_ATTEMPTS = 5;
+
+/**
+ * Postgres unique-violation, and which constraint it was.
+ *
+ * Walks the cause chain: Drizzle wraps the driver's error, so the `code` and
+ * `constraint` a caller wants are one or two levels down and reading them off
+ * the top object silently finds nothing. That is exactly how this went wrong
+ * the first time — the retry never fired and the test caught it.
+ */
+function uniqueViolation(err: unknown): string | null {
+  for (let e = err as { code?: string; constraint?: string; cause?: unknown } | undefined; e; ) {
+    if (e.code === "23505") return e.constraint ?? "";
+    e = e.cause as typeof e;
+  }
+  return null;
+}
+
 const CLASS_WORDS: [RegExp, VehicleClass][] = [
   // Order matters: "executive sprinter van" is a Sprinter, not a van.
   [/\bsprinter\b/i, "SPRINTER"],
@@ -102,6 +129,41 @@ export async function suggestedReservation(ticketId: string): Promise<DraftFacts
   return draft?.facts ?? null;
 }
 
+/**
+ * The insert, with the two ways it can lose a race handled differently.
+ *
+ * A clashing reference is nobody's fault and nobody's business — draw another
+ * and carry on. A clashing ticket means somebody else just made this exact
+ * reservation, which the person pressing the button needs to be told, in the
+ * same words the polite check above them uses.
+ */
+async function insertReservation(
+  values: Omit<typeof trips.$inferInsert, "reference">
+): Promise<typeof trips.$inferSelect> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const [row] = await db
+        .insert(trips)
+        .values({ ...values, reference: await nextTripReference() })
+        .returning();
+      return row;
+    } catch (err) {
+      const constraint = uniqueViolation(err);
+      if (constraint === "trips_ticket_unique") {
+        const existing = values.ticketId ? await reservationForTicket(values.ticketId) : null;
+        throw new OpsError(
+          existing
+            ? `${existing.reference} was already created from this ticket. Change that one rather than making a second.`
+            : "A reservation was already created from this ticket.",
+          409
+        );
+      }
+      if (constraint === "trips_reference_unique" && attempt < REFERENCE_ATTEMPTS) continue;
+      throw err;
+    }
+  }
+}
+
 export async function createReservationFromTicket(
   ticketId: string,
   input: ReservationInput,
@@ -125,29 +187,25 @@ export async function createReservationFromTicket(
     throw new OpsError("That pickup time is not a time. Use the date and time boxes.");
   }
 
-  const [row] = await db
-    .insert(trips)
-    .values({
-      reference: await nextTripReference(),
-      ticketId,
-      passengerName: input.passengerName,
-      passengerPhone: input.passengerPhone ?? null,
-      bookerName: input.bookerName ?? null,
-      bookerEmail: input.bookerEmail ?? null,
-      pickupAddress: input.pickupAddress,
-      dropoffAddress: input.dropoffAddress,
-      stops: input.stops ?? [],
-      pickupAt: pickup.toJSDate(),
-      bookedHours: input.bookedHours,
-      vehicleClass: input.vehicleClass,
-      passengerCount: input.passengerCount ?? null,
-      luggageCount: input.luggageCount ?? null,
-      flightNumber: input.flightNumber ?? null,
-      status: "SCHEDULED",
-      assignedKind: "UNASSIGNED",
-      notes: input.notes ?? null,
-    })
-    .returning();
+  const row = await insertReservation({
+    ticketId,
+    passengerName: input.passengerName,
+    passengerPhone: input.passengerPhone ?? null,
+    bookerName: input.bookerName ?? null,
+    bookerEmail: input.bookerEmail ?? null,
+    pickupAddress: input.pickupAddress,
+    dropoffAddress: input.dropoffAddress,
+    stops: input.stops ?? [],
+    pickupAt: pickup.toJSDate(),
+    bookedHours: input.bookedHours,
+    vehicleClass: input.vehicleClass,
+    passengerCount: input.passengerCount ?? null,
+    luggageCount: input.luggageCount ?? null,
+    flightNumber: input.flightNumber ?? null,
+    status: "SCHEDULED",
+    assignedKind: "UNASSIGNED",
+    notes: input.notes ?? null,
+  });
 
   await recordTripEvent({
     tripId: row.id,

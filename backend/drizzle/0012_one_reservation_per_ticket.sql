@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "trips_ticket_unique" ON "trips" USING btree ("ticket_id") WHERE "trips"."ticket_id" is not null;
