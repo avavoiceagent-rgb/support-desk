@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { opsRouter } from "../../routes/ops.routes";
+import { dispatchRouter } from "../../routes/dispatch.routes";
 import { requireAuth, requireAdmin } from "../../middleware/auth";
 
 // No database in this file. The permission split is the thing most likely to
@@ -15,6 +16,16 @@ interface Layer {
 }
 
 const layers: Layer[] = (opsRouter as unknown as { stack: Layer[] }).stack;
+
+function routesOf(router: unknown) {
+  return ((router as { stack: Layer[] }).stack ?? [])
+    .filter((l): l is Required<Pick<Layer, "route">> & Layer => Boolean(l.route))
+    .map((l) => ({
+      path: l.route.path,
+      methods: Object.keys(l.route.methods).map((m) => m.toUpperCase()),
+      handlers: l.route.stack.map((s) => s.handle),
+    }));
+}
 
 const routes = layers
   .filter((l): l is Required<Pick<Layer, "route">> & Layer => Boolean(l.route))
@@ -113,5 +124,47 @@ describe("requireAdmin", () => {
 
     expect(next).toHaveBeenCalledOnce();
     expect(res.statusCode).toBe(0);
+  });
+});
+
+describe("dispatch route permissions", () => {
+  // This router is why the invariant above needs a second home. It was written
+  // with its own split — reading a thread and sending a message are ordinary
+  // dispatch work — and the split leaked: accepting an offer assigns a driver
+  // through `updateTrip`, which is the same change `PATCH /ops/trips/:id`
+  // refuses without an admin. Two calls here achieved what one call there
+  // would not.
+  const dispatch = routesOf(dispatchRouter);
+
+  it("puts every dispatch route behind requireAuth at the router level", () => {
+    const routerLevel = ((dispatchRouter as unknown as { stack: Layer[] }).stack ?? [])
+      .filter((l) => !l.route)
+      .map((l) => l.handle);
+    expect(routerLevel).toContain(requireAuth);
+  });
+
+  it("guards the routes that can change a trip", () => {
+    // The rule, in one place: changing a trip needs an admin, whichever screen
+    // it is done from.
+    const guarded = dispatch
+      .filter((r) => r.handlers.includes(requireAdmin))
+      .map((r) => `${r.methods.join("/")} ${r.path}`)
+      .sort();
+    expect(guarded).toEqual(["POST /offers/:id/response"]);
+  });
+
+  it("leaves the rest of dispatch open, deliberately and by name", () => {
+    // An exact list rather than a "contains", so a new dispatch write cannot
+    // land here without somebody deciding which side of the line it is on.
+    // If this test fails because you added a route, that is it working.
+    const open = dispatch
+      .filter((r) => !r.handlers.includes(requireAdmin))
+      .map((r) => `${r.methods.join("/")} ${r.path}`)
+      .sort();
+    expect(open).toEqual([
+      "GET /:kind/:id/messages",
+      "POST /:kind/:id/messages",
+      "POST /:kind/:id/offers",
+    ]);
   });
 });

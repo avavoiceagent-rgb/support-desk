@@ -203,3 +203,49 @@ describe("offers", () => {
     expect(outcome.trip?.assignedKind).toBe("AFFILIATE");
   });
 });
+
+describe("offering work to somebody who cannot take it", () => {
+  beforeEach(reset);
+
+  it("refuses to offer a job to a deactivated driver", async () => {
+    // updateTrip already refuses to put work on a deactivated driver, so this
+    // used to be sent, read, and only fail at the acceptance — after the
+    // driver had been told about a job they were never going to get.
+    const marco = await makeDriver();
+    await db.update(drivers).set({ active: false }).where(eq(drivers.id, marco.id));
+    const trip = await makeTrip();
+
+    await expect(
+      sendOffer({ contact: { kind: "DRIVER", id: marco.id }, tripId: trip.id, actor: await actorFor(undefined) })
+    ).rejects.toThrow(/deactivated and cannot be offered work/);
+
+    expect(await listMessages({ kind: "DRIVER", id: marco.id })).toEqual([]);
+  });
+
+  it("refuses to offer a job to a deactivated partner", async () => {
+    const [partner] = await db
+      .insert(affiliates)
+      .values({ company: "Beacon Hill", phone: "1", email: "a@b.example", active: false })
+      .returning();
+    const trip = await makeTrip();
+
+    await expect(
+      sendOffer({ contact: { kind: "AFFILIATE", id: partner.id }, tripId: trip.id, actor: await actorFor(undefined) })
+    ).rejects.toThrow(/deactivated and cannot be offered work/);
+  });
+
+  it("still lets a deactivated driver be messaged", async () => {
+    // Deactivating somebody is not blocking them. "Your last invoice is paid"
+    // is a message a former driver may well need.
+    const marco = await makeDriver();
+    await db.update(drivers).set({ active: false }).where(eq(drivers.id, marco.id));
+
+    const sent = await sendText({
+      contact: { kind: "DRIVER", id: marco.id },
+      body: "Your last invoice went out today.",
+      direction: "OUT",
+      actor: await actorFor(undefined),
+    });
+    expect(sent.body).toBe("Your last invoice went out today.");
+  });
+});

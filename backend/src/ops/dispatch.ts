@@ -35,14 +35,23 @@ function contactFilter(contact: Contact) {
     : and(eq(dispatchMessages.affiliateId, contact.id), isNull(dispatchMessages.driverId));
 }
 
-async function requireContact(contact: Contact): Promise<string> {
+async function requireContact(contact: Contact, forWork = false): Promise<string> {
   if (contact.kind === "DRIVER") {
     const [row] = await db.select().from(drivers).where(eq(drivers.id, contact.id)).limit(1);
     if (!row) throw new OpsError(`No driver with id ${contact.id}.`, 404);
+    // `updateTrip` refuses to put work on a deactivated driver, so an offer to
+    // one could be sent and would then fail at the acceptance — after the
+    // driver had been told about a job they cannot take. Refuse it up front.
+    if (forWork && !row.active) {
+      throw new OpsError(`${row.name} is deactivated and cannot be offered work.`);
+    }
     return row.name;
   }
   const [row] = await db.select().from(affiliates).where(eq(affiliates.id, contact.id)).limit(1);
   if (!row) throw new OpsError(`No partner with id ${contact.id}.`, 404);
+  if (forWork && !row.active) {
+    throw new OpsError(`${row.company} is deactivated and cannot be offered work.`);
+  }
   return row.company;
 }
 
@@ -118,7 +127,7 @@ export async function sendOffer(params: {
   actor: Actor;
   note?: string | null;
 }): Promise<DispatchMessage> {
-  await requireContact(params.contact);
+  await requireContact(params.contact, true);
 
   const rows = await selectTrips().where(eq(trips.id, params.tripId)).limit(1);
   if (!rows.length) throw new OpsError(`No trip with id ${params.tripId}.`, 404);

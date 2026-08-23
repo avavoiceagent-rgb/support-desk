@@ -1,14 +1,29 @@
 // Messages between the desk and a driver or a partner.
 //
 // Its own router rather than a corner of /ops, because the permission split is
-// different and deliberately so. Everything under /ops is admin-only to write:
-// the roster and the rate cards are administrative. Telling a driver where to
-// be is the ordinary work of whoever is on dispatch, so these are open to
-// anyone signed in.
+// different. Everything under /ops is admin-only to write: the roster and the
+// rate cards are administrative. Telling a driver where to be is the ordinary
+// work of whoever is on dispatch, so reading a thread, sending a message and
+// sending an offer are open to anyone signed in.
+//
+// Answering an offer is not. Accepting one assigns the driver — it goes
+// through `updateTrip` to do it — and that is the same change `PATCH
+// /ops/trips/:id` refuses without an admin session. Two calls here used to
+// achieve what one call there would not, which is a hole sitting next to a
+// wall rather than a considered exception.
+//
+// The rule, stated once so it is easy to keep: **changing a trip needs an
+// admin, whichever screen you do it from.** Everything else about dispatch
+// stays open.
+//
+// This does not stand in the way of drivers getting links of their own. A
+// driver arriving on their own link is not a signed-in user at all, so their
+// acceptance will come through a route that authenticates a token rather than
+// a session, and this check will not be the thing in its way.
 
 import { Router, type Response } from "express";
 import { z } from "zod";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requireAdmin } from "../middleware/auth";
 import { param } from "../utils/params";
 import { OpsError } from "../ops/errors";
 import { actorFor } from "../ops/trip-events";
@@ -90,7 +105,7 @@ const responseSchema = z.object({
   note: z.string().nullable().optional(),
 });
 
-dispatchRouter.post("/offers/:id/response", async (req, res) => {
+dispatchRouter.post("/offers/:id/response", requireAdmin, async (req, res) => {
   const parsed = responseSchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed);
   const actor = await actorFor(req.session?.userId);
