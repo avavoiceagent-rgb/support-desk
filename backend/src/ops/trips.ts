@@ -213,7 +213,26 @@ export async function updateTrip(id: string, patch: TripPatch, actor?: Actor): P
   if (!before) throw new OpsError(`No trip with id ${id}.`, 404);
   const existing = before.trip;
 
-  const driverId = patch.driverId === undefined ? existing.driverId : patch.driverId;
+  // A job is ours or a partner's, never both, and the patch says which.
+  //
+  // `updateTrip` writes only what it is handed, so assigning one side used to
+  // leave the other where it was: a farmed-out trip given a driver kept its
+  // partner, kept `farm_out_reason: OUT_OF_AREA`, and reported `DRIVER`,
+  // because the derived field can only name one of them. Nothing on any screen
+  // showed the partner still being there — and two vehicles turn up for one
+  // pickup.
+  if (patch.driverId && patch.affiliateId) {
+    throw new OpsError("A job goes to a driver or to a partner, not to both.");
+  }
+
+  const handingToDriver = Boolean(patch.driverId);
+  const handingToPartner = Boolean(patch.affiliateId);
+
+  const driverId = handingToPartner
+    ? null
+    : patch.driverId === undefined
+      ? existing.driverId
+      : patch.driverId;
   const pickupAt = patch.pickupAt ?? existing.pickupAt;
   const bookedHours = patch.bookedHours ?? existing.bookedHours;
   const status = patch.status ?? existing.status;
@@ -251,16 +270,35 @@ export async function updateTrip(id: string, patch: TripPatch, actor?: Actor): P
     }
   }
 
+  const affiliateId = handingToDriver
+    ? null
+    : patch.affiliateId === undefined
+      ? existing.affiliateId
+      : patch.affiliateId;
+
+  // Whichever side the patch names, the other is cleared with everything that
+  // belonged to it: the car goes with the driver, and the reason we farmed the
+  // job out stops being true the moment we take it back.
+  const sideEffects: Partial<typeof trips.$inferInsert> = handingToDriver
+    ? { affiliateId: null, farmOutReason: null }
+    : handingToPartner
+      ? { driverId: null, vehicleId: null }
+      : {};
+
   // `assignedKind` follows from who is actually on the job rather than being
   // set by hand. It was drifting: assigning a driver from the Reservations
   // screen left a trip reading UNASSIGNED with a driver's name beside it,
   // because nothing on that path ever touched the column. Derived, it cannot.
-  const affiliateId = patch.affiliateId === undefined ? existing.affiliateId : patch.affiliateId;
   const assignedKind = driverId ? "DRIVER" : affiliateId ? "AFFILIATE" : "UNASSIGNED";
 
   const [row] = await db
     .update(trips)
-    .set({ ...patch, assignedKind, updatedAt: new Date() } as Partial<typeof trips.$inferInsert>)
+    .set({
+      ...patch,
+      ...sideEffects,
+      assignedKind,
+      updatedAt: new Date(),
+    } as Partial<typeof trips.$inferInsert>)
     .where(eq(trips.id, id))
     .returning();
 

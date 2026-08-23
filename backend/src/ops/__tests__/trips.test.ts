@@ -3,6 +3,7 @@ import { db, pool } from "../../db/client";
 import { affiliates, driverShifts, drivers, invoiceLines, invoices, trips, vehicles } from "../../db/schema";
 import { searchTrips, updateTrip, findDriverClashes, MAX_TRIP_LIMIT, DEFAULT_TRIP_LIMIT, TRIP_SORTS } from "../trips";
 import { updateDriver, listDrivers } from "../directory";
+import { listTripEvents } from "../trip-events";
 import { overlapsWindow } from "../availability";
 
 const NOW = new Date("2026-09-22T00:00:00.000Z");
@@ -337,5 +338,113 @@ describe("sorting the reservations list", () => {
     expect(Object.keys(TRIP_SORTS).sort()).toEqual([
       "bookedHours", "driver", "passengerName", "pickupAt", "reference", "status", "vehicle",
     ]);
+  });
+});
+
+describe("a job belongs to one side or the other", () => {
+  // Two cars for one pickup was the failure. `updateTrip` writes only what it
+  // is handed, so assigning one side left the other in place, and the derived
+  // `assignedKind` could only name one of them — which is what made it
+  // invisible on every screen.
+  beforeEach(async () => {
+    await resetOps();
+  });
+
+  async function makeAffiliate(company = "Beacon Hill Chauffeurs") {
+    const [a] = await db
+      .insert(affiliates)
+      .values({ company, phone: "+1 617 555 0163", email: "dispatch@beaconhill.example" })
+      .returning();
+    return a;
+  }
+
+  async function makeVehicle() {
+    const [v] = await db
+      .insert(vehicles)
+      .values({
+        label: "Sedan 1", class: "SEDAN", makeModel: "Cadillac XTS", plate: "T512345C",
+        passengerCapacity: 3, luggageCapacity: 3,
+      })
+      .returning();
+    return v;
+  }
+
+  it("takes the partner off when we take the job back in-house", async () => {
+    const partner = await makeAffiliate();
+    const driver = await makeDriver();
+    const trip = await makeTrip({
+      affiliateId: partner.id, assignedKind: "AFFILIATE", farmOutReason: "OUT_OF_AREA",
+    });
+
+    const after = await updateTrip(trip.id, { driverId: driver.id });
+
+    expect(after.driver?.name).toBe("Marco Rinaldi");
+    expect(after.affiliate).toBeNull();
+    expect(after.assignedKind).toBe("DRIVER");
+    // The reason we sent it out stops being true the moment we take it back.
+    expect(after.farmOutReason).toBeNull();
+  });
+
+  it("takes our driver and our car off when the job goes to a partner", async () => {
+    const partner = await makeAffiliate();
+    const driver = await makeDriver();
+    const vehicle = await makeVehicle();
+    const trip = await makeTrip({
+      driverId: driver.id, vehicleId: vehicle.id, assignedKind: "DRIVER",
+    });
+
+    const after = await updateTrip(trip.id, { affiliateId: partner.id });
+
+    expect(after.affiliate?.company).toBe("Beacon Hill Chauffeurs");
+    expect(after.driver).toBeNull();
+    // A car with nobody in it is not an assignment.
+    expect(after.vehicle).toBeNull();
+    expect(after.assignedKind).toBe("AFFILIATE");
+  });
+
+  it("refuses a patch that hands the same job to both", async () => {
+    const partner = await makeAffiliate();
+    const driver = await makeDriver();
+    const trip = await makeTrip();
+
+    await expect(
+      updateTrip(trip.id, { driverId: driver.id, affiliateId: partner.id })
+    ).rejects.toThrow(/not to both/);
+  });
+
+  it("leaves the other side alone when the patch is about something else", async () => {
+    // Changing the hours must not quietly unassign anybody.
+    const driver = await makeDriver();
+    const trip = await makeTrip({ driverId: driver.id, assignedKind: "DRIVER" });
+
+    const after = await updateTrip(trip.id, { bookedHours: 5 });
+
+    expect(after.driver?.name).toBe("Marco Rinaldi");
+    expect(after.assignedKind).toBe("DRIVER");
+  });
+
+  it("still lets a job be emptied outright", async () => {
+    const driver = await makeDriver();
+    const trip = await makeTrip({ driverId: driver.id, assignedKind: "DRIVER" });
+
+    const after = await updateTrip(trip.id, { driverId: null });
+
+    expect(after.driver).toBeNull();
+    expect(after.assignedKind).toBe("UNASSIGNED");
+  });
+
+  it("records the handover in the trip's history, both sides of it", async () => {
+    const partner = await makeAffiliate();
+    const driver = await makeDriver();
+    const trip = await makeTrip({
+      affiliateId: partner.id, assignedKind: "AFFILIATE", farmOutReason: "OUT_OF_AREA",
+    });
+
+    await updateTrip(trip.id, { driverId: driver.id }, { userId: null, name: "Amar Pant" });
+
+    const [event] = await listTripEvents(trip.id);
+    const fields = Object.fromEntries(event.changes.map((c) => [c.field, `${c.from} -> ${c.to}`]));
+    expect(fields.Driver).toBe("Unassigned -> Marco Rinaldi");
+    expect(fields.Partner).toBe("Beacon Hill Chauffeurs -> None");
   });
 });

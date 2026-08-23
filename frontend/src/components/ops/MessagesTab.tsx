@@ -289,11 +289,22 @@ export function MessagesTab({
             </Button>
           </div>
 
-          {offerTripId && trips.find((t) => t.id === offerTripId)?.driverId && (
-            <p className="text-[11px] text-amber-700">
-              Somebody is already on that job. If this offer is accepted they come off it.
-            </p>
-          )}
+          {(() => {
+            // This used to test `.driverId` alone and promise "they come off
+            // it" — which showed nothing at all for a job already with a
+            // partner, and was untrue for a partner offer, because assigning
+            // one side did not clear the other. Both halves are fixed: the
+            // desk now really does take a job off whoever had it, and this
+            // says who that is.
+            const job = trips.find((t) => t.id === offerTripId);
+            const holder = job?.driver?.name ?? job?.affiliate?.company;
+            if (!job || !holder) return null;
+            return (
+              <p className="text-[11px] text-amber-700">
+                {job.reference} is with {holder}. Accepting this offer takes it off them.
+              </p>
+            );
+          })()}
 
           <form
             onSubmit={(e) => {
