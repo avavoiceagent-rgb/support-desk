@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from
 import {
   opsApi,
   toDateTimeInput,
-  fromDateTimeInput,
+  instantFromInput,
   startOfDayIso,
   endOfDayIso,
   TRIP_STATUSES,
@@ -162,7 +162,8 @@ function TripEditor({
     setSaving(true);
     try {
       await opsApi.updateTrip(trip.id, {
-        pickupAt: fromDateTimeInput(pickupAt),
+        // Untouched field, untouched instant — see instantFromInput.
+        pickupAt: instantFromInput(pickupAt, trip.pickupAt),
         bookedHours: Number(bookedHours),
         driverId: driverId || null,
         vehicleId: vehicleId || null,

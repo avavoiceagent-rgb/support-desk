@@ -233,6 +233,7 @@ export {
   toDateInput,
   toDateTimeInput,
   fromDateTimeInput,
+  instantFromInput,
   OPERATING_ZONE_LABEL,
 } from "../lib/time";
 

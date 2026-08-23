@@ -17,7 +17,7 @@ import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { Trip, VehicleClass } from "../api/ops";
 import { VEHICLE_CLASSES, OPERATING_ZONE_LABEL, opsApi } from "../api/ops";
-import { when, toDateTimeInput, fromDateTimeInput } from "../lib/time";
+import { when, toDateTimeInput, instantFromInput } from "../lib/time";
 import { useAuth } from "../hooks/useAuth";
 import { pastBookingWarning } from "../lib/bookings";
 
@@ -147,7 +147,7 @@ export function ReservationPanel({ ticketId }: { ticketId: string }) {
       // refusal and the trip's own history apply to a change made from here
       // exactly as they do to one made there.
       const { trip: updated } = await opsApi.updateTrip(changing.id, {
-        pickupAt: fromDateTimeInput(change.pickupAtLocal),
+        pickupAt: instantFromInput(change.pickupAtLocal, changing.pickupAt),
         bookedHours: Number(change.bookedHours),
       });
       setChanged(`${updated.reference} moved to ${when(updated.pickupAt)}.`);

@@ -68,9 +68,39 @@ export function zonedToUtc(
   // formatter that only goes down to seconds, so a guess carrying 999ms comes
   // back a second out.
   const guess = Date.UTC(year, month - 1, day, hour, minute, second);
-  let ts = guess - offsetMs(new Date(guess));
-  ts = guess - offsetMs(new Date(ts));
-  return new Date(ts + ms);
+
+  // Two passes, because the first offset can be read from the wrong side of a
+  // clock change. Normally the second is the right one.
+  const firstPass = guess - offsetMs(new Date(guess));
+  const secondPass = guess - offsetMs(new Date(firstPass));
+
+  // Except in the spring-forward gap, where the wall clock being asked for
+  // does not exist at all. On 8 March 2026 there is no 02:30 in New York, and
+  // the second pass answered 01:30 — *earlier* than the time requested, so a
+  // shift typed as half past two started an hour and a half before anyone
+  // meant. When the answer does not read back as the question, the hour is
+  // missing, and the first pass is the one that steps forward over it.
+  const reads = readsBackAs(secondPass, year, month, day, hour, minute);
+  return new Date((reads ? secondPass : firstPass) + ms);
+}
+
+/** Does this instant show the wall clock it was built from? */
+function readsBackAs(
+  ts: number,
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number
+): boolean {
+  const p = zoneParts(new Date(ts));
+  return (
+    Number(p.year) === year &&
+    Number(p.month) === month &&
+    Number(p.day) === day &&
+    Number(p.hour) === hour &&
+    Number(p.minute) === minute
+  );
 }
 
 /** The calendar parts of an instant, as New York sees them. */
@@ -169,6 +199,25 @@ export function fromDateTimeInput(value: string): string {
   const [y, m, d] = date.split("-").map(Number);
   const [h, min] = time.split(":").map(Number);
   return zonedToUtc(y, m, d, h, min).toISOString();
+}
+
+/**
+ * What a datetime-local field means now, given what it was filled with.
+ *
+ * An untouched field returns the instant it started as, rather than being read
+ * afresh. That matters exactly once a year: "01:00" on 1 November happens
+ * twice in New York, and a text box cannot say which. Reading it back chooses
+ * the first, so a booking stored in the second one moved an hour earlier every
+ * time somebody opened the form and pressed Save without changing anything.
+ *
+ * There is no fixing that by parsing harder — the information is not in the
+ * string. So the rule is not to reinterpret a value nobody edited.
+ */
+export function instantFromInput(value: string, original?: string | null): string {
+  if (original && toDateTimeInput(original) === value) {
+    return new Date(original).toISOString();
+  }
+  return fromDateTimeInput(value);
 }
 
 /** Midnight in New York on this date, as an instant. */

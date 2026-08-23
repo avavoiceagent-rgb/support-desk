@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import {
   opsApi,
   toDateTimeInput,
-  fromDateTimeInput,
+  instantFromInput,
   startOfDayIso,
   endOfDayIso,
   type Driver,
@@ -266,7 +266,7 @@ function ShiftEditor({
   const [endsAt, setEndsAt] = useState(() =>
     shift
       ? toDateTimeInput(shift.endsAt)
-      : toDateTimeInput(new Date(new Date(fromDateTimeInput(`${date}T08:00`)).getTime() + 11 * HOUR_MS))
+      : toDateTimeInput(new Date(new Date(instantFromInput(`${date}T08:00`)).getTime() + 11 * HOUR_MS))
   );
   const [vehicleId, setVehicleId] = useState(shift?.vehicle?.id ?? "");
   const [unavailable, setUnavailable] = useState(shift?.unavailable ?? false);
@@ -280,8 +280,8 @@ function ShiftEditor({
     setSaving(true);
     try {
       const body = {
-        startsAt: fromDateTimeInput(startsAt),
-        endsAt: fromDateTimeInput(endsAt),
+        startsAt: instantFromInput(startsAt, shift?.startsAt),
+        endsAt: instantFromInput(endsAt, shift?.endsAt),
         vehicleId: vehicleId || null,
         unavailable,
         reason: reason.trim() || null,
