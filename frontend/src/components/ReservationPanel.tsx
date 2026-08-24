@@ -98,6 +98,17 @@ export function ReservationPanel({
   const [changed, setChanged] = useState<string | null>(null);
   const [forceNew, setForceNew] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  /**
+   * Bumped every time this panel reloads.
+   *
+   * The "who can take it" section fetched once and never again, because its
+   * only dependency was the trip id — which does not change when the trip
+   * does. So after moving a pickup it went on showing the answer from before
+   * the move: the driver was flagged as told about a change made after the
+   * last word to them. Passing this through makes a reload of the panel a
+   * reload of that question too.
+   */
+  const [version, setVersion] = useState(0);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +138,7 @@ export function ReservationPanel({
       setSuggested(r.suggested);
       setQuoted(r.quoted ?? []);
       setUnresolved(r.unresolved ?? []);
+      setVersion((n) => n + 1);
     } catch {
       // A ticket without a reservation is the normal case, and a panel that
       // shouts about a failed background read would be noise on every ticket.
@@ -240,7 +252,7 @@ export function ReservationPanel({
         >
           Open in Operations →
         </Link>
-        <WhoCanTakeIt tripId={trip.id} onSent={onTicketChanged} />
+        <WhoCanTakeIt tripId={trip.id} version={version} onSent={onTicketChanged} />
       </div>
     );
   }
@@ -275,7 +287,7 @@ export function ReservationPanel({
               {/* A change made from here moves a booking somebody may already
                   have accepted, so the same warning belongs here — this is
                   the ticket where that change actually gets made. */}
-              <WhoCanTakeIt tripId={q.id} onSent={onTicketChanged} />
+              <WhoCanTakeIt tripId={q.id} version={version} onSent={onTicketChanged} />
 
               {changing?.id === q.id ? (
                 <form onSubmit={saveChange} className="mt-2 space-y-2">
@@ -517,7 +529,16 @@ export function ReservationPanel({
  * Sending an offer does not assign anybody. It asks. The assignment happens
  * when they accept, which is the same rule the Messages screen follows.
  */
-function WhoCanTakeIt({ tripId, onSent }: { tripId: string; onSent?: () => void }) {
+function WhoCanTakeIt({
+  tripId,
+  version,
+  onSent,
+}: {
+  tripId: string;
+  /** Changes whenever the booking may have moved; see ReservationPanel. */
+  version: number;
+  onSent?: () => void;
+}) {
   const [candidates, setCandidates] = useState<TripCandidates | null>(null);
   const [loading, setLoading] = useState(true);
   const [offeredTo, setOfferedTo] = useState<string[]>([]);
@@ -525,18 +546,23 @@ function WhoCanTakeIt({ tripId, onSent }: { tripId: string; onSent?: () => void 
   const [error, setError] = useState<string | null>(null);
   const [showMessage, setShowMessage] = useState(false);
 
-  useEffect(() => {
-    let live = true;
+  const refresh = useCallback(() => {
     setLoading(true);
-    opsApi
+    return opsApi
       .candidates(tripId)
-      .then((r) => live && setCandidates(r))
-      .catch(() => live && setCandidates(null))
-      .finally(() => live && setLoading(false));
-    return () => {
-      live = false;
-    };
+      // A failed lookup is not worth an error box next to a form somebody is
+      // in the middle of filling in.
+      .then(setCandidates)
+      .catch(() => setCandidates(null))
+      .finally(() => setLoading(false));
   }, [tripId]);
+
+  // `version` changes whenever the panel around this reloads, which is the
+  // signal that the booking may have moved. Without it the answer here was
+  // fetched once on mount and never revisited.
+  useEffect(() => {
+    void refresh();
+  }, [refresh, version]);
 
   async function offer(kind: ContactKind, id: string, label: string) {
     setError(null);
@@ -544,6 +570,7 @@ function WhoCanTakeIt({ tripId, onSent }: { tripId: string; onSent?: () => void 
     try {
       await dispatchApi.sendOffer(kind, id, tripId);
       setOfferedTo((sent) => [...sent, label]);
+      await refresh();
       // The offer is now a line in the timeline. Say so to the parent, which
       // is the thing holding it.
       onSent?.();
@@ -560,6 +587,9 @@ function WhoCanTakeIt({ tripId, onSent }: { tripId: string; onSent?: () => void 
     try {
       await dispatchApi.sendChangeNotice(kind, id, tripId);
       setOfferedTo((sent) => [...sent, label]);
+      // Telling them is exactly what this panel was warning about, so it has
+      // to go and ask again rather than sit there still warning.
+      await refresh();
       onSent?.();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not send that message.");
