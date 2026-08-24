@@ -13,6 +13,7 @@
 
 import { findAvailableDrivers, suggestAffiliates, type AvailableDriver } from "./availability";
 import { describeOffer, lastSpokeTo } from "./dispatch";
+import { listTripEvents } from "./trip-events";
 import { quoteTripForAffiliate, type TripQuote } from "./pricing";
 import type { TripRecord } from "./lookup";
 
@@ -115,6 +116,15 @@ async function assignmentFor(trip: TripRecord): Promise<AssignmentState | null> 
 
   const spokeAt = await lastSpokeTo(trip.id, { kind: contact.kind, id: contact.id });
 
+  // When the booking last changed in a way anybody would call a change.
+  //
+  // Not `updatedAt`, which moves on every write — tidying the notes counted
+  // as something the driver needed telling about. The events are the audit
+  // trail, and they are only written when a field somebody cares about
+  // actually moved, which is the same question being asked here.
+  const events = await listTripEvents(trip.id);
+  const lastChange = events.length ? events[events.length - 1].createdAt : trip.createdAt;
+
   return {
     kind: contact.kind,
     contactId: contact.id,
@@ -123,7 +133,7 @@ async function assignmentFor(trip: TripRecord): Promise<AssignmentState | null> 
     // edit is saved, so it is always the later of the two — an earlier
     // version of this allowed a second of tolerance and quietly reported a
     // booking edited moments after a message as still up to date.
-    toldOfLatest: spokeAt ? spokeAt.getTime() >= trip.updatedAt.getTime() : null,
+    toldOfLatest: spokeAt ? spokeAt.getTime() >= lastChange.getTime() : null,
     stillAvailable:
       contact.kind === "DRIVER" ? await driverStillFits(trip, contact.id) : null,
   };

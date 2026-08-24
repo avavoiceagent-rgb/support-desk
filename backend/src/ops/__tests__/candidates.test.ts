@@ -338,3 +338,123 @@ describe("a booking that moves under the driver holding it", () => {
     expect(result.assignment?.toldOfLatest).toBeNull();
   });
 });
+
+describe("answering a change that was re-offered", () => {
+  async function assignTo(tripId: string, driverId: string) {
+    const actor = await actorFor(undefined);
+    const offer = await sendOffer({ contact: { kind: "DRIVER", id: driverId }, tripId, actor });
+    await respondToOffer({ offerId: offer.id, accept: true, actor });
+  }
+
+  it("sends the change as something the driver can answer", async () => {
+    // It went out as a plain message first: "let us know if you can still
+    // cover it", with no way on the screen to say either way.
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assignTo(trip.id, driver.id);
+
+    const notice = await sendChangeNotice({
+      contact: { kind: "DRIVER", id: driver.id },
+      tripId: trip.id,
+      actor: await actorFor(undefined),
+    });
+    expect(notice.kind).toBe("OFFER");
+  });
+
+  it("gives the job back when they turn the change down", async () => {
+    // The failure this prevents: the schedule reading as covered by somebody
+    // who has just said no.
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assignTo(trip.id, driver.id);
+    await updateTrip(
+      trip.id,
+      { pickupAt: new Date(PICKUP.getTime() + 3_600_000) },
+      await actorFor(undefined)
+    );
+
+    const notice = await sendChangeNotice({
+      contact: { kind: "DRIVER", id: driver.id },
+      tripId: trip.id,
+      actor: await actorFor(undefined),
+    });
+    const { trip: after } = await respondToOffer({
+      offerId: notice.id,
+      accept: false,
+      actor: await actorFor(undefined),
+    });
+
+    expect(after?.driver).toBeNull();
+    expect(after?.assignedKind).toBe("UNASSIGNED");
+    // And the car with them — one left attached reads as busy on the board.
+    expect(after?.vehicle).toBeNull();
+  });
+
+  it("keeps the job on them when they accept the change", async () => {
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assignTo(trip.id, driver.id);
+    await updateTrip(
+      trip.id,
+      { pickupAt: new Date(PICKUP.getTime() + 3_600_000) },
+      await actorFor(undefined)
+    );
+
+    const notice = await sendChangeNotice({
+      contact: { kind: "DRIVER", id: driver.id },
+      tripId: trip.id,
+      actor: await actorFor(undefined),
+    });
+    await respondToOffer({ offerId: notice.id, accept: true, actor: await actorFor(undefined) });
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.name).toBe("Marco Rinaldi");
+    expect(result.assignment?.toldOfLatest).toBe(true);
+  });
+
+  it("does not take a driver off a job that was never theirs", async () => {
+    // Declining an ordinary offer is not a resignation from somebody else's
+    // booking. Only the holder gives it back.
+    const marco = await makeDriverFree("Marco Rinaldi");
+    const [v] = await db.insert(vehicles).values({
+      label: "Sedan H", class: "SEDAN", makeModel: "Cadillac XTS", plate: "H2",
+      passengerCapacity: 3, luggageCapacity: 3,
+    }).returning();
+    const [hector] = await db.insert(drivers).values({
+      name: "Hector Alvarez", phone: "+1 917 555 0003", defaultVehicleId: v.id,
+    }).returning();
+    await db.insert(driverShifts).values({
+      driverId: hector.id, vehicleId: v.id, startsAt: hoursBefore(6), endsAt: hoursAfter(6),
+    });
+
+    const trip = await makeTrip();
+    await assignTo(trip.id, marco.id);
+
+    const actor = await actorFor(undefined);
+    const offer = await sendOffer({
+      contact: { kind: "DRIVER", id: hector.id },
+      tripId: trip.id,
+      actor,
+    });
+    await respondToOffer({ offerId: offer.id, accept: false, actor });
+
+    const after = await findTripById(trip.id);
+    expect(after?.driver?.name).toBe("Marco Rinaldi");
+  });
+
+  it("treats a new note as something the driver needs telling", async () => {
+    // Written the other way round first, on the assumption that notes are
+    // housekeeping. They are not: "child seat required", "meet and greet",
+    // "quiet ride" are all instructions for whoever drives. So the flag is
+    // right — and the message now carries the note, which it did not.
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assignTo(trip.id, driver.id);
+
+    await updateTrip(trip.id, { notes: "Child seat required" }, await actorFor(undefined));
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.toldOfLatest).toBe(false);
+    expect(result.offerText).toContain("Child seat required");
+  });
+});

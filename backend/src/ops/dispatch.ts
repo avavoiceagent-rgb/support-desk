@@ -106,6 +106,11 @@ export function describeOffer(trip: TripRecord): string {
     );
   }
   if (trip.flightNumber) lines.push(`Flight ${trip.flightNumber}`);
+  // The note belongs here. "Child seat required", "meet and greet", "quiet
+  // ride" — every one of them is an instruction for whoever drives, and the
+  // desk already treats a change to it as something they must be told. It
+  // was flagged as needing telling and then left out of the telling.
+  if (trip.notes) lines.push(`Note: ${trip.notes}`);
   return lines.join("\n");
 }
 
@@ -263,6 +268,31 @@ export async function respondToOffer(params: {
       offer.driverId ? { driverId: offer.driverId } : { affiliateId: offer.affiliateId },
       params.actor
     );
+  } else if (offer.tripId) {
+    // Turning down a job you are already on gives it back.
+    //
+    // Declining used to only record the refusal, which is right for a job
+    // that was never theirs. It is wrong for a booking they hold: after a
+    // change is re-offered and refused, leaving them assigned means the
+    // schedule reads as covered by somebody who has just said no.
+    //
+    // The car goes with them. A vehicle left attached to an unassigned job
+    // still shows as busy on the schedule board, hiding a car that is free.
+    const [current] = await db
+      .select({ driverId: trips.driverId, affiliateId: trips.affiliateId })
+      .from(trips)
+      .where(eq(trips.id, offer.tripId))
+      .limit(1);
+    const holdsIt = offer.driverId
+      ? current?.driverId === offer.driverId
+      : current?.affiliateId === offer.affiliateId;
+    if (holdsIt) {
+      trip = await updateTrip(
+        offer.tripId,
+        offer.driverId ? { driverId: null, vehicleId: null } : { affiliateId: null },
+        params.actor
+      );
+    }
   }
 
   const note = params.note?.trim();
@@ -401,10 +431,15 @@ export async function sendChangeNotice(params: {
       tripId: trip.id,
       ...contactColumns(params.contact),
       direction: "OUT",
-      // A TEXT rather than a new OFFER: the job is already theirs, and a
-      // second OFFER would be a second thing to accept, with the one-answer
-      // rule then refusing the answer to it.
-      kind: "TEXT",
+      // An OFFER, not a TEXT.
+      //
+      // It went out as a TEXT first, on the reasoning that the job was
+      // already theirs. That produced a message ending "let us know if you
+      // can still cover it" with no way to answer it — the driver had been
+      // asked a question the screen gave them no means of replying to. The
+      // one-answer rule is keyed to the individual offer, so a second offer
+      // is answerable on its own.
+      kind: "OFFER",
       body,
       authorUserId: params.actor.userId,
       authorName: params.actor.name,
