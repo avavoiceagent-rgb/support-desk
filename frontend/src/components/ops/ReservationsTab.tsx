@@ -27,6 +27,7 @@ import {
 } from "../../api/ops";
 import { TripHistoryModal } from "./TripHistoryModal";
 import { pastBookingWarning } from "../../lib/bookings";
+import { handoverNote, withDriver, withPartner } from "../../lib/assignment";
 import {
   Button,
   ErrorNote,
@@ -226,7 +227,18 @@ function TripEditor({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Driver">
-            <select value={driverId} onChange={(e) => setDriverId(e.target.value)} className={inputClass}>
+            <select
+              value={driverId}
+              onChange={(e) => {
+                // One side or the other, decided here rather than by a
+                // refusal when Save is pressed.
+                const next = withDriver({ driverId, vehicleId, affiliateId }, e.target.value);
+                setDriverId(next.driverId);
+                setVehicleId(next.vehicleId);
+                setAffiliateId(next.affiliateId);
+              }}
+              className={inputClass}
+            >
               <option value="">Unassigned</option>
               {drivers
                 .filter((d) => d.active || d.id === driverId)
@@ -252,8 +264,28 @@ function TripEditor({
           </Field>
         </div>
 
-        <Field label="Partner" hint="For work farmed out rather than driven by us.">
-          <select value={affiliateId} onChange={(e) => setAffiliateId(e.target.value)} className={inputClass}>
+        <Field
+          label="Partner"
+          hint={
+            handoverNote(
+              { driverId, vehicleId, affiliateId },
+              {
+                driver: drivers.find((d) => d.id === driverId)?.name,
+                partner: affiliates.find((a) => a.id === affiliateId)?.company,
+              }
+            ) ?? "For work farmed out rather than driven by us."
+          }
+        >
+          <select
+            value={affiliateId}
+            onChange={(e) => {
+              const next = withPartner({ driverId, vehicleId, affiliateId }, e.target.value);
+              setDriverId(next.driverId);
+              setVehicleId(next.vehicleId);
+              setAffiliateId(next.affiliateId);
+            }}
+            className={inputClass}
+          >
             <option value="">None</option>
             {affiliates
               .filter((a) => a.active || a.id === affiliateId)
