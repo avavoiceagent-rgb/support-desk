@@ -240,7 +240,7 @@ export function ReservationPanel({
         >
           Open in Operations →
         </Link>
-        <WhoCanTakeIt trip={trip} onSent={onTicketChanged} />
+        <WhoCanTakeIt tripId={trip.id} onSent={onTicketChanged} />
       </div>
     );
   }
@@ -271,6 +271,11 @@ export function ReservationPanel({
               <p className="text-xs text-gray-500">
                 {q.passengerName} · {q.driverName ?? q.affiliateCompany ?? "Nobody assigned"}
               </p>
+
+              {/* A change made from here moves a booking somebody may already
+                  have accepted, so the same warning belongs here — this is
+                  the ticket where that change actually gets made. */}
+              <WhoCanTakeIt tripId={q.id} onSent={onTicketChanged} />
 
               {changing?.id === q.id ? (
                 <form onSubmit={saveChange} className="mt-2 space-y-2">
@@ -512,7 +517,7 @@ export function ReservationPanel({
  * Sending an offer does not assign anybody. It asks. The assignment happens
  * when they accept, which is the same rule the Messages screen follows.
  */
-function WhoCanTakeIt({ trip, onSent }: { trip: Trip; onSent?: () => void }) {
+function WhoCanTakeIt({ tripId, onSent }: { tripId: string; onSent?: () => void }) {
   const [candidates, setCandidates] = useState<TripCandidates | null>(null);
   const [loading, setLoading] = useState(true);
   const [offeredTo, setOfferedTo] = useState<string[]>([]);
@@ -524,20 +529,20 @@ function WhoCanTakeIt({ trip, onSent }: { trip: Trip; onSent?: () => void }) {
     let live = true;
     setLoading(true);
     opsApi
-      .candidates(trip.id)
+      .candidates(tripId)
       .then((r) => live && setCandidates(r))
       .catch(() => live && setCandidates(null))
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
     };
-  }, [trip.id]);
+  }, [tripId]);
 
   async function offer(kind: ContactKind, id: string, label: string) {
     setError(null);
     setSending(id);
     try {
-      await dispatchApi.sendOffer(kind, id, trip.id);
+      await dispatchApi.sendOffer(kind, id, tripId);
       setOfferedTo((sent) => [...sent, label]);
       // The offer is now a line in the timeline. Say so to the parent, which
       // is the thing holding it.
@@ -553,7 +558,7 @@ function WhoCanTakeIt({ trip, onSent }: { trip: Trip; onSent?: () => void }) {
     setError(null);
     setSending(id);
     try {
-      await dispatchApi.sendChangeNotice(kind, id, trip.id);
+      await dispatchApi.sendChangeNotice(kind, id, tripId);
       setOfferedTo((sent) => [...sent, label]);
       onSent?.();
     } catch (err) {

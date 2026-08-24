@@ -122,6 +122,45 @@ describe("dispatch traffic on the ticket", () => {
     expect(detail?.tripEvents[0].changes.map((c) => c.field)).toContain("Pickup");
   });
 
+  it("follows a booking the email names, not just the one this ticket made", async () => {
+    // This is the case that was wrong in front of Amar: a change request
+    // arrives as its own ticket quoting T-10308, the pickup is moved from
+    // that ticket, and the record landed on the ticket that first created
+    // the trip. The ticket where the work was done showed nothing.
+    const { trip } = await makeTicketWithTrip();
+
+    const [account] = await db.select().from(emailAccounts).limit(1);
+    const [changeTicket] = await db.insert(tickets).values({
+      emailAccountId: account.id,
+      subject: "Change to booking T-10308",
+      providerThreadId: "t-change",
+      requesterEmail: "daniel@example.test",
+    }).returning();
+    await db.insert(messages).values({
+      ticketId: changeTicket.id,
+      direction: "INBOUND",
+      fromAddress: "daniel@example.test",
+      toAddresses: ["support@ourcompany.example"],
+      ccAddresses: [],
+      subject: "Change to booking T-10308",
+      bodyHtml: "<p>Could we move T-10308 an hour later than planned?</p>",
+      bodyText: "Could we move T-10308 an hour later than planned?",
+      providerMessageId: "m-change",
+      providerThreadId: "t-change",
+      sentAt: new Date(),
+    });
+
+    await updateTrip(
+      trip.id,
+      { pickupAt: new Date("2026-09-01T20:15:00.000Z") },
+      await actorFor(undefined)
+    );
+
+    const detail = await getTicketDetail(changeTicket.id);
+    expect(detail?.tripEvents).toHaveLength(1);
+    expect(detail?.tripEvents[0].changes.map((c) => c.field)).toContain("Pickup");
+  });
+
   it("is empty for a ticket with no reservation, rather than absent", async () => {
     // The timeline maps over this. Undefined would be a crash on every
     // ordinary ticket, which is most of them.

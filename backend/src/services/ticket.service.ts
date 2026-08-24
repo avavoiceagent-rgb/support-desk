@@ -1,10 +1,13 @@
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "../db/client";
 import { tickets, messages, notes, users, emailAccounts } from "../db/schema";
 import { reservationForTicket } from "../ops/reservations";
 import { listDispatchForTrip } from "../ops/dispatch";
 import { listTripEvents } from "../ops/trip-events";
+import { extractReferences } from "../ops/references";
+import { findTripByReference } from "../ops/lookup";
+import { toPlainText } from "../ai/classifier";
 import type { TicketStatus, TicketQueue, TicketChannel, ReservationType, ReservationSource } from "../types";
 
 export interface TicketListFilters {
@@ -172,6 +175,51 @@ export async function createManualTicket(params: {
  * reservation rather than the ticket — there is no relation from one to the
  * other, and inventing one would duplicate a fact the trip already holds.
  */
+/**
+ * The bookings a ticket is about.
+ *
+ * Not just its own reservation. A change request arrives as a new ticket that
+ * quotes a booking made from an older one — which is exactly what happened
+ * here: the pickup on T-10308 was moved from the change ticket, and the
+ * record of it landed on the ticket that first created the trip. The ticket
+ * where the work was done showed nothing at all.
+ *
+ * Quoted references only, never the sender's other bookings: "they named this
+ * booking" is evidence that the ticket is about it, and "this is their next
+ * trip" is a guess that would drag unrelated history into the timeline.
+ */
+export async function tripsThisTicketIsAbout(ticketId: string): Promise<string[]> {
+  const own = await reservationForTicket(ticketId);
+
+  // The first inbound message is what the customer wrote; later ones may
+  // quote our own replies back at us, references and all.
+  const [firstInbound] = await db
+    .select({
+      subject: messages.subject,
+      bodyHtml: messages.bodyHtml,
+      bodyText: messages.bodyText,
+    })
+    .from(messages)
+    .where(and(eq(messages.ticketId, ticketId), eq(messages.direction, "INBOUND")))
+    .orderBy(asc(messages.sentAt))
+    .limit(1);
+
+  const references = firstInbound
+    ? extractReferences(
+        firstInbound.subject,
+        toPlainText(firstInbound.bodyHtml, firstInbound.bodyText)
+      ).trips
+    : [];
+
+  const quoted = await Promise.all(references.map((ref) => findTripByReference(ref)));
+
+  const ids: string[] = [];
+  for (const id of [own?.id, ...quoted.map((t) => t?.id)]) {
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
 export async function getTicketDetail(ticketId: string) {
   const ticket = await db.query.tickets.findFirst({
     where: eq(tickets.id, ticketId),
@@ -190,13 +238,18 @@ export async function getTicketDetail(ticketId: string) {
   });
   if (!ticket) return null;
 
-  const trip = await reservationForTicket(ticketId);
-  // Both hang off the reservation: what was said to the driver, and what was
-  // done to the booking. A ticket that shows the request but not the change
-  // made in answer to it is half a record.
-  const [dispatch, tripEvents] = trip
-    ? await Promise.all([listDispatchForTrip(trip.id), listTripEvents(trip.id)])
-    : [[], []];
+  const tripIds = await tripsThisTicketIsAbout(ticketId);
+  // Both hang off the booking: what was said to the driver, and what was done
+  // to the trip. A ticket that shows the request but not the change made in
+  // answer to it is half a record.
+  const [dispatch, tripEvents] = await Promise.all([
+    Promise.all(tripIds.map(listDispatchForTrip)).then((lists) =>
+      lists.flat().sort((a, b) => a.at.getTime() - b.at.getTime())
+    ),
+    Promise.all(tripIds.map(listTripEvents)).then((lists) =>
+      lists.flat().sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    ),
+  ]);
   return { ...ticket, dispatch, tripEvents };
 }
 
