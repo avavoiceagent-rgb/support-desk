@@ -2,6 +2,8 @@ import { and, desc, eq, or, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "../db/client";
 import { tickets, messages, notes, users, emailAccounts } from "../db/schema";
+import { reservationForTicket } from "../ops/reservations";
+import { listDispatchForTrip } from "../ops/dispatch";
 import type { TicketStatus, TicketQueue, TicketChannel, ReservationType, ReservationSource } from "../types";
 
 export interface TicketListFilters {
@@ -162,6 +164,13 @@ export async function createManualTicket(params: {
   return ticket;
 }
 
+/**
+ * A ticket with everything the timeline shows, dispatch traffic included.
+ *
+ * The dispatch messages are fetched separately because they hang off the
+ * reservation rather than the ticket — there is no relation from one to the
+ * other, and inventing one would duplicate a fact the trip already holds.
+ */
 export async function getTicketDetail(ticketId: string) {
   const ticket = await db.query.tickets.findFirst({
     where: eq(tickets.id, ticketId),
@@ -178,7 +187,11 @@ export async function getTicketDetail(ticketId: string) {
       },
     },
   });
-  return ticket ?? null;
+  if (!ticket) return null;
+
+  const trip = await reservationForTicket(ticketId);
+  const dispatch = trip ? await listDispatchForTrip(trip.id) : [];
+  return { ...ticket, dispatch };
 }
 
 /**

@@ -255,6 +255,7 @@ export function TicketPane({
                 ticketId={ticket.id}
                 messages={ticket.messages}
                 notes={ticket.notes}
+                dispatch={ticket.dispatch}
                 draft={draft}
                 onUseDraft={(text) => {
                   setSeedBody(text);

@@ -1,4 +1,4 @@
-import type { TicketMessage, TicketNote } from "../api/types";
+import type { TicketDispatchEntry, TicketMessage, TicketNote } from "../api/types";
 import { Avatar } from "./Avatar";
 import { DraftCard, type TicketDraft } from "./DraftCard";
 import { displayName, formatDateTime } from "../lib/ui";
@@ -6,7 +6,8 @@ import { displayName, formatDateTime } from "../lib/ui";
 type TimelineItem =
   | { kind: "message"; at: string; message: TicketMessage }
   | { kind: "note"; at: string; note: TicketNote }
-  | { kind: "draft"; at: string; draft: TicketDraft };
+  | { kind: "draft"; at: string; draft: TicketDraft }
+  | { kind: "dispatch"; at: string; entry: TicketDispatchEntry };
 
 /**
  * Conversation timeline: emails and internal notes interleaved in time order.
@@ -16,6 +17,7 @@ export function ConversationTimeline({
   ticketId,
   messages,
   notes = [],
+  dispatch = [],
   draft = null,
   onUseDraft,
   onDismissDraft,
@@ -23,6 +25,8 @@ export function ConversationTimeline({
   ticketId: string;
   messages: TicketMessage[];
   notes?: TicketNote[];
+  /** Offers and answers about the booking, threaded in by time. */
+  dispatch?: TicketDispatchEntry[];
   /** A drafted reply, shown in place and kept there for good. */
   draft?: TicketDraft | null;
   onUseDraft?: (text: string) => void;
@@ -31,6 +35,7 @@ export function ConversationTimeline({
   const items: TimelineItem[] = [
     ...messages.map((m) => ({ kind: "message" as const, at: m.sentAt, message: m })),
     ...notes.map((n) => ({ kind: "note" as const, at: n.createdAt, note: n })),
+    ...dispatch.map((d) => ({ kind: "dispatch" as const, at: d.at, entry: d })),
     ...(draft ? [{ kind: "draft" as const, at: draft.createdAt, draft }] : []),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
@@ -55,6 +60,10 @@ export function ConversationTimeline({
               onDismiss={() => onDismissDraft?.()}
             />
           );
+        }
+
+        if (item.kind === "dispatch") {
+          return <DispatchEntry key={`dispatch-${item.entry.id}`} entry={item.entry} />;
         }
 
         if (item.kind === "note") {
@@ -144,6 +153,71 @@ export function ConversationTimeline({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** The words for each kind of dispatch traffic, and how it should read. */
+const DISPATCH_LABEL: Record<TicketDispatchEntry["kind"], string> = {
+  OFFER: "Job offered",
+  ACCEPT: "Accepted",
+  DECLINE: "Declined",
+  TEXT: "Message",
+};
+
+/**
+ * An offer, an answer, or a word with a driver — shown in the ticket that
+ * caused it.
+ *
+ * Slate rather than the amber of an internal note, because these are a
+ * different kind of thing: a note is somebody at the desk writing to the desk,
+ * this is a real exchange with somebody outside it. Both are equally
+ * not-the-customer, which is why the line at the bottom says so.
+ *
+ * An accepted offer is the one entry worth finding at a glance — it is the
+ * moment the job stopped being unassigned — so that one is green.
+ */
+function DispatchEntry({ entry }: { entry: TicketDispatchEntry }) {
+  const accepted = entry.kind === "ACCEPT";
+  const declined = entry.kind === "DECLINE";
+  const tone = accepted
+    ? "border-emerald-200 bg-emerald-50"
+    : declined
+      ? "border-rose-200 bg-rose-50"
+      : "border-slate-200 bg-slate-50";
+
+  // Who this was with, and — for anything inbound — who typed it on their
+  // behalf. Until drivers have their own links somebody at the desk is
+  // standing in, and the timeline should not let that pass as the driver.
+  const who =
+    entry.direction === "OUT"
+      ? `${DISPATCH_LABEL[entry.kind]} to ${entry.contactName}`
+      : `${entry.contactName} — ${DISPATCH_LABEL[entry.kind].toLowerCase()}`;
+  const by =
+    entry.direction === "OUT"
+      ? entry.authorName
+      : entry.actedByName
+        ? `entered by ${entry.actedByName}`
+        : null;
+
+  return (
+    <div className={`rounded-xl border px-4 py-2.5 ${tone}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm font-semibold text-gray-900">
+          {who}
+          <span className="ml-2 rounded-full bg-white/70 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-gray-600">
+            {entry.contactKind === "DRIVER" ? "Driver" : "Partner"}
+          </span>
+        </p>
+        <span className="text-xs text-gray-500">
+          {by ? `${by} · ` : ""}
+          {formatDateTime(entry.at)}
+        </span>
+      </div>
+      <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-800">
+        {entry.body}
+      </p>
+      <p className="mt-1.5 text-[11px] text-gray-500">Dispatch — never sent to the customer.</p>
     </div>
   );
 }

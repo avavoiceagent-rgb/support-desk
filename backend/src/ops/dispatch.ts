@@ -280,3 +280,65 @@ export async function respondToOffer(params: {
 
   return { message: row, trip };
 }
+
+/**
+ * Everything said to a driver or a partner about this ticket's booking.
+ *
+ * Dispatch traffic lived only on the Messages screen, which meant a ticket
+ * could say "nobody assigned yet" while an offer had already gone out and been
+ * accepted — the two halves of the same job, on two screens, neither
+ * mentioning the other. Whoever picks the ticket up next needs to see that
+ * without knowing to go looking.
+ *
+ * Joined through the trip rather than the ticket: a dispatch message is about
+ * a job, and the job is what the ticket produced.
+ */
+export interface TicketDispatchEntry {
+  id: string;
+  at: Date;
+  direction: "OUT" | "IN";
+  kind: "OFFER" | "ACCEPT" | "DECLINE" | "TEXT";
+  body: string;
+  contactKind: "DRIVER" | "AFFILIATE";
+  contactName: string;
+  /** Staff member who sent it, for anything outbound. */
+  authorName: string | null;
+  /** Who typed an inbound message while standing in for the contact. */
+  actedByName: string | null;
+}
+
+export async function listDispatchForTrip(tripId: string): Promise<TicketDispatchEntry[]> {
+  const rows = await db
+    .select({
+      id: dispatchMessages.id,
+      at: dispatchMessages.createdAt,
+      direction: dispatchMessages.direction,
+      kind: dispatchMessages.kind,
+      body: dispatchMessages.body,
+      driverId: dispatchMessages.driverId,
+      driverName: drivers.name,
+      affiliateId: dispatchMessages.affiliateId,
+      affiliateCompany: affiliates.company,
+      authorName: dispatchMessages.authorName,
+      actedByName: dispatchMessages.actedByName,
+    })
+    .from(dispatchMessages)
+    .leftJoin(drivers, eq(drivers.id, dispatchMessages.driverId))
+    .leftJoin(affiliates, eq(affiliates.id, dispatchMessages.affiliateId))
+    .where(eq(dispatchMessages.tripId, tripId))
+    .orderBy(asc(dispatchMessages.createdAt));
+
+  return rows.map((r) => ({
+    id: r.id,
+    at: r.at,
+    direction: r.direction,
+    kind: r.kind,
+    body: r.body,
+    contactKind: r.driverId ? ("DRIVER" as const) : ("AFFILIATE" as const),
+    // A contact deleted after the fact leaves the message behind, and a blank
+    // name in a timeline reads as a bug. Say what is known.
+    contactName: r.driverName ?? r.affiliateCompany ?? "a contact no longer on file",
+    authorName: r.authorName,
+    actedByName: r.actedByName,
+  }));
+}

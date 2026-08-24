@@ -80,6 +80,23 @@ export interface TicketMessage {
   attachments: Attachment[];
 }
 
+/**
+ * Something said to a driver or a partner about this ticket's booking.
+ *
+ * Internal without exception — none of it has ever been near the customer.
+ */
+export interface TicketDispatchEntry {
+  id: string;
+  at: string;
+  direction: "OUT" | "IN";
+  kind: "OFFER" | "ACCEPT" | "DECLINE" | "TEXT";
+  body: string;
+  contactKind: "DRIVER" | "AFFILIATE";
+  contactName: string;
+  authorName: string | null;
+  actedByName: string | null;
+}
+
 export interface TicketNote {
   id: string;
   ticketId: string;
@@ -114,6 +131,8 @@ export interface TicketDetail {
   updatedAt: string;
   messages: TicketMessage[];
   notes: TicketNote[];
+  /** Offers and answers about this ticket's booking. Empty when there is none. */
+  dispatch: TicketDispatchEntry[];
 }
 
 export interface TicketHistoryItem {
