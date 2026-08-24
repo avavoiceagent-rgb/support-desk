@@ -42,6 +42,7 @@ import {
 } from "../ops/trips";
 import { findTripById } from "../ops/lookup";
 import { quoteTripForAffiliate } from "../ops/pricing";
+import { candidatesForTrip } from "../ops/candidates";
 
 export const opsRouter = Router();
 opsRouter.use(requireAuth);
@@ -387,6 +388,21 @@ opsRouter.patch("/trips/:id", requireAdmin, async (req, res) => {
 // the wrong way round.
 opsRouter.get("/trips/:id/events", async (req, res) => {
   res.json({ events: await listTripEvents(param(req, "id")) });
+});
+
+/**
+ * Who could actually take this trip, and what it would cost if it goes out.
+ *
+ * A read like the rest: the person deciding who to offer the work to is not
+ * always the person allowed to assign it, and making them ask someone else
+ * just to see who is free would be the wrong way round.
+ */
+opsRouter.get("/trips/:id/candidates", async (req, res) => {
+  await handle(res, async () => {
+    const trip = await findTripById(param(req, "id"));
+    if (!trip) return res.status(404).json({ error: "No trip with that id." });
+    res.json(await candidatesForTrip(trip));
+  });
 });
 
 /**

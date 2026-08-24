@@ -108,6 +108,31 @@ export type TripQuote =
     }
   | { priced: false; reason: string; note: string | null };
 
+/** Who could take a trip, and what it costs if it goes out. */
+export interface TripCandidates {
+  drivers: {
+    driverId: string;
+    name: string;
+    phone: string;
+    vehicleId: string | null;
+    vehicleLabel: string | null;
+    vehicleClass: VehicleClass | null;
+    /** Trips they already have that day — context for whoever assigns. */
+    tripsThatDay: number;
+  }[];
+  partners: {
+    affiliateId: string;
+    company: string;
+    phone: string;
+    reason: "COVERS_AREA" | "OVERFLOW";
+    preference: number;
+    quote: TripQuote;
+  }[];
+  fallbackReason: "OUT_OF_AREA" | "NO_CAR_FREE" | null;
+  /** The message that will actually be sent, written by the code that sends it. */
+  offerText: string;
+}
+
 export interface AffiliateZone {
   id: string;
   affiliateId: string;
@@ -383,6 +408,8 @@ export const opsApi = {
    * price" and "no price because nobody has entered their card" send a
    * dispatcher to different places.
    */
+  candidates: (tripId: string) => api.get<TripCandidates>(`/ops/trips/${tripId}/candidates`),
+
   quoteTrip: (tripId: string, affiliateId: string) =>
     api.get<TripQuote>(`/ops/trips/${tripId}/quote?affiliateId=${encodeURIComponent(affiliateId)}`),
 };

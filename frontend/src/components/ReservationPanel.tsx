@@ -16,7 +16,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { Trip, VehicleClass } from "../api/ops";
-import { VEHICLE_CLASSES, OPERATING_ZONE_LABEL, opsApi } from "../api/ops";
+import { VEHICLE_CLASSES, OPERATING_ZONE_LABEL, dispatchApi, opsApi } from "../api/ops";
+import type { ContactKind, TripCandidates } from "../api/ops";
 import { when, toDateTimeInput, instantFromInput } from "../lib/time";
 import { useAuth } from "../hooks/useAuth";
 import { pastBookingWarning } from "../lib/bookings";
@@ -223,6 +224,7 @@ export function ReservationPanel({ ticketId }: { ticketId: string }) {
         >
           Open in Operations →
         </Link>
+        {!trip.driver && !trip.affiliate && <WhoCanTakeIt trip={trip} />}
       </div>
     );
   }
@@ -478,5 +480,168 @@ export function ReservationPanel({ ticketId }: { ticketId: string }) {
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Who could take this booking, and one press to offer it to them.
+ *
+ * The query behind this has existed since the rota was built and was called by
+ * nothing: a dispatcher looking at a new reservation still had to work out who
+ * was free by reading the schedule board. Availability is not a judgement — a
+ * shift either covers the window or it does not — so the desk should simply
+ * say, and it should say it where the booking was just made rather than two
+ * screens away.
+ *
+ * Sending an offer does not assign anybody. It asks. The assignment happens
+ * when they accept, which is the same rule the Messages screen follows.
+ */
+function WhoCanTakeIt({ trip }: { trip: Trip }) {
+  const [candidates, setCandidates] = useState<TripCandidates | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [offeredTo, setOfferedTo] = useState<string[]>([]);
+  const [sending, setSending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showMessage, setShowMessage] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    opsApi
+      .candidates(trip.id)
+      .then((r) => live && setCandidates(r))
+      .catch(() => live && setCandidates(null))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+  }, [trip.id]);
+
+  async function offer(kind: ContactKind, id: string, label: string) {
+    setError(null);
+    setSending(id);
+    try {
+      await dispatchApi.sendOffer(kind, id, trip.id);
+      setOfferedTo((sent) => [...sent, label]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not send that offer.");
+    } finally {
+      setSending(null);
+    }
+  }
+
+  if (loading) return <p className="mt-2 text-xs text-gray-400">Checking who is free…</p>;
+  if (!candidates) return null;
+
+  const { drivers, partners, fallbackReason, offerText } = candidates;
+  if (drivers.length === 0 && partners.length === 0) {
+    return (
+      <p className="mt-2 border-t border-emerald-200 pt-2 text-xs text-gray-600">
+        Nobody on the roster covers this window, and no partner matches it either. This one needs
+        a shift moving or a call.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-2 border-t border-emerald-200 pt-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-xs font-medium text-gray-700">
+          {drivers.length > 0
+            ? `${drivers.length} ${drivers.length === 1 ? "driver is" : "drivers are"} free`
+            : fallbackReason === "OUT_OF_AREA"
+              ? "Leaves the service area — partners who cover it"
+              : "No car of ours is free — partners to call"}
+        </p>
+        <button
+          type="button"
+          onClick={() => setShowMessage((open) => !open)}
+          className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800"
+        >
+          {showMessage ? "Hide message" : "See message"}
+        </button>
+      </div>
+
+      {showMessage && (
+        // The real text, not a description of it. Anybody about to send
+        // something to a driver should be able to read it first.
+        <pre className="mt-1.5 whitespace-pre-wrap rounded border border-gray-200 bg-white px-2 py-1.5 text-[11px] leading-relaxed text-gray-700">
+          {offerText}
+        </pre>
+      )}
+
+      <ul className="mt-1.5 space-y-1">
+        {drivers.map((d) => (
+          <li key={d.driverId} className="flex items-center justify-between gap-2 text-xs">
+            <span className="text-gray-800">
+              {d.name}
+              <span className="text-gray-500">
+                {d.vehicleLabel ? ` · ${d.vehicleLabel}` : ""}
+                {d.tripsThatDay > 0
+                  ? ` · ${d.tripsThatDay} ${d.tripsThatDay === 1 ? "job" : "jobs"} today`
+                  : " · free all day"}
+              </span>
+            </span>
+            <OfferButton
+              label={offeredTo.includes(d.name) ? "Offered" : "Send offer"}
+              disabled={offeredTo.includes(d.name) || sending !== null}
+              busy={sending === d.driverId}
+              onClick={() => offer("DRIVER", d.driverId, d.name)}
+            />
+          </li>
+        ))}
+
+        {partners.map((p) => (
+          <li key={p.affiliateId} className="flex items-center justify-between gap-2 text-xs">
+            <span className="text-gray-800">
+              {p.company}
+              <span className="text-gray-500">
+                {" · "}
+                {p.quote.priced
+                  ? `$${(p.quote.quote.totalCents / 100).toLocaleString("en-US")} for ${p.quote.quote.billableHours}h`
+                  : "price to agree"}
+              </span>
+            </span>
+            <OfferButton
+              label={offeredTo.includes(p.company) ? "Offered" : "Send offer"}
+              disabled={offeredTo.includes(p.company) || sending !== null}
+              busy={sending === p.affiliateId}
+              onClick={() => offer("AFFILIATE", p.affiliateId, p.company)}
+            />
+          </li>
+        ))}
+      </ul>
+
+      {offeredTo.length > 0 && (
+        <p className="mt-1.5 text-[11px] text-gray-600">
+          Offered to {offeredTo.join(", ")}. Nobody is assigned until one of them accepts — answers
+          come back in Operations → Messages.
+        </p>
+      )}
+      {error && <p className="mt-1.5 text-[11px] text-red-700">{error}</p>}
+    </div>
+  );
+}
+
+function OfferButton({
+  label,
+  disabled,
+  busy,
+  onClick,
+}: {
+  label: string;
+  disabled: boolean;
+  busy: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="shrink-0 rounded border border-indigo-200 bg-white px-2 py-0.5 text-[11px] font-medium text-indigo-700 transition-colors hover:border-indigo-400 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+    >
+      {busy ? "Sending…" : label}
+    </button>
   );
 }
