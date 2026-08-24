@@ -71,7 +71,21 @@ function Label({ children, hint }: { children: React.ReactNode; hint?: string })
   );
 }
 
-export function ReservationPanel({ ticketId }: { ticketId: string }) {
+export function ReservationPanel({
+  ticketId,
+  onTicketChanged,
+}: {
+  ticketId: string;
+  /**
+   * Called after anything here writes something the ticket timeline shows.
+   *
+   * This panel reloads its own data, which is not the same as the ticket
+   * reloading: a change made here wrote a trip event and possibly a message
+   * to a driver, and both belong in the timeline the parent is holding. Left
+   * out, the desk changed a booking and the page gave no sign it had.
+   */
+  onTicketChanged?: () => void;
+}) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
 
@@ -154,6 +168,7 @@ export function ReservationPanel({ ticketId }: { ticketId: string }) {
       setChanged(`${updated.reference} moved to ${when(updated.pickupAt)}.`);
       setChanging(null);
       await load();
+      onTicketChanged?.();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not change the booking.");
     } finally {
@@ -197,6 +212,7 @@ export function ReservationPanel({ ticketId }: { ticketId: string }) {
       });
       setTrip(made);
       setOpen(false);
+      onTicketChanged?.();
     } catch (err) {
       // The server's refusals here name the reservation that already exists.
       setError(err instanceof ApiError ? err.message : "Could not create the reservation.");
@@ -224,7 +240,7 @@ export function ReservationPanel({ ticketId }: { ticketId: string }) {
         >
           Open in Operations →
         </Link>
-        <WhoCanTakeIt trip={trip} />
+        <WhoCanTakeIt trip={trip} onSent={onTicketChanged} />
       </div>
     );
   }
@@ -496,7 +512,7 @@ export function ReservationPanel({ ticketId }: { ticketId: string }) {
  * Sending an offer does not assign anybody. It asks. The assignment happens
  * when they accept, which is the same rule the Messages screen follows.
  */
-function WhoCanTakeIt({ trip }: { trip: Trip }) {
+function WhoCanTakeIt({ trip, onSent }: { trip: Trip; onSent?: () => void }) {
   const [candidates, setCandidates] = useState<TripCandidates | null>(null);
   const [loading, setLoading] = useState(true);
   const [offeredTo, setOfferedTo] = useState<string[]>([]);
@@ -523,6 +539,9 @@ function WhoCanTakeIt({ trip }: { trip: Trip }) {
     try {
       await dispatchApi.sendOffer(kind, id, trip.id);
       setOfferedTo((sent) => [...sent, label]);
+      // The offer is now a line in the timeline. Say so to the parent, which
+      // is the thing holding it.
+      onSent?.();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not send that offer.");
     } finally {
@@ -536,6 +555,7 @@ function WhoCanTakeIt({ trip }: { trip: Trip }) {
     try {
       await dispatchApi.sendChangeNotice(kind, id, trip.id);
       setOfferedTo((sent) => [...sent, label]);
+      onSent?.();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not send that message.");
     } finally {

@@ -243,7 +243,7 @@ export function TicketPane({
               where the work actually happens, and a button that only exists on
               a page nobody opens is not a feature. */}
           <div className="border-b border-gray-100 px-4 pb-3">
-            <ReservationPanel ticketId={ticketId} />
+            <ReservationPanel ticketId={ticketId} onTicketChanged={load} />
           </div>
 
           <OpsContextPanel context={opsContext} />

@@ -227,7 +227,7 @@ export function TicketDetailPage() {
             </div>
             <TriageReason ticket={ticket} className="mt-3 rounded-lg" />
 
-            <ReservationPanel ticketId={ticket.id} />
+            <ReservationPanel ticketId={ticket.id} onTicketChanged={load} />
 
             <div className="mt-3 overflow-hidden rounded-lg border border-gray-200">
               <OpsContextPanel context={opsContext} />
