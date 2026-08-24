@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db, pool } from "../../db/client";
 import { affiliateZones, affiliates, trips } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { quoteTripForAffiliate } from "../pricing";
-import { coordsForAddress } from "../reservations";
+import { coverageGap, quoteTripForAffiliate } from "../pricing";
+import { geocodedForAddress } from "../reservations";
 import type { TripRecord } from "../lookup";
 
 afterAll(async () => {
@@ -14,8 +14,10 @@ afterAll(async () => {
 const BASE = { lat: 40.7357, lng: -74.1724 };
 // 245 Park Avenue: about 9 miles from Newark in a straight line.
 const MANHATTAN = { lat: 40.7548, lng: -73.9757 };
-// Philadelphia: about 80 miles out, well past any band we set up here.
-const PHILADELPHIA = { lat: 39.9526, lng: -75.1652 };
+// Buffalo: still New York, so the partner covers it — but about 300 miles
+// from Newark, well past any band set up here. Deliberately in-state, so the
+// test measures the band overflow and not the coverage check.
+const BUFFALO = { lat: 42.8864, lng: -78.8784 };
 
 function tripLike(over: Partial<TripRecord> = {}): TripRecord {
   return {
@@ -38,8 +40,10 @@ function tripLike(over: Partial<TripRecord> = {}): TripRecord {
     flightNumber: null,
     pickupLat: MANHATTAN.lat,
     pickupLng: MANHATTAN.lng,
+    pickupState: "NY",
     dropoffLat: null,
     dropoffLng: null,
+    dropoffState: "NY",
     status: "SCHEDULED",
     assignedKind: "UNASSIGNED",
     driverId: null,
@@ -66,6 +70,7 @@ async function makePartner(over: Partial<typeof affiliates.$inferInsert> = {}) {
       baseAddress: "Newark, NJ",
       baseLat: BASE.lat,
       baseLng: BASE.lng,
+      coverageStates: ["NJ", "NY"],
       ...over,
     })
     .returning();
@@ -78,27 +83,81 @@ beforeEach(async () => {
   await db.delete(affiliates);
 });
 
-describe("coordsForAddress", () => {
-  it("keeps the point when the address is still the one that was geocoded", () => {
-    expect(coordsForAddress("245 Park Ave, New York, NY", "245 Park Ave, New York, NY", 40.7, -74))
-      .toEqual({ lat: 40.7, lng: -74 });
+describe("geocodedForAddress", () => {
+  const found = { lat: 40.7, lng: -74, state: "NY" };
+
+  it("keeps what was found when the address is still the one that was geocoded", () => {
+    expect(geocodedForAddress("245 Park Ave, New York, NY", "245 Park Ave, New York, NY", found))
+      .toEqual({ lat: 40.7, lng: -74, state: "NY" });
   });
 
   it("ignores case and stray whitespace, which are not a different place", () => {
-    expect(coordsForAddress("  245 PARK AVE, New York, NY ", "245 Park Ave, New York, NY", 40.7, -74))
-      .toEqual({ lat: 40.7, lng: -74 });
+    expect(geocodedForAddress("  245 PARK AVE, New York, NY ", "245 Park Ave, New York, NY", found))
+      .toEqual({ lat: 40.7, lng: -74, state: "NY" });
   });
 
-  it("drops the point when a dispatcher corrected the address", () => {
+  it("drops it when a dispatcher corrected the address", () => {
     // This is the whole reason the check exists: the old coordinates would
     // price the job from a place nobody is going to, and look right doing it.
-    expect(coordsForAddress("30 Hudson Yards, New York, NY", "245 Park Ave, New York, NY", 40.7, -74))
-      .toEqual({ lat: null, lng: null });
+    expect(geocodedForAddress("30 Hudson Yards, New York, NY", "245 Park Ave, New York, NY", found))
+      .toEqual({ lat: null, lng: null, state: null });
   });
 
-  it("drops the point when there was never one", () => {
-    expect(coordsForAddress("245 Park Ave", "245 Park Ave", null, null)).toEqual({ lat: null, lng: null });
-    expect(coordsForAddress("245 Park Ave", undefined, 40.7, -74)).toEqual({ lat: null, lng: null });
+  it("drops it when there was never a point", () => {
+    expect(geocodedForAddress("245 Park Ave", "245 Park Ave", { state: "NY" }))
+      .toEqual({ lat: null, lng: null, state: null });
+    expect(geocodedForAddress("245 Park Ave", undefined, found))
+      .toEqual({ lat: null, lng: null, state: null });
+  });
+
+  it("does not keep a state without the point it came from", () => {
+    // A trip that knows which state it is in but not where cannot be measured
+    // against anything, and the half-record invites someone to trust it.
+    expect(geocodedForAddress("245 Park Ave", "245 Park Ave", { lat: 40.7, state: "NY" }).state)
+      .toBeNull();
+  });
+});
+
+describe("coverageGap", () => {
+  const laPartner = {
+    company: "Pacific Coast Livery",
+    coverageStates: ["CA"],
+    baseAddress: "Los Angeles, CA",
+  };
+
+  it("objects before doing arithmetic on the wrong partner", () => {
+    // The 2,447-mile quote that started this: measuring an LA card against a
+    // Manhattan pickup is a right answer to a question nobody asked.
+    const gap = coverageGap(laPartner, { pickupState: "NY", dropoffState: "NY" });
+    expect(gap).toContain("covers CA");
+    expect(gap).toContain("pickup is in NY");
+  });
+
+  it("says nothing when they work where the car is needed", () => {
+    expect(coverageGap(laPartner, { pickupState: "CA", dropoffState: "NV" })).toBeNull();
+  });
+
+  it("points at the job they should actually be sent", () => {
+    // A partner who covers the far end is how an out-of-area trip normally
+    // gets done — but the job to hand them is the one that starts there.
+    const gap = coverageGap(laPartner, { pickupState: "NY", dropoffState: "CA" });
+    expect(gap).toContain("They do cover CA, where this trip ends");
+  });
+
+  it("does not object on behalf of a partner nobody has filled in", () => {
+    // An empty coverage list means nobody said, not that they cover nowhere.
+    expect(
+      coverageGap({ company: "New Partner", coverageStates: [], baseAddress: null }, {
+        pickupState: "NY",
+        dropoffState: "NY",
+      })
+    ).toBeNull();
+  });
+
+  it("says nothing when the trip does not know where it starts", () => {
+    // Older trips have no state. Silence beats accusing a partner on no
+    // evidence — the missing-coordinates message covers that case anyway.
+    expect(coverageGap(laPartner, { pickupState: null, dropoffState: null })).toBeNull();
   });
 });
 
@@ -163,6 +222,30 @@ describe("quoteTripForAffiliate", () => {
     expect(result.reason).toContain("Metro");
   });
 
+  it("refuses a partner who does not work where the pickup is", async () => {
+    const partner = await makePartner({
+      company: "Pacific Coast Livery",
+      baseAddress: "Los Angeles, CA",
+      baseLat: 34.0522,
+      baseLng: -118.2437,
+      coverageStates: ["CA"],
+    });
+    await db.insert(affiliateZones).values({
+      affiliateId: partner.id,
+      label: "Long haul",
+      fromMiles: 100,
+      toMiles: null,
+      minimumHours: 6,
+      rateCents: { SEDAN: 20_000 },
+    });
+
+    // Even with an open-ended band that would happily price 2,447 miles.
+    const result = await quoteTripForAffiliate(tripLike(), partner.id);
+    expect(result.priced).toBe(false);
+    if (result.priced) return;
+    expect(result.reason).toContain("wrong partner");
+  });
+
   it("says when the job falls outside every band", async () => {
     const partner = await makePartner();
     await db.insert(affiliateZones).values({
@@ -175,7 +258,7 @@ describe("quoteTripForAffiliate", () => {
     });
 
     const result = await quoteTripForAffiliate(
-      tripLike({ pickupLat: PHILADELPHIA.lat, pickupLng: PHILADELPHIA.lng }),
+      tripLike({ pickupLat: BUFFALO.lat, pickupLng: BUFFALO.lng }),
       partner.id
     );
     expect(result.priced).toBe(false);

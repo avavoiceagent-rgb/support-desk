@@ -164,6 +164,9 @@ export interface DraftFacts {
   pickupLng?: number | null;
   dropoffLat?: number | null;
   dropoffLng?: number | null;
+  /** US state code from the same geocode: "NY", "PA". */
+  pickupState?: string | null;
+  dropoffState?: string | null;
   stops: string[];
   /** New York wall clock, "2026-09-22T09:00". */
   pickupAtLocal: string | null;
@@ -454,6 +457,16 @@ export const trips = pgTable(
     pickupLng: doublePrecision("pickup_lng"),
     dropoffLat: doublePrecision("dropoff_lat"),
     dropoffLng: doublePrecision("dropoff_lng"),
+    /**
+     * The state each end is in, from the same geocode.
+     *
+     * A state code is what this business already reasons in — INTERNAL is
+     * NY/NJ and everything else is farmed out — and it is what a partner's
+     * coverage is written in. Kept beside the coordinates so "does this
+     * partner even work here" can be answered without asking Google again.
+     */
+    pickupState: text("pickup_state"),
+    dropoffState: text("dropoff_state"),
 
     status: tripStatusEnum("status").notNull().default("SCHEDULED"),
     assignedKind: assignedToEnum("assigned_kind").notNull().default("UNASSIGNED"),

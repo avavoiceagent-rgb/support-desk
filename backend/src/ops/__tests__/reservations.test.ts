@@ -219,8 +219,8 @@ describe("coordinates from the draft", () => {
         bookerEmail: "ana@customer.example",
         pickupAddress: "230 Park Ave, New York, NY 10169",
         dropoffAddress: "JFK Terminal 4, Jamaica, NY 11430",
-        pickupLat: 40.7548, pickupLng: -73.9757,
-        dropoffLat: 40.6446, dropoffLng: -73.7822,
+        pickupLat: 40.7548, pickupLng: -73.9757, pickupState: "NY",
+        dropoffLat: 40.6446, dropoffLng: -73.7822, dropoffState: "NY",
         stops: [], pickupAtLocal: "2026-09-24T09:00", vehicleClass: "SEDAN",
         passengerCount: 2, luggageCount: 2, flightNumber: "DL404",
       },
@@ -237,6 +237,10 @@ describe("coordinates from the draft", () => {
     const [row] = await db.select().from(trips).where(eq(trips.id, trip.id));
     expect(row.pickupLat).toBeCloseTo(40.7548, 4);
     expect(row.dropoffLng).toBeCloseTo(-73.7822, 4);
+    // The state travels with the point: it is what a partner's coverage is
+    // written in, and asking Google for it a second time would be paying
+    // twice for an answer we already had.
+    expect(row.pickupState).toBe("NY");
   });
 
   it("drops them when the dispatcher changed the address", async () => {
@@ -254,6 +258,7 @@ describe("coordinates from the draft", () => {
     const [row] = await db.select().from(trips).where(eq(trips.id, trip.id));
     expect(row.pickupLat).toBeNull();
     expect(row.pickupLng).toBeNull();
+    expect(row.pickupState).toBeNull();
     // The drop-off was not touched, so it keeps its point.
     expect(row.dropoffLat).toBeCloseTo(40.6446, 4);
   });

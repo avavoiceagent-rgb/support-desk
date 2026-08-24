@@ -208,6 +208,8 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
           pickupLng: pickup?.lng ?? null,
           dropoffLat: dropoff?.lat ?? null,
           dropoffLng: dropoff?.lng ?? null,
+          pickupState: pickup?.state ?? null,
+          dropoffState: dropoff?.state ?? null,
           stops: stops
             .map((stop, i) => stop?.formattedAddress ?? booking.stops[i]?.addressText ?? null)
             .filter((a): a is string => Boolean(a)),

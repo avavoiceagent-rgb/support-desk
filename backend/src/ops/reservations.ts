@@ -193,27 +193,37 @@ export function quotedTripsFrom(context: {
 }
 
 /**
- * The coordinates for an address, but only if it is still the same address.
+ * What the geocoder found for an address, but only if it is still the same
+ * address.
  *
  * The draft geocoded what the customer wrote; the dispatcher may then have
- * corrected it in the form before pressing Create. Carrying the old
- * coordinates over would price the job from a place nobody is going to, and
- * silently — a wrong number that looks exactly like a right one. So the
- * address has to match what was geocoded, or the trip stores no point and
- * simply cannot be priced from a rate card.
+ * corrected it in the form before pressing Create. Carrying the old point
+ * over would price the job from a place nobody is going to, and silently — a
+ * wrong number that looks exactly like a right one. So the address has to
+ * match what was geocoded, or the trip stores nothing and simply cannot be
+ * priced from a rate card.
  */
-export function coordsForAddress(
+export interface GeocodedPoint {
+  lat: number | null;
+  lng: number | null;
+  state: string | null;
+}
+
+const NO_POINT: GeocodedPoint = { lat: null, lng: null, state: null };
+
+export function geocodedForAddress(
   address: string,
   geocoded: string | null | undefined,
-  lat: number | null | undefined,
-  lng: number | null | undefined
-): { lat: number | null; lng: number | null } {
+  found: { lat?: number | null; lng?: number | null; state?: string | null }
+): GeocodedPoint {
   const same =
     Boolean(geocoded) && address.trim().toLowerCase() === geocoded!.trim().toLowerCase();
-  if (!same || typeof lat !== "number" || typeof lng !== "number") {
-    return { lat: null, lng: null };
-  }
-  return { lat, lng };
+  if (!same) return NO_POINT;
+  // The state travels with the point rather than on its own: it came from the
+  // same lookup, and keeping one without the other would leave a trip that
+  // knows which state it is in but not where.
+  if (typeof found.lat !== "number" || typeof found.lng !== "number") return NO_POINT;
+  return { lat: found.lat, lng: found.lng, state: found.state ?? null };
 }
 
 export async function createReservationFromTicket(
@@ -242,18 +252,16 @@ export async function createReservationFromTicket(
   // Reuse the geocode the draft already paid for, rather than asking Google
   // the same question twice.
   const facts = await suggestedReservation(ticketId);
-  const from = coordsForAddress(
-    input.pickupAddress,
-    facts?.pickupAddress,
-    facts?.pickupLat,
-    facts?.pickupLng
-  );
-  const to = coordsForAddress(
-    input.dropoffAddress,
-    facts?.dropoffAddress,
-    facts?.dropoffLat,
-    facts?.dropoffLng
-  );
+  const from = geocodedForAddress(input.pickupAddress, facts?.pickupAddress, {
+    lat: facts?.pickupLat,
+    lng: facts?.pickupLng,
+    state: facts?.pickupState,
+  });
+  const to = geocodedForAddress(input.dropoffAddress, facts?.dropoffAddress, {
+    lat: facts?.dropoffLat,
+    lng: facts?.dropoffLng,
+    state: facts?.dropoffState,
+  });
 
   const row = await insertReservation({
     ticketId,
@@ -272,8 +280,10 @@ export async function createReservationFromTicket(
     flightNumber: input.flightNumber ?? null,
     pickupLat: from.lat,
     pickupLng: from.lng,
+    pickupState: from.state,
     dropoffLat: to.lat,
     dropoffLng: to.lng,
+    dropoffState: to.state,
     status: "SCHEDULED",
     assignedKind: "UNASSIGNED",
     notes: input.notes ?? null,

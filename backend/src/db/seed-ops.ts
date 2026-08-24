@@ -131,21 +131,21 @@ const AFFILIATES = [
  * a customer; nothing in the app takes a coordinate from this file.
  */
 export const PICKUPS = [
-  { address: "245 Park Avenue, New York, NY 10167", lat: 40.7548, lng: -73.9757 },
-  { address: "40 Wall Street, New York, NY 10005", lat: 40.7069, lng: -74.009 },
-  { address: "The Plaza Hotel, 768 5th Ave, New York, NY 10019", lat: 40.7644, lng: -73.9744 },
-  { address: "1 Hotel Brooklyn Bridge, 60 Furman St, Brooklyn, NY 11201", lat: 40.7005, lng: -73.9962 },
-  { address: "101 Hudson St, Jersey City, NJ 07302", lat: 40.7215, lng: -74.0347 },
-  { address: "The Ritz-Carlton, 50 Central Park S, New York, NY 10019", lat: 40.7658, lng: -73.9761 },
-  { address: "200 West St, New York, NY 10282", lat: 40.7145, lng: -74.0145 },
-  { address: "30 Hudson Yards, New York, NY 10001", lat: 40.7539, lng: -74.0013 },
+  { address: "245 Park Avenue, New York, NY 10167", lat: 40.7548, lng: -73.9757, state: "NY" },
+  { address: "40 Wall Street, New York, NY 10005", lat: 40.7069, lng: -74.009, state: "NY" },
+  { address: "The Plaza Hotel, 768 5th Ave, New York, NY 10019", lat: 40.7644, lng: -73.9744, state: "NY" },
+  { address: "1 Hotel Brooklyn Bridge, 60 Furman St, Brooklyn, NY 11201", lat: 40.7005, lng: -73.9962, state: "NY" },
+  { address: "101 Hudson St, Jersey City, NJ 07302", lat: 40.7215, lng: -74.0347, state: "NJ" },
+  { address: "The Ritz-Carlton, 50 Central Park S, New York, NY 10019", lat: 40.7658, lng: -73.9761, state: "NY" },
+  { address: "200 West St, New York, NY 10282", lat: 40.7145, lng: -74.0145, state: "NY" },
+  { address: "30 Hudson Yards, New York, NY 10001", lat: 40.7539, lng: -74.0013, state: "NY" },
 ] as const;
 
 export const AIRPORTS = [
-  { address: "JFK Terminal 4, Jamaica, NY 11430", lat: 40.6446, lng: -73.7822 },
-  { address: "LaGuardia Airport Terminal B, East Elmhurst, NY 11371", lat: 40.7731, lng: -73.872 },
-  { address: "Newark Liberty International Airport Terminal C, Newark, NJ 07114", lat: 40.6903, lng: -74.1775 },
-  { address: "Teterboro Airport, Teterboro, NJ 07608", lat: 40.8501, lng: -74.0608 },
+  { address: "JFK Terminal 4, Jamaica, NY 11430", lat: 40.6446, lng: -73.7822, state: "NY" },
+  { address: "LaGuardia Airport Terminal B, East Elmhurst, NY 11371", lat: 40.7731, lng: -73.872, state: "NY" },
+  { address: "Newark Liberty International Airport Terminal C, Newark, NJ 07114", lat: 40.6903, lng: -74.1775, state: "NJ" },
+  { address: "Teterboro Airport, Teterboro, NJ 07608", lat: 40.8501, lng: -74.0608, state: "NJ" },
 ] as const;
 
 /**
@@ -251,7 +251,12 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
     { label: "Metro", fromMiles: 0, toMiles: 15, minimumHours: 2, uplift: 1 },
     { label: "Suburban", fromMiles: 15, toMiles: 40, minimumHours: 3, uplift: 1.12 },
     { label: "Regional", fromMiles: 40, toMiles: 100, minimumHours: 4, uplift: 1.25 },
-    { label: "Long haul", fromMiles: 100, toMiles: null, minimumHours: 6, uplift: 1.4 },
+    // Ends at 250 rather than running on for ever. A card with an open last
+    // band answers "2,447 miles" with a confident price, which is how an LA
+    // partner came to be quoted $1,200 for a Manhattan pickup. Real sheets
+    // stop somewhere and say "call us" past it; here, past it the quote comes
+    // back as a sentence instead of a number.
+    { label: "Long haul", fromMiles: 100, toMiles: 250, minimumHours: 6, uplift: 1.4 },
   ] as const;
 
   const zoneRows: (typeof affiliateZones.$inferInsert)[] = [];
@@ -488,8 +493,10 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
         dropoffAddress: destination.address,
         pickupLat: origin.lat,
         pickupLng: origin.lng,
+        pickupState: origin.state,
         dropoffLat: destination.lat,
         dropoffLng: destination.lng,
+        dropoffState: destination.state,
         stops: rng.chance(0.15) ? ["40 Wall Street, New York, NY 10005"] : [],
         pickupAt: pickupAt.toJSDate(),
         bookedHours,

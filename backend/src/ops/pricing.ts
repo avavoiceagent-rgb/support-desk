@@ -20,6 +20,42 @@ export type TripQuote =
   | { priced: true; miles: number; quote: Quote }
   | { priced: false; reason: string };
 
+/**
+ * Whether this partner works where the car is actually needed.
+ *
+ * A partner is picked because they operate in the market the job happens in —
+ * that is what an affiliate network is for. Measuring a Los Angeles firm's
+ * rate card against a Manhattan pickup is arithmetic on a pairing that would
+ * never be made, and answering it with a price dressed the mistake up as a
+ * decision.
+ *
+ * Coverage is empty for a partner nobody has filled in, and an empty list is
+ * not a claim that they cover nowhere — so it says nothing rather than
+ * objecting.
+ */
+export function coverageGap(
+  partner: { company: string; coverageStates: string[]; baseAddress: string | null },
+  trip: { pickupState: string | null; dropoffState: string | null }
+): string | null {
+  if (partner.coverageStates.length === 0) return null;
+  if (!trip.pickupState) return null;
+
+  const covers = (state: string | null) =>
+    Boolean(state) && partner.coverageStates.includes(state!);
+  if (covers(trip.pickupState)) return null;
+
+  const where = partner.baseAddress ? ` (${partner.baseAddress})` : "";
+  const states = partner.coverageStates.join(", ");
+  // The far end matters: a partner who covers the destination is the normal
+  // way an out-of-area job gets done, and the car meets the customer there.
+  // What that is NOT is this trip, whose pickup is somewhere they do not work.
+  const alsoCoversDestination = covers(trip.dropoffState)
+    ? ` They do cover ${trip.dropoffState}, where this trip ends — if they are meeting the customer at that end, the job to send them is the one that starts there.`
+    : "";
+
+  return `${partner.company}${where} covers ${states}. This pickup is in ${trip.pickupState}, so this is likely the wrong partner for it.${alsoCoversDestination}`;
+}
+
 /** One decimal is as much precision as a band boundary deserves. */
 function round(miles: number): number {
   return Math.round(miles * 10) / 10;
@@ -46,6 +82,11 @@ export async function quoteTripForAffiliate(
       reason: `We have not recorded where ${partner.company} is based, so their distance bands cannot be measured. Add a base address on their record.`,
     };
   }
+
+  // Before any arithmetic: a price for a partner who does not work here is a
+  // right answer to the wrong question.
+  const gap = coverageGap(partner, trip);
+  if (gap) return { priced: false, reason: gap };
 
   if (trip.pickupLat == null || trip.pickupLng == null) {
     return {

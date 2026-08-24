@@ -113,6 +113,13 @@
       "when": 1787528103576,
       "tag": "0015_trip_coordinates",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1787530121239,
+      "tag": "0016_trip_states",
+      "breakpoints": true
     }
   ]
 }

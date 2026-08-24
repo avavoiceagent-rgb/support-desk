@@ -10,6 +10,10 @@
 // A backfill rather than `seed-ops --reset`, because a reset would delete the
 // real reservations made from real tickets, and their history with them.
 //
+// Fills the state each end is in as well, from the same table — it comes from
+// the same place a geocode would put it, and a partner's coverage is written
+// in state codes.
+//
 // Only fills nulls, only where the address is exactly one the seed wrote, and
 // safe to run twice. Run it with:
 //
@@ -29,14 +33,14 @@ export async function backfillTripCoordinates(): Promise<{ pickups: number; drop
   for (const place of PLACES) {
     const asPickup = await db
       .update(trips)
-      .set({ pickupLat: place.lat, pickupLng: place.lng })
+      .set({ pickupLat: place.lat, pickupLng: place.lng, pickupState: place.state })
       .where(and(eq(trips.pickupAddress, place.address), isNull(trips.pickupLat)))
       .returning({ id: trips.id });
     pickups += asPickup.length;
 
     const asDropoff = await db
       .update(trips)
-      .set({ dropoffLat: place.lat, dropoffLng: place.lng })
+      .set({ dropoffLat: place.lat, dropoffLng: place.lng, dropoffState: place.state })
       .where(and(eq(trips.dropoffAddress, place.address), isNull(trips.dropoffLat)))
       .returning({ id: trips.id });
     dropoffs += asDropoff.length;
