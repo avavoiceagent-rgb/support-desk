@@ -262,7 +262,11 @@ export function MessagesTab({
                   onChange={(e) => setOfferTripId(e.target.value)}
                   className={inputClass}
                 >
-                  <option value="">Choose an unassigned job…</option>
+                  {/* Not "unassigned" — the list deliberately includes jobs
+                      somebody already has, so a change can be put back to the
+                      driver holding it. The label said otherwise and made the
+                      one thing this screen is for look unavailable. */}
+                  <option value="">Choose a job…</option>
                   {trips.map((t) => {
                     const holder = t.driver?.name ?? t.affiliate?.company;
                     return (
