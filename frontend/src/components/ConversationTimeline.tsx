@@ -1,4 +1,4 @@
-import type { TicketDispatchEntry, TicketMessage, TicketNote } from "../api/types";
+import type { TicketDispatchEntry, TicketMessage, TicketNote, TripEvent } from "../api/types";
 import { Avatar } from "./Avatar";
 import { DraftCard, type TicketDraft } from "./DraftCard";
 import { displayName, formatDateTime } from "../lib/ui";
@@ -7,7 +7,8 @@ type TimelineItem =
   | { kind: "message"; at: string; message: TicketMessage }
   | { kind: "note"; at: string; note: TicketNote }
   | { kind: "draft"; at: string; draft: TicketDraft }
-  | { kind: "dispatch"; at: string; entry: TicketDispatchEntry };
+  | { kind: "dispatch"; at: string; entry: TicketDispatchEntry }
+  | { kind: "tripEvent"; at: string; event: TripEvent };
 
 /**
  * Conversation timeline: emails and internal notes interleaved in time order.
@@ -18,6 +19,7 @@ export function ConversationTimeline({
   messages,
   notes = [],
   dispatch = [],
+  tripEvents = [],
   draft = null,
   onUseDraft,
   onDismissDraft,
@@ -27,6 +29,8 @@ export function ConversationTimeline({
   notes?: TicketNote[];
   /** Offers and answers about the booking, threaded in by time. */
   dispatch?: TicketDispatchEntry[];
+  /** Changes made to the booking itself. */
+  tripEvents?: TripEvent[];
   /** A drafted reply, shown in place and kept there for good. */
   draft?: TicketDraft | null;
   onUseDraft?: (text: string) => void;
@@ -36,6 +40,7 @@ export function ConversationTimeline({
     ...messages.map((m) => ({ kind: "message" as const, at: m.sentAt, message: m })),
     ...notes.map((n) => ({ kind: "note" as const, at: n.createdAt, note: n })),
     ...dispatch.map((d) => ({ kind: "dispatch" as const, at: d.at, entry: d })),
+    ...tripEvents.map((e) => ({ kind: "tripEvent" as const, at: e.createdAt, event: e })),
     ...(draft ? [{ kind: "draft" as const, at: draft.createdAt, draft }] : []),
   ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
@@ -60,6 +65,10 @@ export function ConversationTimeline({
               onDismiss={() => onDismissDraft?.()}
             />
           );
+        }
+
+        if (item.kind === "tripEvent") {
+          return <BookingChange key={`event-${item.event.id}`} event={item.event} />;
         }
 
         if (item.kind === "dispatch") {
@@ -218,6 +227,53 @@ function DispatchEntry({ entry }: { entry: TicketDispatchEntry }) {
         {entry.body}
       </p>
       <p className="mt-1.5 text-[11px] text-gray-500">Dispatch — never sent to the customer.</p>
+    </div>
+  );
+}
+
+/**
+ * A change made to the booking, shown in the ticket that asked for it.
+ *
+ * The record already existed — it is what the History button in Operations
+ * shows — but it lived only there, so a ticket could hold a customer asking
+ * for a later pickup and give no sign that anybody had moved it. The request
+ * and the answer belong on the same page.
+ *
+ * Quiet by design: a thin line rather than a card, because on a busy booking
+ * these outnumber everything else and are usually read at a glance.
+ */
+function BookingChange({ event }: { event: TripEvent }) {
+  const headline =
+    event.kind === "CREATED"
+      ? "Reservation created"
+      : event.kind === "CANCELLED"
+        ? "Reservation cancelled"
+        : "Reservation changed";
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-4 py-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-xs font-semibold text-gray-700">
+          {headline}
+          <span className="ml-2 font-normal text-gray-500">
+            by {event.actorName}
+            {event.source ? ` · ${event.source}` : ""}
+          </span>
+        </p>
+        <span className="text-xs text-gray-400">{formatDateTime(event.createdAt)}</span>
+      </div>
+      {event.changes.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {event.changes.map((c, i) => (
+            <li key={`${c.field}-${i}`} className="text-xs text-gray-600">
+              <span className="font-medium text-gray-700">{c.field}</span>
+              {/* "from nothing" reads better than an empty gap where a value
+                  should be — a field that was blank is a fact worth stating. */}
+              {c.from ? ` — ${c.from}` : " — not set"} → {c.to ?? "not set"}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

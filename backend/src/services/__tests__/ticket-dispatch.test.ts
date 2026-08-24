@@ -7,6 +7,7 @@ import {
 import { eq } from "drizzle-orm";
 import { getTicketDetail } from "../ticket.service";
 import { sendOffer, respondToOffer } from "../../ops/dispatch";
+import { updateTrip } from "../../ops/trips";
 import { actorFor } from "../../ops/trip-events";
 
 afterAll(async () => {
@@ -104,6 +105,23 @@ describe("dispatch traffic on the ticket", () => {
     expect(times[0]).toBeLessThanOrEqual(times[1]);
   });
 
+  it("shows the booking's own changes, not just what was said about it", async () => {
+    // A ticket holding a customer asking for a later pickup used to give no
+    // sign that anybody had moved it. The request and the answer belong on
+    // the same page.
+    const { ticket, trip } = await makeTicketWithTrip();
+    await updateTrip(
+      trip.id,
+      { pickupAt: new Date("2026-09-01T20:15:00.000Z") },
+      await actorFor(undefined)
+    );
+
+    const detail = await getTicketDetail(ticket.id);
+    expect(detail?.tripEvents).toHaveLength(1);
+    expect(detail?.tripEvents[0].kind).toBe("UPDATED");
+    expect(detail?.tripEvents[0].changes.map((c) => c.field)).toContain("Pickup");
+  });
+
   it("is empty for a ticket with no reservation, rather than absent", async () => {
     // The timeline maps over this. Undefined would be a crash on every
     // ordinary ticket, which is most of them.
@@ -117,6 +135,7 @@ describe("dispatch traffic on the ticket", () => {
 
     const detail = await getTicketDetail(ticket.id);
     expect(detail?.dispatch).toEqual([]);
+    expect(detail?.tripEvents).toEqual([]);
   });
 
   it("says a contact is gone rather than showing a blank name", async () => {

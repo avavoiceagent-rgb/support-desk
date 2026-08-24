@@ -163,6 +163,11 @@ describe("dispatch route permissions", () => {
       .sort();
     expect(open).toEqual([
       "GET /:kind/:id/messages",
+      // Telling somebody their job has changed is a message, not a change to
+      // the trip — the change itself already needed an admin. Requiring one
+      // again here is how a car ends up at the old time while the person who
+      // spotted it goes looking for somebody with the right login.
+      "POST /:kind/:id/change-notice",
       "POST /:kind/:id/messages",
       "POST /:kind/:id/offers",
     ]);

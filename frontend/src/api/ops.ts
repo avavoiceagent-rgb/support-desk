@@ -131,6 +131,16 @@ export interface TripCandidates {
   fallbackReason: "OUT_OF_AREA" | "NO_CAR_FREE" | null;
   /** The message that will actually be sent, written by the code that sends it. */
   offerText: string;
+  /** Who holds the job now, and whether that still stands. */
+  assignment: {
+    kind: ContactKind;
+    contactId: string;
+    name: string;
+    /** False when the booking changed after we last spoke to them. Null when we never have. */
+    toldOfLatest: boolean | null;
+    /** Null for a partner — their diary is not ours to know. */
+    stillAvailable: boolean | null;
+  } | null;
 }
 
 export interface AffiliateZone {
@@ -325,6 +335,13 @@ export const dispatchApi = {
 
   sendOffer: (kind: ContactKind, id: string, tripId: string, note?: string | null) =>
     api.post<{ message: DispatchMessage }>(`/dispatch/${kind}/${id}/offers`, { tripId, note }),
+
+  /** Tell whoever holds a job that it has changed. Not a new offer — see the server. */
+  sendChangeNotice: (kind: ContactKind, id: string, tripId: string, note?: string | null) =>
+    api.post<{ message: DispatchMessage }>(`/dispatch/${kind}/${id}/change-notice`, {
+      tripId,
+      note,
+    }),
 
   respond: (offerId: string, accept: boolean, note?: string | null) =>
     api.post<{ message: DispatchMessage; trip: Trip | null }>(

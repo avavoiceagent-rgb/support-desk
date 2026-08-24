@@ -53,6 +53,15 @@ export interface AvailabilityQuery {
   vehicleClass: VehicleClass;
   /** Minutes of slack either side, for the drive to and from the job. */
   bufferMinutes?: number;
+  /**
+   * A trip to ignore when looking for clashes — itself.
+   *
+   * Without this, asking "is Amrit still free for T-10308?" answers no,
+   * because T-10308 is on his list. A driver is not unavailable on account of
+   * the very job being asked about, and the wrong answer here would send a
+   * dispatcher hunting for a replacement nobody needed.
+   */
+  excludeTripId?: string;
 }
 
 export interface AvailableDriver {
@@ -112,6 +121,7 @@ export async function findAvailableDrivers(query: AvailabilityQuery): Promise<Av
 
   const sameDayTrips = await db
     .select({
+      id: trips.id,
       driverId: trips.driverId,
       pickupAt: trips.pickupAt,
       bookedHours: trips.bookedHours,
@@ -129,6 +139,7 @@ export async function findAvailableDrivers(query: AvailabilityQuery): Promise<Av
   const dayCount = new Map<string, number>();
   for (const trip of sameDayTrips) {
     if (!trip.driverId) continue;
+    if (query.excludeTripId && trip.id === query.excludeTripId) continue;
     if (trip.pickupAt >= dayStart && trip.pickupAt < dayEnd) {
       dayCount.set(trip.driverId, (dayCount.get(trip.driverId) ?? 0) + 1);
     }

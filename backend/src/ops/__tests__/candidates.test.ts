@@ -5,6 +5,10 @@ import {
 } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { candidatesForTrip } from "../candidates";
+import { sendOffer, respondToOffer, sendChangeNotice } from "../dispatch";
+import { actorFor } from "../trip-events";
+import { updateTrip } from "../trips";
+import { dispatchMessages, tripEvents, users } from "../../db/schema";
 import { findTripById } from "../lookup";
 
 const PICKUP = new Date("2026-09-22T19:00:00.000Z"); // 3pm in New York
@@ -20,6 +24,8 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  await db.delete(dispatchMessages);
+  await db.delete(tripEvents);
   await db.delete(invoiceLines);
   await db.delete(invoices);
   await db.delete(trips);
@@ -28,6 +34,7 @@ beforeEach(async () => {
   await db.delete(affiliateZones);
   await db.delete(affiliates);
   await db.delete(vehicles);
+  await db.delete(users);
 });
 
 async function makeTrip(over: Partial<typeof trips.$inferInsert> = {}) {
@@ -186,5 +193,148 @@ describe("candidatesForTrip", () => {
     await db.delete(trips);
     const vanJob = await makeTrip({ vehicleClass: "VAN" });
     expect((await candidatesForTrip(vanJob)).drivers).toEqual([]);
+  });
+});
+
+describe("a booking that moves under the driver holding it", () => {
+  /** Offer the trip to a driver and have them accept, as the desk would. */
+  async function assign(tripId: string, driverId: string) {
+    const actor = await actorFor(undefined);
+    const offer = await sendOffer({
+      contact: { kind: "DRIVER", id: driverId },
+      tripId,
+      actor,
+    });
+    await respondToOffer({ offerId: offer.id, accept: true, actor });
+  }
+
+  it("says nothing while the booking still says what they agreed to", async () => {
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assign(trip.id, driver.id);
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.name).toBe("Marco Rinaldi");
+    expect(result.assignment?.toldOfLatest).toBe(true);
+    expect(result.assignment?.stillAvailable).toBe(true);
+  });
+
+  it("notices when the booking changed after the last word to them", async () => {
+    // The quiet failure: nothing errors, nothing looks wrong, and a car turns
+    // up an hour after the customer expected it.
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assign(trip.id, driver.id);
+
+    await updateTrip(
+      trip.id,
+      { pickupAt: new Date(PICKUP.getTime() + 3_600_000) },
+      await actorFor(undefined)
+    );
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.toldOfLatest).toBe(false);
+  });
+
+  it("is settled again once they have been told", async () => {
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assign(trip.id, driver.id);
+    await updateTrip(
+      trip.id,
+      { pickupAt: new Date(PICKUP.getTime() + 3_600_000) },
+      await actorFor(undefined)
+    );
+
+    await sendChangeNotice({
+      contact: { kind: "DRIVER", id: driver.id },
+      tripId: trip.id,
+      actor: await actorFor(undefined),
+    });
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.toldOfLatest).toBe(true);
+  });
+
+  it("does not call a driver unavailable because of the very job in hand", async () => {
+    // Their own trip is on their list. Counting it as a clash would report
+    // every assigned driver as lost and send the desk hunting for nobody.
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assign(trip.id, driver.id);
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.stillAvailable).toBe(true);
+  });
+
+  it("sees when the new time falls outside their shift", async () => {
+    const driver = await makeDriverFree("Marco Rinaldi"); // on shift ±6h of PICKUP
+    const trip = await makeTrip();
+    await assign(trip.id, driver.id);
+
+    // Moved to the following morning, long past the end of that shift.
+    await updateTrip(
+      trip.id,
+      { pickupAt: new Date(PICKUP.getTime() + 20 * 3_600_000) },
+      await actorFor(undefined)
+    );
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.stillAvailable).toBe(false);
+    expect(result.assignment?.toldOfLatest).toBe(false);
+  });
+
+  it("offers somebody else for the window the booking has moved to", async () => {
+    const marco = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assign(trip.id, marco.id);
+
+    // Hector's shift covers the new time; Marco's does not.
+    const [v] = await db.insert(vehicles).values({
+      label: "Sedan H", class: "SEDAN", makeModel: "Cadillac XTS", plate: "H1",
+      passengerCapacity: 3, luggageCapacity: 3,
+    }).returning();
+    const [hector] = await db.insert(drivers).values({
+      name: "Hector Alvarez", phone: "+1 917 555 0002", defaultVehicleId: v.id,
+    }).returning();
+    await db.insert(driverShifts).values({
+      driverId: hector.id, vehicleId: v.id,
+      startsAt: new Date(PICKUP.getTime() + 14 * 3_600_000),
+      endsAt: new Date(PICKUP.getTime() + 30 * 3_600_000),
+    });
+
+    await updateTrip(
+      trip.id,
+      { pickupAt: new Date(PICKUP.getTime() + 20 * 3_600_000) },
+      await actorFor(undefined)
+    );
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.stillAvailable).toBe(false);
+    expect(result.drivers.map((d) => d.name)).toEqual(["Hector Alvarez"]);
+  });
+
+  it("does not guess at a partner's diary", async () => {
+    // We know our own rota. A partner's is theirs, and inventing an answer
+    // would be exactly the confident wrong fact this desk avoids.
+    const partner = await makeOverflowPartner("Metro Overflow Group");
+    const trip = await makeTrip();
+    await updateTrip(trip.id, { affiliateId: partner.id }, await actorFor(undefined));
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.kind).toBe("AFFILIATE");
+    expect(result.assignment?.stillAvailable).toBeNull();
+  });
+
+  it("says nothing is out of date when nobody was ever told", async () => {
+    // Assigned by hand, never offered. There is no message to be older than
+    // the booking, and "they have not been told" would be a warning about a
+    // conversation that never happened.
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await updateTrip(trip.id, { driverId: driver.id }, await actorFor(undefined));
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.toldOfLatest).toBeNull();
   });
 });

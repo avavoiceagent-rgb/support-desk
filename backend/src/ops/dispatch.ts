@@ -11,7 +11,7 @@
 // records it. Two paths to the same change with two sets of rules is how a
 // system starts contradicting itself.
 
-import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "../db/client";
 import { affiliates, dispatchMessages, drivers, trips } from "../db/schema";
@@ -341,4 +341,74 @@ export async function listDispatchForTrip(tripId: string): Promise<TicketDispatc
     authorName: r.authorName,
     actedByName: r.actedByName,
   }));
+}
+
+/**
+ * When we last said anything to this contact about this job.
+ *
+ * Used to answer the only question that matters after a booking moves: does
+ * the person driving it know? A trip whose `updatedAt` is later than this has
+ * changed since anybody told them.
+ */
+export async function lastSpokeTo(tripId: string, contact: Contact): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: dispatchMessages.createdAt })
+    .from(dispatchMessages)
+    .where(and(eq(dispatchMessages.tripId, tripId), contactFilter(contact)))
+    .orderBy(desc(dispatchMessages.createdAt))
+    .limit(1);
+  return row?.at ?? null;
+}
+
+/**
+ * Tell whoever has this job that it has changed.
+ *
+ * The details are rebuilt from the trip by the same function that wrote the
+ * original offer, so what they receive is the job as it now stands rather
+ * than a description of the edit. Somebody reading it on a phone needs the
+ * new time and the new addresses, not a diff.
+ *
+ * Sent, not queued: a car turning up an hour late because a change sat in a
+ * draft is the whole failure this exists to prevent.
+ */
+export async function sendChangeNotice(params: {
+  contact: Contact;
+  tripId: string;
+  actor: Actor;
+  note?: string | null;
+}): Promise<DispatchMessage> {
+  await requireContact(params.contact, true);
+
+  const rows = await selectTrips().where(eq(trips.id, params.tripId)).limit(1);
+  if (!rows.length) throw new OpsError(`No trip with id ${params.tripId}.`, 404);
+  const trip = toTripRecord(rows[0]);
+
+  const note = params.note?.trim();
+  const body = [
+    `${trip.reference} has changed. It now reads:`,
+    "",
+    describeOffer(trip),
+    note ? `\n${note}` : "",
+    "",
+    "Let us know if you can still cover it.",
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
+
+  const [row] = await db
+    .insert(dispatchMessages)
+    .values({
+      tripId: trip.id,
+      ...contactColumns(params.contact),
+      direction: "OUT",
+      // A TEXT rather than a new OFFER: the job is already theirs, and a
+      // second OFFER would be a second thing to accept, with the one-answer
+      // rule then refusing the answer to it.
+      kind: "TEXT",
+      body,
+      authorUserId: params.actor.userId,
+      authorName: params.actor.name,
+    })
+    .returning();
+  return row;
 }

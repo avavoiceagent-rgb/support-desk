@@ -97,6 +97,17 @@ export interface TicketDispatchEntry {
   actedByName: string | null;
 }
 
+export interface TripEvent {
+  id: string;
+  tripId: string;
+  actorUserId: string | null;
+  actorName: string;
+  kind: "CREATED" | "UPDATED" | "CANCELLED";
+  changes: { field: string; from: string | null; to: string | null }[];
+  source: string | null;
+  createdAt: string;
+}
+
 export interface TicketNote {
   id: string;
   ticketId: string;
@@ -133,6 +144,8 @@ export interface TicketDetail {
   notes: TicketNote[];
   /** Offers and answers about this ticket's booking. Empty when there is none. */
   dispatch: TicketDispatchEntry[];
+  /** Changes made to that booking, so the ticket shows the answer as well as the request. */
+  tripEvents: TripEvent[];
 }
 
 export interface TicketHistoryItem {

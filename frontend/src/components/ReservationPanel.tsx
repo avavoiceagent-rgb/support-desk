@@ -224,7 +224,7 @@ export function ReservationPanel({ ticketId }: { ticketId: string }) {
         >
           Open in Operations →
         </Link>
-        {!trip.driver && !trip.affiliate && <WhoCanTakeIt trip={trip} />}
+        <WhoCanTakeIt trip={trip} />
       </div>
     );
   }
@@ -530,10 +530,91 @@ function WhoCanTakeIt({ trip }: { trip: Trip }) {
     }
   }
 
+  async function tell(kind: ContactKind, id: string, label: string) {
+    setError(null);
+    setSending(id);
+    try {
+      await dispatchApi.sendChangeNotice(kind, id, trip.id);
+      setOfferedTo((sent) => [...sent, label]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not send that message.");
+    } finally {
+      setSending(null);
+    }
+  }
+
   if (loading) return <p className="mt-2 text-xs text-gray-400">Checking who is free…</p>;
   if (!candidates) return null;
 
-  const { drivers, partners, fallbackReason, offerText } = candidates;
+  const { drivers, partners, fallbackReason, offerText, assignment } = candidates;
+
+  // Somebody already has this job. The only questions worth asking are
+  // whether they know what it says now, and whether they can still do it.
+  if (assignment) {
+    const held = assignment.name;
+    const outOfDate = assignment.toldOfLatest === false;
+    const lost = assignment.stillAvailable === false;
+    if (!outOfDate && !lost) return null;
+
+    return (
+      <div className="mt-2 space-y-2 border-t border-emerald-200 pt-2">
+        {lost ? (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+            <span className="font-semibold">{held} no longer fits this booking.</span> Since it
+            changed, their shift does not cover it or they are out on another job. Tell them, and
+            find somebody else.
+          </p>
+        ) : (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <span className="font-semibold">{held} has not been told.</span> This booking changed
+            after the last message to them, so what they agreed to is not what it now says.
+          </p>
+        )}
+
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setShowMessage((open) => !open)}
+            className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800"
+          >
+            {showMessage ? "Hide message" : "See message"}
+          </button>
+          <OfferButton
+            label={offeredTo.includes(held) ? "Sent" : `Send the change to ${held}`}
+            disabled={offeredTo.includes(held) || sending !== null}
+            busy={sending === assignment.contactId}
+            onClick={() => tell(assignment.kind, assignment.contactId, held)}
+          />
+        </div>
+
+        {showMessage && (
+          <pre className="whitespace-pre-wrap rounded border border-gray-200 bg-white px-2 py-1.5 text-[11px] leading-relaxed text-gray-700">
+            {offerText}
+          </pre>
+        )}
+
+        {lost && (drivers.length > 0 || partners.length > 0) && (
+          <div>
+            <p className="text-xs font-medium text-gray-700">Who could take it instead</p>
+            <ReplacementList
+              drivers={drivers}
+              partners={partners}
+              offeredTo={offeredTo}
+              sending={sending}
+              onOffer={offer}
+            />
+          </div>
+        )}
+        {lost && drivers.length === 0 && partners.length === 0 && (
+          <p className="text-xs text-gray-600">
+            Nobody else covers this window either. This one needs a shift moving or a call.
+          </p>
+        )}
+        {error && <p className="text-[11px] text-red-700">{error}</p>}
+      </div>
+    );
+  }
+
   if (drivers.length === 0 && partners.length === 0) {
     return (
       <p className="mt-2 border-t border-emerald-200 pt-2 text-xs text-gray-600">
@@ -570,47 +651,13 @@ function WhoCanTakeIt({ trip }: { trip: Trip }) {
         </pre>
       )}
 
-      <ul className="mt-1.5 space-y-1">
-        {drivers.map((d) => (
-          <li key={d.driverId} className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-gray-800">
-              {d.name}
-              <span className="text-gray-500">
-                {d.vehicleLabel ? ` · ${d.vehicleLabel}` : ""}
-                {d.tripsThatDay > 0
-                  ? ` · ${d.tripsThatDay} ${d.tripsThatDay === 1 ? "job" : "jobs"} today`
-                  : " · free all day"}
-              </span>
-            </span>
-            <OfferButton
-              label={offeredTo.includes(d.name) ? "Offered" : "Send offer"}
-              disabled={offeredTo.includes(d.name) || sending !== null}
-              busy={sending === d.driverId}
-              onClick={() => offer("DRIVER", d.driverId, d.name)}
-            />
-          </li>
-        ))}
-
-        {partners.map((p) => (
-          <li key={p.affiliateId} className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-gray-800">
-              {p.company}
-              <span className="text-gray-500">
-                {" · "}
-                {p.quote.priced
-                  ? `$${(p.quote.quote.totalCents / 100).toLocaleString("en-US")} for ${p.quote.quote.billableHours}h`
-                  : "price to agree"}
-              </span>
-            </span>
-            <OfferButton
-              label={offeredTo.includes(p.company) ? "Offered" : "Send offer"}
-              disabled={offeredTo.includes(p.company) || sending !== null}
-              busy={sending === p.affiliateId}
-              onClick={() => offer("AFFILIATE", p.affiliateId, p.company)}
-            />
-          </li>
-        ))}
-      </ul>
+      <ReplacementList
+        drivers={drivers}
+        partners={partners}
+        offeredTo={offeredTo}
+        sending={sending}
+        onOffer={offer}
+      />
 
       {offeredTo.length > 0 && (
         <p className="mt-1.5 text-[11px] text-gray-600">
@@ -620,6 +667,65 @@ function WhoCanTakeIt({ trip }: { trip: Trip }) {
       )}
       {error && <p className="mt-1.5 text-[11px] text-red-700">{error}</p>}
     </div>
+  );
+}
+
+/** The list of people who could take a job, and the button that asks them. */
+function ReplacementList({
+  drivers,
+  partners,
+  offeredTo,
+  sending,
+  onOffer,
+}: {
+  drivers: TripCandidates["drivers"];
+  partners: TripCandidates["partners"];
+  offeredTo: string[];
+  sending: string | null;
+  onOffer: (kind: ContactKind, id: string, label: string) => void;
+}) {
+  return (
+    <ul className="mt-1.5 space-y-1">
+      {drivers.map((d) => (
+        <li key={d.driverId} className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-gray-800">
+            {d.name}
+            <span className="text-gray-500">
+              {d.vehicleLabel ? ` · ${d.vehicleLabel}` : ""}
+              {d.tripsThatDay > 0
+                ? ` · ${d.tripsThatDay} ${d.tripsThatDay === 1 ? "job" : "jobs"} today`
+                : " · free all day"}
+            </span>
+          </span>
+          <OfferButton
+            label={offeredTo.includes(d.name) ? "Offered" : "Send offer"}
+            disabled={offeredTo.includes(d.name) || sending !== null}
+            busy={sending === d.driverId}
+            onClick={() => onOffer("DRIVER", d.driverId, d.name)}
+          />
+        </li>
+      ))}
+
+      {partners.map((p) => (
+        <li key={p.affiliateId} className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-gray-800">
+            {p.company}
+            <span className="text-gray-500">
+              {" · "}
+              {p.quote.priced
+                ? `$${(p.quote.quote.totalCents / 100).toLocaleString("en-US")} for ${p.quote.quote.billableHours}h`
+                : "price to agree"}
+            </span>
+          </span>
+          <OfferButton
+            label={offeredTo.includes(p.company) ? "Offered" : "Send offer"}
+            disabled={offeredTo.includes(p.company) || sending !== null}
+            busy={sending === p.affiliateId}
+            onClick={() => onOffer("AFFILIATE", p.affiliateId, p.company)}
+          />
+        </li>
+      ))}
+    </ul>
   );
 }
 

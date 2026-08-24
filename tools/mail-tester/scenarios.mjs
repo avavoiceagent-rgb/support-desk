@@ -155,6 +155,39 @@ Daniel Weiss`,
       "Queue: Reservation, sub-label CHANGE TO EXISTING (not New reservation)",
       "No drafted reply — Adam only drafts for new reservations",
     ],
+    /**
+     * The same request, naming a booking that really exists.
+     *
+     * The version above is deliberately vague, which tests the triage and
+     * nothing else. Quoting a live reference also exercises the lookup and
+     * the "On file for this sender" panel, and it is what a real customer
+     * writes once they have been given a number.
+     *
+     *     node send.mjs change --ref T-10308
+     *
+     * The time is left as "an hour later" rather than a clock time on
+     * purpose: this file does not know when the booking is, and inventing a
+     * time would produce a test email that contradicts the booking it names.
+     */
+    withRef: (ref) => ({
+      subject: `Change to booking ${ref}`,
+      body: `Hi,
+
+Could we move ${ref} an hour later than planned? Same pickup and drop-off.
+
+Also a colleague is now joining me, so that is three of us with three suitcases.
+
+Thanks,
+Daniel Weiss
++1 917 555 0134`,
+      check: [
+        "Queue: Reservation, sub-label CHANGE TO EXISTING (not New reservation)",
+        "No drafted reply — Adam only drafts for new reservations",
+        `"On file for this sender" lists ${ref}, tagged "Named in this email"`,
+        "The booking itself is NOT moved — a person makes the change in Operations",
+        "After editing it there, the History column on that row names who changed what",
+      ],
+    }),
   },
   {
     id: "accounting",

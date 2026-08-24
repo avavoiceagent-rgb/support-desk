@@ -141,6 +141,7 @@ export function TicketDetailPage() {
             messages={ticket.messages}
             notes={ticket.notes}
             dispatch={ticket.dispatch}
+            tripEvents={ticket.tripEvents}
             draft={draft}
             onUseDraft={(text) => {
               setSeedBody(text);

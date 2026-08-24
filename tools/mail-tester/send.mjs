@@ -4,6 +4,7 @@
 //   node send.mjs new-internal         send one
 //   node send.mjs all                  send every scenario, 45s apart
 //   node send.mjs all --delay 20       ...at a different spacing
+//   node send.mjs change --ref T-10308 quote a booking that really exists
 //
 // The spacing matters: the desk polls Gmail on a timer, and sending nine
 // emails in one burst makes it harder to tell which ticket came from which
@@ -88,7 +89,24 @@ async function main() {
   const delayIndex = rest.indexOf("--delay");
   const delaySeconds = delayIndex === -1 ? 45 : Number(rest[delayIndex + 1]) || 45;
 
-  const chosen = command === "all" ? scenarios : [findScenario(command)].filter(Boolean);
+  // A reference to quote, for the scenarios that can name a real booking.
+  // Left off, they send their standalone wording exactly as before.
+  const refIndex = rest.indexOf("--ref");
+  const ref = refIndex === -1 ? null : rest[refIndex + 1];
+  if (refIndex !== -1 && !ref) {
+    console.error("--ref needs a booking reference, e.g. --ref T-10308");
+    process.exit(1);
+  }
+
+  const withRef = (s) => {
+    if (!ref) return s;
+    if (typeof s.withRef !== "function") return s;
+    return { ...s, ...s.withRef(ref) };
+  };
+
+  const chosen = (command === "all" ? scenarios : [findScenario(command)].filter(Boolean)).map(
+    withRef
+  );
   if (!chosen.length) {
     console.error(`Unknown scenario "${command}". Run: node send.mjs list`);
     process.exit(1);

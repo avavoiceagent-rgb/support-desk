@@ -4,6 +4,7 @@ import { db } from "../db/client";
 import { tickets, messages, notes, users, emailAccounts } from "../db/schema";
 import { reservationForTicket } from "../ops/reservations";
 import { listDispatchForTrip } from "../ops/dispatch";
+import { listTripEvents } from "../ops/trip-events";
 import type { TicketStatus, TicketQueue, TicketChannel, ReservationType, ReservationSource } from "../types";
 
 export interface TicketListFilters {
@@ -190,8 +191,13 @@ export async function getTicketDetail(ticketId: string) {
   if (!ticket) return null;
 
   const trip = await reservationForTicket(ticketId);
-  const dispatch = trip ? await listDispatchForTrip(trip.id) : [];
-  return { ...ticket, dispatch };
+  // Both hang off the reservation: what was said to the driver, and what was
+  // done to the booking. A ticket that shows the request but not the change
+  // made in answer to it is half a record.
+  const [dispatch, tripEvents] = trip
+    ? await Promise.all([listDispatchForTrip(trip.id), listTripEvents(trip.id)])
+    : [[], []];
+  return { ...ticket, dispatch, tripEvents };
 }
 
 /**

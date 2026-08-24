@@ -31,6 +31,7 @@ This folder is not part of the app. Railway only builds `backend/` and
     node send.mjs all           # send all nine, 45 seconds apart
     node send.mjs all --delay 20
     node send.mjs vague --no-tag    # exact subject, will thread onto the last one
+    node send.mjs change --ref T-10308   # quote a booking that really exists
 
 Every subject gets a short run tag like `[0117]`. Gmail threads by subject and
 sender, so without it a repeat send arrives as a reply on the existing ticket —

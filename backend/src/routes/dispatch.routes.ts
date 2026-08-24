@@ -27,7 +27,14 @@ import { requireAuth, requireAdmin } from "../middleware/auth";
 import { param } from "../utils/params";
 import { OpsError } from "../ops/errors";
 import { actorFor } from "../ops/trip-events";
-import { listMessages, respondToOffer, sendOffer, sendText, type Contact } from "../ops/dispatch";
+import {
+  listMessages,
+  respondToOffer,
+  sendChangeNotice,
+  sendOffer,
+  sendText,
+  type Contact,
+} from "../ops/dispatch";
 
 export const dispatchRouter = Router();
 dispatchRouter.use(requireAuth);
@@ -96,6 +103,24 @@ dispatchRouter.post("/:kind/:id/offers", async (req, res) => {
   await handle(res, async () =>
     res.status(201).json({
       message: await sendOffer({ contact: contactFrom(req), actor, ...parsed.data }),
+    })
+  );
+});
+
+/**
+ * Tell the driver or partner holding this job that it has changed.
+ *
+ * Open to anyone signed in, like sending an offer. The person who noticed the
+ * booking moved is the person who should be able to say so, and needing an
+ * admin to pass the message on is how a car ends up at the old time.
+ */
+dispatchRouter.post("/:kind/:id/change-notice", async (req, res) => {
+  const parsed = offerSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed);
+  const actor = await actorFor(req.session?.userId);
+  await handle(res, async () =>
+    res.status(201).json({
+      message: await sendChangeNotice({ contact: contactFrom(req), actor, ...parsed.data }),
     })
   );
 });
