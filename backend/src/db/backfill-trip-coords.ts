@@ -19,7 +19,7 @@
 //
 //     node backend/dist/db/backfill-trip-coords.js
 
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { db, pool } from "./client";
 import { trips } from "./schema";
 import { AIRPORTS, OUT_OF_AREA, PICKUPS } from "./seed-ops";
@@ -34,14 +34,27 @@ export async function backfillTripCoordinates(): Promise<{ pickups: number; drop
     const asPickup = await db
       .update(trips)
       .set({ pickupLat: place.lat, pickupLng: place.lng, pickupState: place.state })
-      .where(and(eq(trips.pickupAddress, place.address), isNull(trips.pickupLat)))
+      // Either half missing is worth filling. Checking only the coordinate
+      // meant a second run — the one that came after the state columns were
+      // added — matched nothing and quietly left every state null.
+      .where(
+        and(
+          eq(trips.pickupAddress, place.address),
+          or(isNull(trips.pickupLat), isNull(trips.pickupState))
+        )
+      )
       .returning({ id: trips.id });
     pickups += asPickup.length;
 
     const asDropoff = await db
       .update(trips)
       .set({ dropoffLat: place.lat, dropoffLng: place.lng, dropoffState: place.state })
-      .where(and(eq(trips.dropoffAddress, place.address), isNull(trips.dropoffLat)))
+      .where(
+        and(
+          eq(trips.dropoffAddress, place.address),
+          or(isNull(trips.dropoffLat), isNull(trips.dropoffState))
+        )
+      )
       .returning({ id: trips.id });
     dropoffs += asDropoff.length;
   }
@@ -55,12 +68,12 @@ if (require.main === module) {
       const [{ remaining }] = await db
         .select({ remaining: sql<number>`count(*)::int` })
         .from(trips)
-        .where(isNull(trips.pickupLat));
+        .where(or(isNull(trips.pickupLat), isNull(trips.pickupState)));
       console.log(`Filled ${pickups} pickups and ${dropoffs} drop-offs.`);
       // Anything left is a trip whose address the seed never wrote — a real
       // booking made before the coordinates existed. Those stay unpriceable
       // by card, which is the honest answer for them.
-      console.log(`${remaining} trips still have no pickup coordinates.`);
+      console.log(`${remaining} trips still have no pickup coordinates or state.`);
       await pool.end();
     })
     .catch(async (err) => {
