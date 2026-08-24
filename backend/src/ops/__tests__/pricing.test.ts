@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { db, pool } from "../../db/client";
 import { affiliateZones, affiliates, trips } from "../../db/schema";
 import { eq } from "drizzle-orm";
-import { coverageGap, quoteTripForAffiliate } from "../pricing";
+import { coverageNote, quoteTripForAffiliate } from "../pricing";
 import { geocodedForAddress } from "../reservations";
 import type { TripRecord } from "../lookup";
 
@@ -118,36 +118,33 @@ describe("geocodedForAddress", () => {
   });
 });
 
-describe("coverageGap", () => {
-  const laPartner = {
-    company: "Pacific Coast Livery",
-    coverageStates: ["CA"],
-    baseAddress: "Los Angeles, CA",
-  };
+describe("coverageNote", () => {
+  const miami = { company: "Biscayne Luxury Rides", coverageStates: ["FL"] };
+  const philadelphia = { company: "Liberty Bell Executive", coverageStates: ["PA", "DE"] };
 
-  it("objects before doing arithmetic on the wrong partner", () => {
-    // The 2,447-mile quote that started this: measuring an LA card against a
-    // Manhattan pickup is a right answer to a question nobody asked.
-    const gap = coverageGap(laPartner, { pickupState: "NY", dropoffState: "NY" });
-    expect(gap).toContain("covers CA");
-    expect(gap).toContain("pickup is in NY");
+  it("cautions about licensing without pretending to know the answer", () => {
+    const note = coverageNote(philadelphia, { pickupState: "NY", dropoffState: "PA" });
+    expect(note).toContain("covers PA, DE");
+    expect(note).toContain("pickup is in NY");
+    expect(note).toContain("Operating authority is local");
+    // What it must NOT do any more is call this the wrong partner. A single
+    // car driving New York to Philadelphia is ordinary intercity work.
+    expect(note).not.toContain("wrong partner");
   });
 
   it("says nothing when they work where the car is needed", () => {
-    expect(coverageGap(laPartner, { pickupState: "CA", dropoffState: "NV" })).toBeNull();
+    expect(coverageNote(miami, { pickupState: "FL", dropoffState: "FL" })).toBeNull();
   });
 
   it("points at the job they should actually be sent", () => {
-    // A partner who covers the far end is how an out-of-area trip normally
-    // gets done — but the job to hand them is the one that starts there.
-    const gap = coverageGap(laPartner, { pickupState: "NY", dropoffState: "CA" });
-    expect(gap).toContain("They do cover CA, where this trip ends");
+    const note = coverageNote(miami, { pickupState: "NY", dropoffState: "FL" });
+    expect(note).toContain("They do cover FL, where this trip ends");
   });
 
-  it("does not object on behalf of a partner nobody has filled in", () => {
+  it("does not caution on behalf of a partner nobody has filled in", () => {
     // An empty coverage list means nobody said, not that they cover nowhere.
     expect(
-      coverageGap({ company: "New Partner", coverageStates: [], baseAddress: null }, {
+      coverageNote({ company: "New Partner", coverageStates: [] }, {
         pickupState: "NY",
         dropoffState: "NY",
       })
@@ -155,9 +152,7 @@ describe("coverageGap", () => {
   });
 
   it("says nothing when the trip does not know where it starts", () => {
-    // Older trips have no state. Silence beats accusing a partner on no
-    // evidence — the missing-coordinates message covers that case anyway.
-    expect(coverageGap(laPartner, { pickupState: null, dropoffState: null })).toBeNull();
+    expect(coverageNote(miami, { pickupState: null, dropoffState: null })).toBeNull();
   });
 });
 
@@ -222,7 +217,38 @@ describe("quoteTripForAffiliate", () => {
     expect(result.reason).toContain("Metro");
   });
 
-  it("refuses a partner who does not work where the pickup is", async () => {
+  it("still prices a partner from another state, and says to check the licence", async () => {
+    // Liberty Bell in Philadelphia, quoting a Manhattan pickup 80 miles out.
+    // Their own card reaches that far, which is them saying they will travel
+    // it — so the price stands and the caution rides alongside it.
+    const partner = await makePartner({
+      company: "Liberty Bell Executive",
+      baseAddress: "Philadelphia, PA",
+      baseLat: 39.9526,
+      baseLng: -75.1652,
+      coverageStates: ["PA", "DE"],
+    });
+    await db.insert(affiliateZones).values({
+      affiliateId: partner.id,
+      label: "Regional",
+      fromMiles: 40,
+      toMiles: 100,
+      minimumHours: 4,
+      rateCents: { SEDAN: 10_000 },
+    });
+
+    const result = await quoteTripForAffiliate(tripLike(), partner.id);
+    expect(result.priced).toBe(true);
+    if (!result.priced) return;
+    expect(result.quote.zone.label).toBe("Regional");
+    expect(result.note).toContain("Operating authority is local");
+  });
+
+  it("lets distance, not coverage, be what stops a quote", async () => {
+    // Los Angeles to a Manhattan pickup. Nothing about the coverage list is
+    // doing the work here — the card simply does not reach 2,447 miles, which
+    // is the honest reason and the one that survives a partner who is
+    // licensed in six states.
     const partner = await makePartner({
       company: "Pacific Coast Livery",
       baseAddress: "Los Angeles, CA",
@@ -234,16 +260,16 @@ describe("quoteTripForAffiliate", () => {
       affiliateId: partner.id,
       label: "Long haul",
       fromMiles: 100,
-      toMiles: null,
+      toMiles: 250,
       minimumHours: 6,
       rateCents: { SEDAN: 20_000 },
     });
 
-    // Even with an open-ended band that would happily price 2,447 miles.
     const result = await quoteTripForAffiliate(tripLike(), partner.id);
     expect(result.priced).toBe(false);
     if (result.priced) return;
-    expect(result.reason).toContain("wrong partner");
+    expect(result.reason).toMatch(/outside every band/);
+    expect(result.reason).toContain("beyond the distance they have said they will travel");
   });
 
   it("says when the job falls outside every band", async () => {

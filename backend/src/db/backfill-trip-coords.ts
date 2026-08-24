@@ -22,9 +22,9 @@
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { db, pool } from "./client";
 import { trips } from "./schema";
-import { AIRPORTS, OUT_OF_AREA, PICKUPS } from "./seed-ops";
+import { AIRPORTS, AWAY_PLACES, OUT_OF_AREA, PICKUPS } from "./seed-ops";
 
-const PLACES = [...PICKUPS, ...AIRPORTS, ...OUT_OF_AREA];
+const PLACES = [...PICKUPS, ...AIRPORTS, ...OUT_OF_AREA, ...AWAY_PLACES];
 
 export async function backfillTripCoordinates(): Promise<{ pickups: number; dropoffs: number }> {
   let pickups = 0;

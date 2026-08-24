@@ -86,6 +86,11 @@ export interface DriverRow {
 }
 
 /** One band of a partner's rate card: [fromMiles, toMiles) from their base. */
+/**
+ * `note` is a caution about operating authority, not a refusal — a partner's
+ * rate card says how far they will travel, their coverage says where they are
+ * licensed, and only the first of those can stop a price.
+ */
 export type TripQuote =
   | {
       priced: true;
@@ -99,8 +104,9 @@ export type TripQuote =
         billableHours: number;
         totalCents: number;
       };
+      note: string | null;
     }
-  | { priced: false; reason: string };
+  | { priced: false; reason: string; note: string | null };
 
 export interface AffiliateZone {
   id: string;

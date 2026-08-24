@@ -17,24 +17,30 @@ import type { TripRecord } from "./lookup";
 import { listZones, milesBetween, quote, type Quote } from "./zones";
 
 export type TripQuote =
-  | { priced: true; miles: number; quote: Quote }
-  | { priced: false; reason: string };
+  | { priced: true; miles: number; quote: Quote; note: string | null }
+  | { priced: false; reason: string; note: string | null };
 
 /**
- * Whether this partner works where the car is actually needed.
+ * A caution about operating authority, or null.
  *
- * A partner is picked because they operate in the market the job happens in —
- * that is what an affiliate network is for. Measuring a Los Angeles firm's
- * rate card against a Manhattan pickup is arithmetic on a pairing that would
- * never be made, and answering it with a price dressed the mistake up as a
- * decision.
+ * This began life as a refusal and was wrong to be one. Two different facts
+ * were being run together: how far a partner will travel, which their own
+ * rate card states, and where they are licensed to work, which their coverage
+ * states say. A Philadelphia firm quoting a Manhattan pickup is ordinary
+ * intercity work — under about four hundred miles a single car drives the
+ * whole route, and the card reaching that far is the partner saying so.
+ * Whether they may pick up in New York is a separate question, and a licence
+ * is not something this desk can check.
  *
- * Coverage is empty for a partner nobody has filled in, and an empty list is
- * not a claim that they cover nowhere — so it says nothing rather than
- * objecting.
+ * So it is said alongside the price rather than instead of it. What actually
+ * stops a quote is distance: a card that ends at 250 miles has nothing to say
+ * about Los Angeles, and says so on its own.
+ *
+ * Empty coverage means nobody filled the partner in, which is not a claim
+ * that they cover nowhere — so it stays quiet.
  */
-export function coverageGap(
-  partner: { company: string; coverageStates: string[]; baseAddress: string | null },
+export function coverageNote(
+  partner: { company: string; coverageStates: string[] },
   trip: { pickupState: string | null; dropoffState: string | null }
 ): string | null {
   if (partner.coverageStates.length === 0) return null;
@@ -44,16 +50,15 @@ export function coverageGap(
     Boolean(state) && partner.coverageStates.includes(state!);
   if (covers(trip.pickupState)) return null;
 
-  const where = partner.baseAddress ? ` (${partner.baseAddress})` : "";
   const states = partner.coverageStates.join(", ");
-  // The far end matters: a partner who covers the destination is the normal
-  // way an out-of-area job gets done, and the car meets the customer there.
-  // What that is NOT is this trip, whose pickup is somewhere they do not work.
-  const alsoCoversDestination = covers(trip.dropoffState)
-    ? ` They do cover ${trip.dropoffState}, where this trip ends — if they are meeting the customer at that end, the job to send them is the one that starts there.`
+  // Where they cover the far end, say so: that is the ordinary shape of an
+  // out-of-area job, and it may mean the work to send them is the one that
+  // starts in their own city rather than this one.
+  const farEnd = covers(trip.dropoffState)
+    ? ` They do cover ${trip.dropoffState}, where this trip ends — if they are meeting the customer there, the job to send them is the one that starts at that end.`
     : "";
 
-  return `${partner.company}${where} covers ${states}. This pickup is in ${trip.pickupState}, so this is likely the wrong partner for it.${alsoCoversDestination}`;
+  return `${partner.company} covers ${states} and this pickup is in ${trip.pickupState}. Operating authority is local, so check they can work there.${farEnd}`;
 }
 
 /** One decimal is as much precision as a band boundary deserves. */
@@ -74,23 +79,22 @@ export async function quoteTripForAffiliate(
   affiliateId: string
 ): Promise<TripQuote> {
   const [partner] = await db.select().from(affiliates).where(eq(affiliates.id, affiliateId)).limit(1);
-  if (!partner) return { priced: false, reason: "That partner no longer exists." };
+  if (!partner) return { priced: false, reason: "That partner no longer exists.", note: null };
+
+  const note = coverageNote(partner, trip);
 
   if (partner.baseLat == null || partner.baseLng == null) {
     return {
       priced: false,
       reason: `We have not recorded where ${partner.company} is based, so their distance bands cannot be measured. Add a base address on their record.`,
+      note,
     };
   }
-
-  // Before any arithmetic: a price for a partner who does not work here is a
-  // right answer to the wrong question.
-  const gap = coverageGap(partner, trip);
-  if (gap) return { priced: false, reason: gap };
 
   if (trip.pickupLat == null || trip.pickupLng == null) {
     return {
       priced: false,
+      note,
       // Deliberately not "we'll geocode it now": a quote that silently
       // re-looks-up an address can answer differently from the one on the
       // booking, and a bill has to be reproducible.
@@ -107,6 +111,7 @@ export async function quoteTripForAffiliate(
     return {
       priced: false,
       reason: `${partner.company} has no rate card yet — ${miles} miles out, agreed by hand.`,
+      note,
     };
   }
 
@@ -124,9 +129,10 @@ export async function quoteTripForAffiliate(
       priced: false,
       reason: band
         ? `${partner.company} does not price a ${trip.vehicleClass.toLowerCase()} in "${band.label}" (${miles} miles out).`
-        : `${miles} miles out falls outside every band on ${partner.company}'s card.`,
+        : `${miles} miles out falls outside every band on ${partner.company}'s card — beyond the distance they have said they will travel.`,
+      note,
     };
   }
 
-  return { priced: true, miles, quote: priced };
+  return { priced: true, miles, quote: priced, note };
 }

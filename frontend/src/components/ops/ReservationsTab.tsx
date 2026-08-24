@@ -692,24 +692,44 @@ function PartnerQuote({ tripId, affiliateId }: { tripId: string; affiliateId: st
 
   if (!result.priced) {
     return (
-      <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-        {result.reason}
-      </p>
+      <div className="space-y-2">
+        <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+          {result.reason}
+        </p>
+        <LicenceNote note={result.note} />
+      </div>
     );
   }
 
   const { quote, miles } = result;
   const minimumApplied = quote.billableHours > quote.requestedHours;
   return (
-    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-      <p className="font-semibold">
-        {money(quote.totalCents)} — {quote.billableHours}h at {money(quote.hourlyRateCents)}/hr
-      </p>
-      <p className="mt-1">
-        {quote.zone.label} band · {miles} miles from their base
-        {minimumApplied &&
-          ` · ${quote.requestedHours}h booked, billed at their ${quote.zone.minimumHours}h minimum`}
-      </p>
+    <div className="space-y-2">
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+        <p className="font-semibold">
+          {money(quote.totalCents)} — {quote.billableHours}h at {money(quote.hourlyRateCents)}/hr
+        </p>
+        <p className="mt-1">
+          {quote.zone.label} band · {miles} miles from their base
+          {minimumApplied &&
+            ` · ${quote.requestedHours}h booked, billed at their ${quote.zone.minimumHours}h minimum`}
+        </p>
+      </div>
+      <LicenceNote note={result.note} />
     </div>
+  );
+}
+
+/**
+ * Amber rather than red, and never on its own: a partner picking up outside
+ * the states they are licensed for is a thing to check, not a thing that is
+ * wrong. The price it sits under is still the price.
+ */
+function LicenceNote({ note }: { note: string | null }) {
+  if (!note) return null;
+  return (
+    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      {note}
+    </p>
   );
 }

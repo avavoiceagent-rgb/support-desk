@@ -167,6 +167,41 @@ export const OUT_OF_AREA = [
   { address: "Hotel du Pont, 42 W 11th St, Wilmington, DE 19801", state: "DE", lat: 39.746, lng: -75.547 },
 ] as const;
 
+/**
+ * Work in a partner's own city, which is the only kind those three ever get.
+ *
+ * Miami, Chicago and Los Angeles are 1,100, 700 and 2,450 miles from here.
+ * Nobody drives that: the customer flies and the partner in that city meets
+ * them. So the job we hand over starts at their airport and ends at their
+ * hotel, and their rate card is measured against a pickup a few miles from
+ * their own base — which is what a rate card is for.
+ *
+ * The near partners are different and deliberately not listed here.
+ * Philadelphia, Boston, Washington and Hartford are all inside the range a
+ * single car covers in a day, so a New York pickup for them is ordinary
+ * intercity work rather than a mistake.
+ */
+const AWAY_MARKETS = [
+  {
+    partner: "Biscayne Luxury Rides",
+    from: { address: "Miami International Airport, Miami, FL 33142", lat: 25.7959, lng: -80.287, state: "FL" },
+    to: { address: "The Setai, 2001 Collins Ave, Miami Beach, FL 33139", lat: 25.7987, lng: -80.1266, state: "FL" },
+  },
+  {
+    partner: "Windy City Executive",
+    from: { address: "O'Hare International Airport Terminal 5, Chicago, IL 60666", lat: 41.9786, lng: -87.9048, state: "IL" },
+    to: { address: "The Langham, 330 N Wabash Ave, Chicago, IL 60611", lat: 41.8885, lng: -87.6285, state: "IL" },
+  },
+  {
+    partner: "Pacific Coast Livery",
+    from: { address: "Los Angeles International Airport, Los Angeles, CA 90045", lat: 33.9416, lng: -118.4085, state: "CA" },
+    to: { address: "Beverly Wilshire, 9500 Wilshire Blvd, Beverly Hills, CA 90212", lat: 34.0669, lng: -118.4003, state: "CA" },
+  },
+] as const;
+
+/** Every seeded place, for the backfill that fills older rows. */
+export const AWAY_PLACES = AWAY_MARKETS.flatMap((m) => [m.from, m.to]);
+
 const CUSTOMERS = [
   { name: "Daniel Weiss", email: "d.weiss@northbridgecapital.example", company: "Northbridge Capital" },
   { name: "Helen Brooks", email: "h.brooks@arlingtonpartners.example", company: "Arlington Partners" },
@@ -371,17 +406,23 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
 
     for (let n = 0; n < tripsToday; n++) {
       const customer = rng.pick(CUSTOMERS);
-      const outOfArea = rng.chance(0.12);
-      const airportRun = !outOfArea && rng.chance(0.55);
+      // A job in a partner's own city, which they meet the customer for after
+      // a flight. Always theirs, never one of ours.
+      const away = rng.chance(0.05) ? rng.pick(AWAY_MARKETS) : null;
+      const outOfArea = !away && rng.chance(0.12);
+      // An away job is an airport pickup by definition.
+      const airportRun = away ? true : !outOfArea && rng.chance(0.55);
       const pickupHour = rng.int(5, 21);
       const pickupAt = date.set({ hour: pickupHour, minute: rng.pick([0, 15, 30, 45]) });
 
-      const destination = outOfArea
-        ? rng.pick(OUT_OF_AREA)
-        : airportRun
-          ? rng.pick(AIRPORTS)
-          : rng.pick(PICKUPS);
-      const origin = rng.pick(PICKUPS);
+      const destination = away
+        ? away.to
+        : outOfArea
+          ? rng.pick(OUT_OF_AREA)
+          : airportRun
+            ? rng.pick(AIRPORTS)
+            : rng.pick(PICKUPS);
+      const origin = away ? away.from : rng.pick(PICKUPS);
 
       // The occasional roadshow or crew move. Without these the company owns
       // two Sprinters that never turn a wheel, and the largest vehicle class
@@ -443,8 +484,8 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
       // only when — nobody is actually free. "We ran out of cars" now happens
       // because the rota says so rather than on a 6% coin flip, which is the
       // whole point of having a rota in the fixture at all.
-      const noVehicle = !outOfArea && pool.length === 0;
-      const farmedOut = outOfArea || noVehicle;
+      const noVehicle = !outOfArea && !away && pool.length === 0;
+      const farmedOut = outOfArea || Boolean(away) || noVehicle;
       let driver = pool.length ? rng.pick(pool) : null;
 
       // One deliberate exception, kept rare on purpose.
@@ -468,9 +509,21 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
         busy.set(driver.id, windows);
       }
 
-      const affiliate = outOfArea
-        ? rng.pick(insertedAffiliates.filter((a) => !a.overflowPartner))
-        : rng.pick(insertedAffiliates.filter((a) => a.overflowPartner));
+      // Who actually gets the work.
+      //
+      // This used to be any non-overflow partner at random, which is how a
+      // Miami firm came to be holding a New York to Washington job. A partner
+      // is chosen because they operate where the work is: for an away job
+      // that is their own city, and for a trip leaving the state it is the
+      // partner who covers the state it lands in.
+      const covering = (state: string) =>
+        insertedAffiliates.filter((a) => a.coverageStates.includes(state) && !a.overflowPartner);
+      const overflow = insertedAffiliates.filter((a) => a.overflowPartner);
+      const affiliate = away
+        ? insertedAffiliates.find((a) => a.company === away.partner)!
+        : outOfArea
+          ? (covering(destination.state).length ? rng.pick(covering(destination.state)) : rng.pick(overflow))
+          : rng.pick(overflow);
 
       const status = inPast
         ? rng.chance(0.04)
@@ -510,7 +563,7 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
         driverId: farmedOut ? null : (driver?.id ?? null),
         vehicleId: farmedOut ? null : (driver?.defaultVehicleId ?? null),
         affiliateId: farmedOut ? affiliate.id : null,
-        farmOutReason: outOfArea ? "OUT_OF_AREA" : noVehicle ? "NO_VEHICLE" : null,
+        farmOutReason: outOfArea || away ? "OUT_OF_AREA" : noVehicle ? "NO_VEHICLE" : null,
         notes: rng.chance(0.1) ? rng.pick(["Meet and greet requested", "Child seat required", "VIP — company director", "Quiet ride requested"]) : null,
       });
     }
