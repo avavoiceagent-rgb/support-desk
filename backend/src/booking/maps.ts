@@ -254,17 +254,52 @@ export function resolveServiceArea(
  * suffix. A leading name that adds something — a hotel, a building a driver
  * would look for — is kept, because that is useful at the kerb.
  */
+/**
+ * How much longer one part may be than the other and still count as the same
+ * thing said twice.
+ *
+ * "245 Park Avenue, 245 Park Ave" differ by three characters — an abbreviation,
+ * and the repetition this exists to remove. "Newark Liberty International
+ * Airport (EWR), Newark" differ by twenty-nine, and they are not the same
+ * thing at all: one is an airport, the other is the city it stands in.
+ *
+ * A bare prefix test could not tell them apart, and on 25 August it told a
+ * customer their car was taking them to "Newark, NJ 07114" — a postcode
+ * instead of the airport. The reservation had the airport all along; only the
+ * sentence the customer read had lost it.
+ */
+const SAME_PLACE_SLACK = 5;
+
+const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/i).filter(Boolean));
+
+/**
+ * Is everything the first part says already said by the second?
+ *
+ * The only safe reason to delete the leading name is that deleting it loses
+ * nothing. Two ways that can be true: every word of it reappears in the line
+ * after ("Terminal 4" inside "Terminal 4 Departures"), or the two are the same
+ * words with one abbreviated ("245 Park Avenue" and "245 Park Ave").
+ */
+function saysNothingNew(first: string, second: string): boolean {
+  const a = squash(first);
+  const b = squash(second);
+  if (!a) return false;
+
+  const mine = words(first);
+  const theirs = words(second);
+  if (mine.size > 0 && [...mine].every((w) => theirs.has(w))) return true;
+
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return longer.startsWith(shorter) && longer.length - shorter.length <= SAME_PLACE_SLACK;
+}
+
 export function tidyAddress(formatted: string): string {
   const withoutCountry = formatted.replace(/,\s*(?:USA|United States)\s*$/i, "").trim();
   const parts = withoutCountry.split(",").map((p) => p.trim()).filter(Boolean);
   if (parts.length < 2) return withoutCountry;
 
-  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const first = squash(parts[0]);
-  const second = squash(parts[1]);
-  const redundant = first.length > 0 && (second.startsWith(first) || first.startsWith(second));
-
-  return (redundant ? parts.slice(1) : parts).join(", ");
+  return (saysNothingNew(parts[0], parts[1]) ? parts.slice(1) : parts).join(", ");
 }
 
 /**

@@ -111,6 +111,7 @@ export function MessagesTab({
   );
 
   const [selected, setSelected] = useState<string>("");
+  const [search, setSearch] = useState("");
   const [messages, setMessages] = useState<DispatchMessage[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [body, setBody] = useState("");
@@ -124,6 +125,25 @@ export function MessagesTab({
     affiliates: Record<string, number>;
   }>({ drivers: {}, affiliates: {} });
   const bottom = useRef<HTMLDivElement>(null);
+
+  /**
+   * The list in two named halves, filtered by whatever has been typed.
+   *
+   * It used to be one unbroken scroll: sixteen drivers and then eleven
+   * partners, under a single grey "Drivers and partners" heading nobody reads.
+   * Amar asked for partners to be added to this screen — they had been here
+   * all along, sitting below a screenful of drivers. A feature you cannot find
+   * is a feature you do not have.
+   */
+  const groups = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const matches = (c: ContactOption) =>
+      !needle || c.label.toLowerCase().includes(needle) || c.detail.toLowerCase().includes(needle);
+    return [
+      { title: "Drivers", items: contacts.filter((c) => c.kind === "DRIVER" && matches(c)) },
+      { title: "Partners", items: contacts.filter((c) => c.kind === "AFFILIATE" && matches(c)) },
+    ];
+  }, [contacts, search]);
 
   useEffect(() => {
     if (!selected && contacts.length) setSelected(`${contacts[0].kind}:${contacts[0].id}`);
@@ -198,46 +218,65 @@ export function MessagesTab({
   return (
     <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
       <div className="rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
-        <p className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-          Drivers and partners
-        </p>
-        <div className="max-h-[32rem] overflow-y-auto">
-          {contacts.map((c) => {
-            const key = `${c.kind}:${c.id}`;
-            const waiting =
-              (c.kind === "DRIVER" ? pending.drivers[c.id] : pending.affiliates[c.id]) ?? 0;
-            return (
-              <button
-                key={key}
-                onClick={() => setSelected(key)}
-                className={`block w-full rounded-lg px-2 py-1.5 text-left transition-colors ${
-                  key === selected
-                    ? "bg-indigo-50 text-indigo-900"
-                    : waiting
-                      ? // Somebody owes us an answer. Marked on the list itself
-                        // because the alternative is clicking through fourteen
-                        // drivers to find the one holding a job up.
-                        "bg-amber-50/70 hover:bg-amber-50"
-                      : "hover:bg-gray-50"
-                }`}
-              >
-                <span className="flex items-center justify-between gap-2">
-                  <span className="truncate text-sm font-medium">{c.label}</span>
-                  {waiting > 0 && (
-                    <span
-                      className="shrink-0 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"
-                      title={`${waiting} ${waiting === 1 ? "offer" : "offers"} sent, no answer yet`}
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search drivers and partners"
+          className="mb-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+        />
+        <div className="max-h-[30rem] overflow-y-auto">
+          {groups.every((g) => g.items.length === 0) && (
+            <p className="px-2 py-3 text-sm text-gray-500">Nobody by that name.</p>
+          )}
+          {groups.map((group) =>
+            group.items.length === 0 ? null : (
+              <div key={group.title} className="mb-1">
+                {/* Sticky so the heading is still on screen after scrolling
+                    into the partners, which is where this went wrong. */}
+                <p className="sticky top-0 z-10 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  {group.title}
+                  <span className="ml-1 font-normal text-gray-400">{group.items.length}</span>
+                </p>
+                {group.items.map((c) => {
+                  const key = `${c.kind}:${c.id}`;
+                  const waiting =
+                    (c.kind === "DRIVER" ? pending.drivers[c.id] : pending.affiliates[c.id]) ?? 0;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setSelected(key)}
+                      className={`block w-full rounded-lg px-2 py-1.5 text-left transition-colors ${
+                        key === selected
+                          ? "bg-indigo-50 text-indigo-900"
+                          : waiting
+                            ? // Somebody owes us an answer. Marked on the list
+                              // itself because the alternative is clicking
+                              // through fourteen drivers to find the one
+                              // holding a job up.
+                              "bg-amber-50/70 hover:bg-amber-50"
+                            : "hover:bg-gray-50"
+                      }`}
                     >
-                      {waiting}
-                    </span>
-                  )}
-                </span>
-                <span className="block truncate text-[11px] text-gray-500">
-                  {waiting > 0 ? `Waiting on their answer · ${c.detail}` : c.detail}
-                </span>
-              </button>
-            );
-          })}
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium">{c.label}</span>
+                        {waiting > 0 && (
+                          <span
+                            className="shrink-0 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"
+                            title={`${waiting} ${waiting === 1 ? "offer" : "offers"} sent, no answer yet`}
+                          >
+                            {waiting}
+                          </span>
+                        )}
+                      </span>
+                      <span className="block truncate text-[11px] text-gray-500">
+                        {waiting > 0 ? `Waiting on their answer · ${c.detail}` : c.detail}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          )}
         </div>
       </div>
 

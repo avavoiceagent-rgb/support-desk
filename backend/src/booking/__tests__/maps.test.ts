@@ -302,3 +302,33 @@ describe("buildGeocodeUrl", () => {
     expect(messy).toContain("address=245+Park+Ave%2C+New+York");
   });
 });
+
+describe("tidyAddress keeps the name of the place", () => {
+  // 25 August, ticket #75. The reservation held the airport correctly and the
+  // email told the customer their car was taking them to "Newark, NJ 07114".
+  // A prefix test could not tell "Newark Liberty International Airport (EWR)"
+  // apart from an abbreviation of "Newark".
+  it("does not mistake an airport for the city it stands in", () => {
+    expect(
+      tidyAddress("Newark Liberty International Airport (EWR), Newark, NJ 07114, USA")
+    ).toBe("Newark Liberty International Airport (EWR), Newark, NJ 07114");
+  });
+
+  it("still keeps a hotel a driver would look for", () => {
+    expect(tidyAddress("The Ritz-Carlton, 50 Central Park S, New York, NY 10019, USA")).toBe(
+      "The Ritz-Carlton, 50 Central Park S, New York, NY 10019"
+    );
+  });
+
+  it("still drops a name the next line already contains", () => {
+    expect(tidyAddress("Terminal 4, Terminal 4 Departures, Jamaica, NY 11430")).toBe(
+      "Terminal 4 Departures, Jamaica, NY 11430"
+    );
+  });
+
+  it("still drops a street written twice with one abbreviated", () => {
+    expect(tidyAddress("245 Park Avenue, 245 Park Ave, New York, NY 10167, USA")).toBe(
+      "245 Park Ave, New York, NY 10167"
+    );
+  });
+});

@@ -39,6 +39,8 @@ describe("stop allowance", () => {
 describe("planPickup — domestic departure", () => {
   it("works back from the flight through the 2 hour rule and the drive", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: null,
       flightDepartsLocal: "2026-09-22T14:00",
       flightKind: "DOMESTIC",
@@ -54,6 +56,8 @@ describe("planPickup — domestic departure", () => {
 describe("planPickup — international departure", () => {
   it("uses the 3 hour rule", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: null,
       flightDepartsLocal: "2026-09-22T18:00",
       flightKind: "INTERNATIONAL",
@@ -66,6 +70,8 @@ describe("planPickup — international departure", () => {
 
   it("adds 15 minutes for a stop the customer did not put a time on", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: null,
       flightDepartsLocal: "2026-09-22T18:00",
       flightKind: "INTERNATIONAL",
@@ -80,6 +86,8 @@ describe("planPickup — international departure", () => {
 describe("planPickup — checking the time the customer asked for", () => {
   it("flags a requested pickup that would make them late, with the shortfall", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: "2026-09-22T15:00",
       flightDepartsLocal: "2026-09-22T18:00",
       flightKind: "INTERNATIONAL",
@@ -92,6 +100,8 @@ describe("planPickup — checking the time the customer asked for", () => {
 
   it("accepts a requested pickup with time to spare", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: "2026-09-22T13:00",
       flightDepartsLocal: "2026-09-22T18:00",
       flightKind: "INTERNATIONAL",
@@ -103,6 +113,8 @@ describe("planPickup — checking the time the customer asked for", () => {
 
   it("does not call it late when it lands exactly on the recommendation", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: "2026-09-22T13:45",
       flightDepartsLocal: "2026-09-22T18:00",
       flightKind: "INTERNATIONAL",
@@ -116,6 +128,8 @@ describe("planPickup — checking the time the customer asked for", () => {
 describe("planPickup — when we cannot finish the sum", () => {
   it("says it needs the departure time", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: "2026-09-22T09:00",
       flightDepartsLocal: null,
       flightKind: null,
@@ -127,6 +141,8 @@ describe("planPickup — when we cannot finish the sum", () => {
 
   it("says it needs to know domestic or international", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: null,
       flightDepartsLocal: "2026-09-22T18:00",
       flightKind: null,
@@ -138,6 +154,8 @@ describe("planPickup — when we cannot finish the sum", () => {
 
   it("says it needs the drive time when the addresses are not verified", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: null,
       flightDepartsLocal: "2026-09-22T18:00",
       flightKind: "INTERNATIONAL",
@@ -151,6 +169,8 @@ describe("planPickup — when we cannot finish the sum", () => {
 
   it("never claims a pickup time for a trip that is not an airport departure", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: "2026-09-22T09:00",
       flightDepartsLocal: null,
       flightKind: null,
@@ -167,6 +187,8 @@ describe("planPickup — daylight saving", () => {
   // plain wall-clock arithmetic gets this wrong.
   it("handles a flight the morning the clocks change", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: null,
       flightDepartsLocal: "2026-11-01T06:00",
       flightKind: "INTERNATIONAL",
@@ -183,6 +205,8 @@ describe("planPickup — daylight saving", () => {
   it("handles the spring forward, when 2am to 3am does not exist", () => {
     // Clocks jump forward at 2am on 8 March 2026.
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: null,
       flightDepartsLocal: "2026-03-08T07:00",
       flightKind: "DOMESTIC",
@@ -197,6 +221,8 @@ describe("planPickup — daylight saving", () => {
 describe("planPickup — rounding", () => {
   it("rounds the pickup down to the nearest 5 minutes, never later", () => {
     const plan = planPickup({
+      // The rule itself, without the cushion — see the block at the end.
+      bufferMinutes: 0,
       requestedPickupLocal: null,
       flightDepartsLocal: "2026-09-22T14:00",
       flightKind: "DOMESTIC",
@@ -228,6 +254,7 @@ describe("when only domestic-or-international is missing", () => {
     flightDepartsLocal: "2026-08-28T17:45",
     flightKind: null,
     driveMinutes: 40,
+    bufferMinutes: 0,
   };
 
   it("offers both answers instead of neither", () => {
@@ -283,5 +310,47 @@ describe("when only domestic-or-international is missing", () => {
       const offered = kind === "DOMESTIC" ? both.ifDomesticLocal : both.ifInternationalLocal;
       expect(offered).toBe(settled.recommendedPickupLocal);
     }
+  });
+});
+
+describe("the traffic cushion", () => {
+  // Newark, 25 August. The flight left at 4:20 PM, domestic check-in closed at
+  // 2:20 PM, Google said 16 minutes, and the pickup came out at 2:00 PM — four
+  // minutes of slack, and only because the time rounds down to five. Google's
+  // number is one estimate of one journey on one day.
+  const newark = {
+    requestedPickupLocal: null,
+    flightDepartsLocal: "2026-09-12T16:20",
+    flightKind: "DOMESTIC" as const,
+    driveMinutes: 16,
+  };
+
+  it("leaves earlier than the bare arithmetic, by default", () => {
+    expect(planPickup({ ...newark, bufferMinutes: 0 }).recommendedPickupLocal).toBe(
+      "2026-09-12T14:00"
+    );
+    // 2:20 PM − 16 min drive − 15 min cushion = 1:49, rounded down to 1:45.
+    expect(planPickup(newark).recommendedPickupLocal).toBe("2026-09-12T13:45");
+  });
+
+  it("does not move the check-in deadline, which is the airport's rule", () => {
+    // The cushion is ours. What the airport asks for is unchanged, and the
+    // draft explains the two separately.
+    expect(planPickup(newark).mustArriveAtLocal).toBe("2026-09-12T14:20");
+    expect(planPickup(newark).leadMinutes).toBe(120);
+  });
+
+  it("applies to both answers when the flight kind is still open", () => {
+    const open = planPickup({ ...newark, flightKind: null });
+    expect(open.ifDomesticLocal).toBe("2026-09-12T13:45");
+    expect(open.ifInternationalLocal).toBe("2026-09-12T12:45");
+  });
+
+  it("counts a customer's requested time as too late against the cushion too", () => {
+    // Asking for 2:00 PM used to be exactly on time. It is now fifteen minutes
+    // tighter than we are willing to run, and the draft has to say so.
+    const plan = planPickup({ ...newark, requestedPickupLocal: "2026-09-12T14:00" });
+    expect(plan.requestedIsTooLate).toBe(true);
+    expect(plan.shortfallMinutes).toBe(15);
   });
 });

@@ -22,6 +22,21 @@ export const INTERNATIONAL_LEAD_MINUTES = 180;
 /** What we allow for a stop the customer didn't put a duration on. */
 export const DEFAULT_STOP_MINUTES = 15;
 
+/**
+ * Traffic cushion on every airport run, on top of Google's drive time.
+ *
+ * There was none, and the Newark booking on 25 August is why there is now.
+ * The flight left at 4:20 PM, domestic check-in closed at 2:20 PM, Google said
+ * the drive was 16 minutes, and the pickup came out at 2:00 PM — four minutes
+ * of slack, and only because the time rounds down to five. Google's number is
+ * one estimate of one journey on one day. One incident on the turnpike and
+ * that passenger misses their flight.
+ *
+ * Fifteen minutes, which Amar chose. Early costs a wait in an airport; late
+ * costs the flight, and the two are not comparable.
+ */
+export const TRAFFIC_CUSHION_MINUTES = 15;
+
 /** Pickup times are rounded down to a tidy number so they read naturally. */
 const ROUND_DOWN_TO_MINUTES = 5;
 
@@ -41,8 +56,13 @@ export interface PickupPlanInput {
    */
   stopDurationsMinutes?: (number | null)[];
   /**
-   * Extra slack on top of the stated rule. Zero by default: the business rule
-   * is 2h/3h plus drive time, and quietly padding it would misrepresent it.
+   * Extra slack on top of the stated rule.
+   *
+   * Defaults to TRAFFIC_CUSHION_MINUTES rather than zero. It was zero, on the
+   * reasoning that padding the rule would misrepresent it — but the rule was
+   * never "leave at Google's estimate", it was "be at the airport in time",
+   * and a drive time with no cushion does not deliver it. Pass 0 explicitly
+   * to work out the bare arithmetic.
    */
   bufferMinutes?: number;
 }
@@ -55,6 +75,14 @@ export interface PickupPlan {
   leadMinutes: number | null;
   stopAllowanceMinutes: number;
   driveMinutes: number | null;
+  /**
+   * The traffic cushion this plan used, so the draft can explain it.
+   *
+   * A customer who asked for 2:00 PM and is offered 1:45 PM deserves to know
+   * the extra quarter hour is deliberate. Unexplained, it reads as the desk
+   * being careless with their afternoon.
+   */
+  bufferMinutes: number;
   /** True when the time the customer asked for would not get them there. */
   requestedIsTooLate: boolean;
   /** How much later than recommended the requested time is, in minutes. */
@@ -116,7 +144,7 @@ export function stopAllowance(stops: (number | null)[] = []): number {
 export function planPickup(input: PickupPlanInput): PickupPlan {
   const stops = input.stopDurationsMinutes ?? [];
   const stopAllowanceMinutes = stopAllowance(stops);
-  const buffer = input.bufferMinutes ?? 0;
+  const buffer = input.bufferMinutes ?? TRAFFIC_CUSHION_MINUTES;
 
   const requested = parseLocal(input.requestedPickupLocal);
   const departs = parseLocal(input.flightDepartsLocal);
@@ -151,6 +179,7 @@ export function planPickup(input: PickupPlanInput): PickupPlan {
       leadMinutes: input.flightKind ? leadMinutesFor(input.flightKind) : null,
       stopAllowanceMinutes,
       driveMinutes,
+      bufferMinutes: buffer,
       requestedIsTooLate: false,
       shortfallMinutes: null,
       missing,
@@ -176,6 +205,7 @@ export function planPickup(input: PickupPlanInput): PickupPlan {
     leadMinutes,
     stopAllowanceMinutes,
     driveMinutes,
+    bufferMinutes: buffer,
     requestedIsTooLate: shortfallMinutes !== null && shortfallMinutes > 0,
     shortfallMinutes,
     missing,

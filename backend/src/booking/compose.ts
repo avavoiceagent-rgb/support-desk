@@ -119,6 +119,13 @@ export function buildBrief(input: ComposeInput): string {
     if (plan.stopAllowanceMinutes > 0) {
       lines.push(`- Allowing ${plan.stopAllowanceMinutes} minutes for the stop(s) along the way.`);
     }
+    if (plan.bufferMinutes > 0 && plan.driveMinutes !== null) {
+      // Said out loud because the customer will notice the extra quarter hour
+      // and, unexplained, it reads as the desk being careless with their day.
+      lines.push(
+        `- Plus ${plan.bufferMinutes} minutes of our own on top of the drive, in case the traffic is worse than it looks today. Mention this: it is why the pickup is earlier than the bare arithmetic, and it is deliberate.`
+      );
+    }
     if (recommended) lines.push(`- Suggested pickup: ${recommended}.`);
     if (plan.requestedIsTooLate && plan.shortfallMinutes !== null) {
       lines.push(

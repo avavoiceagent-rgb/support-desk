@@ -51,8 +51,10 @@ describe("buildBrief", () => {
     });
     expect(b).toContain("3 hours before the flight");
     expect(b).toContain("about 50 minutes in current traffic");
-    // 18:00 flight − 3h = 15:00 at the airport, − 50 min drive = 14:10.
-    expect(b).toContain("Suggested pickup: Tuesday 22 September, 2:10 PM");
+    // 18:00 flight − 3h = 15:00 at the airport, − 50 min drive − the 15 min
+    // traffic cushion = 13:55.
+    expect(b).toContain("Suggested pickup: Tuesday 22 September, 1:55 PM");
+    expect(b).toContain("15 minutes of our own on top of the drive");
   });
 
   it("flags a pickup that would make them late, in the strongest terms available", () => {
@@ -65,7 +67,8 @@ describe("buildBrief", () => {
       }),
     });
     expect(b).toContain("IMPORTANT");
-    expect(b).toContain("50 minutes too late");
+    // 50 against the bare arithmetic, 65 once the cushion is in it.
+    expect(b).toContain("65 minutes too late");
   });
 
   it("includes the stop allowance when there is one", () => {

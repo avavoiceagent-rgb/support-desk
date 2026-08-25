@@ -218,12 +218,12 @@ describe("notes for the person reviewing", () => {
       requestedPickupLocal: "2026-09-22T15:00",
     });
     // 18:00 flight − 3h international rule = 15:00 at the airport, − the
-    // 50-minute drive this helper uses = a 14:10 pickup, so the 15:00 they
-    // asked for is 50 minutes too late.
-    expect(r.internalNotes.join(" ")).toContain("50 minutes too late");
-    // Spelled out for the dispatcher reading it, not the raw "2026-09-22T14:10".
-    expect(r.internalNotes.join(" ")).toContain("Tuesday 22 September, 2:10 PM");
-    expect(r.internalNotes.join(" ")).not.toContain("2026-09-22T14:10");
+    // 50-minute drive this helper uses − the 15-minute traffic cushion = a
+    // 13:55 pickup, so the 15:00 they asked for is 65 minutes too late.
+    expect(r.internalNotes.join(" ")).toContain("65 minutes too late");
+    // Spelled out for the dispatcher reading it, not the raw "2026-09-22T13:55".
+    expect(r.internalNotes.join(" ")).toContain("Tuesday 22 September, 1:55 PM");
+    expect(r.internalNotes.join(" ")).not.toContain("2026-09-22T13:55");
   });
 
   it("flags a stop with no stated duration", () => {
@@ -258,9 +258,10 @@ describe("a departure with the flight kind still open", () => {
     const r = review(apurva);
     const question = r.questions.find((q) => q.includes("domestic or international"));
     expect(question).toBeDefined();
-    // 5:45pm − 2h − 50 min drive, and an hour earlier for international.
-    expect(question).toContain("2:55 PM");
-    expect(question).toContain("1:55 PM");
+    // 5:45pm − 2h − 50 min drive − 15 min cushion, and an hour earlier again
+    // for international.
+    expect(question).toContain("2:40 PM");
+    expect(question).toContain("1:40 PM");
   });
 
   it("tells the desk which of the two the booking has been set to", () => {
@@ -268,8 +269,8 @@ describe("a departure with the flight kind still open", () => {
     const note = r.internalNotes.find((n) => n.includes("Flight kind not stated"));
     expect(note).toBeDefined();
     // The earlier one, so an unanswered email cannot make somebody late.
-    expect(note).toContain("1:55 PM");
-    expect(note).toContain("2:55 PM");
+    expect(note).toContain("1:40 PM");
+    expect(note).toContain("2:40 PM");
   });
 
   it("still asks for the date when there is no flight time either", () => {
