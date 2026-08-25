@@ -141,6 +141,13 @@
       "when": 1787845000000,
       "tag": "0019_partner_quotes",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787860000000,
+      "tag": "0020_flight_direction",
+      "breakpoints": true
     }
   ]
 }

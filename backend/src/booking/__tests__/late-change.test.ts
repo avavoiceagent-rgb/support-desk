@@ -90,3 +90,43 @@ describe("when it has nothing honest to say", () => {
     ).toBeNull();
   });
 });
+
+describe("a flight being met rather than caught", () => {
+  // Ticket #83. Daniel lands at 6:05 PM and the car is booked for 6:05 PM,
+  // which is exactly right — and the desk warned that it was "180 minutes too
+  // late for the 6:05 PM international flight". Read as a departure, the
+  // landing time became a check-in deadline three hours earlier.
+  const meeting = {
+    flightAt: at("2026-11-14T18:05"),
+    flightKind: null,
+    flightDirection: "ARRIVAL" as const,
+    allowanceMinutes: 0,
+  };
+
+  it("says nothing about collecting them when the plane lands", () => {
+    expect(lateChangeWarning({ ...meeting, pickupAtLocal: "2026-11-14T18:05" })).toBeNull();
+  });
+
+  it("says nothing about waiting for the bags either", () => {
+    // Later than the landing is ordinary on an arrival, not a fault.
+    expect(lateChangeWarning({ ...meeting, pickupAtLocal: "2026-11-14T18:45" })).toBeNull();
+  });
+
+  it("has no drive allowance to recover, because none was spent", () => {
+    expect(
+      allowanceFrom(at("2026-11-14T18:05"), at("2026-11-14T18:05"), null, "ARRIVAL")
+    ).toBe(0);
+  });
+
+  it("still warns on a departure, which is the case it exists for", () => {
+    expect(
+      lateChangeWarning({
+        flightAt: at("2026-09-03T17:45"),
+        flightKind: "INTERNATIONAL",
+        flightDirection: "DEPARTURE",
+        allowanceMinutes: 50,
+        pickupAtLocal: "2026-09-03T16:00",
+      })
+    ).toContain("125 minutes too late");
+  });
+});

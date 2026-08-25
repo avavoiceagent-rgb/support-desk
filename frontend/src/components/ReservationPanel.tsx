@@ -32,6 +32,7 @@ interface QuotedTrip {
   /** The flight the pickup was worked back from, so a change can be checked. */
   flightAt: string | null;
   flightKind: string | null;
+  flightDirection: string | null;
   pickupAt: string;
   bookedHours: number;
   vehicleClass: VehicleClass;
@@ -59,6 +60,8 @@ interface DraftFacts {
   /** The flight the pickup was worked back from. Absent on older drafts. */
   flightTimeLocal?: string | null;
   flightKind?: "DOMESTIC" | "INTERNATIONAL" | null;
+  /** ARRIVAL or DEPARTURE — a deadline to beat, or a plane to wait for. */
+  flightDirection?: "ARRIVAL" | "DEPARTURE" | null;
 }
 
 const CLASS_LABEL: Record<VehicleClass, string> = {
@@ -293,6 +296,7 @@ export function ReservationPanel({
       ? {
           flightAt: fromDateTimeInput(suggested.flightTimeLocal),
           flightKind: suggested.flightKind ?? null,
+          flightDirection: suggested.flightDirection ?? null,
           pickupAt: fromDateTimeInput(suggested.pickupAtLocal),
         }
       : null;
@@ -318,6 +322,7 @@ export function ReservationPanel({
         // the answer it produced.
         flightAtLocal: suggested?.flightTimeLocal ?? null,
         flightKind: suggested?.flightKind ?? null,
+        flightDirection: suggested?.flightDirection ?? null,
       });
       setTrip(made);
       setOpen(false);

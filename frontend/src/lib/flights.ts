@@ -28,13 +28,24 @@ export interface FlightBooking {
   /** ISO instant from the API. Null on a booking with no flight. */
   flightAt: string | null;
   flightKind: string | null;
+  /**
+   * ARRIVAL or DEPARTURE.
+   *
+   * The question this file asks — will they still make it — only exists for a
+   * departure. On an arrival the flight is not a deadline to beat; it is the
+   * thing the pickup waits for. Read as a departure, a 6:05 PM landing
+   * collected at 6:05 PM came out as three hours too late, in red, on a
+   * booking that was exactly right.
+   */
+  flightDirection?: string | null;
   /** The pickup as it stands, which is what the drive was built around. */
   pickupAt: string;
 }
 
 /** When they have to be at the airport, as an instant in milliseconds. */
 function deadlineMs(booking: FlightBooking): number | null {
-  if (!booking.flightAt) return null;
+  // Nothing to be late for. The plane sets the time and the driver waits.
+  if (!booking.flightAt || booking.flightDirection === "ARRIVAL") return null;
   const flight = new Date(booking.flightAt).getTime();
   return Number.isNaN(flight) ? null : flight - leadFor(booking.flightKind) * MINUTE;
 }

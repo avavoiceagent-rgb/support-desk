@@ -314,6 +314,9 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
           flightNumber: booking.flightNumber,
           flightTimeLocal: booking.flightTimeLocal,
           flightKind: booking.flightKind,
+          // Whether the flight is a deadline or a starting gun. Everything
+          // that reads a time off this booking later needs to know which.
+          flightDirection: booking.flightDirection,
         },
         status: "READY",
       })
@@ -442,6 +445,7 @@ export async function refreshFactsFromReply(ticketId: string): Promise<string[]>
       flightNumber: booking.flightNumber,
       flightTimeLocal: booking.flightTimeLocal,
       flightKind: booking.flightKind,
+      flightDirection: booking.flightDirection,
       // The time the customer names when they answer.
       //
       // Left out, and it was the one thing a reply most often carries: Adam

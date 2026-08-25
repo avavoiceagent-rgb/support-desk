@@ -26,6 +26,16 @@ export interface LateChangeInput {
   flightAt: Date | null;
   flightKind: FlightKind | null;
   /**
+   * ARRIVAL or DEPARTURE.
+   *
+   * The whole question here — "will they still make it" — only exists for a
+   * departure. On an arrival the flight is not a deadline the pickup has to
+   * beat; it is the thing the pickup waits for. Read as a departure, a 6:05 PM
+   * landing collected at 6:05 PM came out as three hours too late, which is
+   * what a dispatcher was shown.
+   */
+  flightDirection?: "ARRIVAL" | "DEPARTURE" | null;
+  /**
    * The drive, in minutes, as the booking was originally built.
    *
    * Recovered from the booking itself rather than asked of Google again: the
@@ -47,6 +57,8 @@ export interface LateChangeInput {
  */
 export function lateChangeWarning(input: LateChangeInput): string | null {
   if (!input.flightAt) return null;
+  // Nothing to be late for. The plane sets the time and the driver waits.
+  if (input.flightDirection === "ARRIVAL") return null;
 
   const pickup = DateTime.fromISO(input.pickupAtLocal, { zone: OPERATING_TIME_ZONE });
   if (!pickup.isValid) return null;
@@ -81,9 +93,10 @@ export function lateChangeWarning(input: LateChangeInput): string | null {
 export function allowanceFrom(
   pickupAt: Date,
   flightAt: Date | null,
-  flightKind: FlightKind | null
+  flightKind: FlightKind | null,
+  flightDirection?: "ARRIVAL" | "DEPARTURE" | null
 ): number {
-  if (!flightAt) return 0;
+  if (!flightAt || flightDirection === "ARRIVAL") return 0;
   const flight = DateTime.fromJSDate(flightAt).setZone(OPERATING_TIME_ZONE);
   const pickup = DateTime.fromJSDate(pickupAt).setZone(OPERATING_TIME_ZONE);
   const lead = leadMinutesFor(flightKind ?? "INTERNATIONAL");

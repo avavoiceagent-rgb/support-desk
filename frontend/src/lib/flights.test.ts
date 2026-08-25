@@ -114,3 +114,33 @@ describe("the create form, before any booking exists", () => {
     expect(lateChangeWarning(asDrafted, "2026-09-03T15:00")).toContain("65 minutes too late");
   });
 });
+
+describe("a flight being met rather than caught", () => {
+  // Ticket #83. Daniel lands at 6:05 PM, the car is booked for 6:05 PM, and
+  // the form warned in red that it was "180 minutes too late for the 6:05 PM
+  // international flight" — a landing time read as a check-in deadline.
+  const meeting: FlightBooking = {
+    flightAt: fromDateTimeInput("2026-11-14T18:05"),
+    flightKind: null,
+    flightDirection: "ARRIVAL",
+    pickupAt: fromDateTimeInput("2026-11-14T18:05"),
+  };
+
+  it("says nothing about collecting them when the plane lands", () => {
+    expect(lateChangeWarning(meeting, "2026-11-14T18:05")).toBeNull();
+  });
+
+  it("says nothing about waiting for the bags either", () => {
+    expect(lateChangeWarning(meeting, "2026-11-14T18:45")).toBeNull();
+  });
+
+  it("has no drive allowance to recover, because none was spent", () => {
+    expect(allowanceFrom(meeting)).toBe(0);
+  });
+
+  it("still warns on a departure, which is the case it exists for", () => {
+    expect(
+      lateChangeWarning({ ...booking, flightDirection: "DEPARTURE" }, "2026-09-03T16:00")
+    ).toContain("125 minutes too late");
+  });
+});

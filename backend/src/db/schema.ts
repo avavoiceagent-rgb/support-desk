@@ -183,6 +183,8 @@ export interface DraftFacts {
    */
   flightTimeLocal?: string | null;
   flightKind?: "DOMESTIC" | "INTERNATIONAL" | null;
+  /** ARRIVAL or DEPARTURE. Absent on drafts written before it was kept. */
+  flightDirection?: "ARRIVAL" | "DEPARTURE" | null;
 }
 
 export const ticketDrafts = pgTable("ticket_drafts", {
@@ -516,6 +518,16 @@ export const trips = pgTable(
      * settings change, and a price a customer was told must not move because
      * somebody edited a percentage six weeks later.
      */
+    /**
+     * ARRIVAL or DEPARTURE — which way this flight runs.
+     *
+     * The one bit that tells a booking whether its flight is a deadline or a
+     * starting gun. Without it the late-pickup check read a 6:05 PM landing
+     * as a 6:05 PM departure and told a dispatcher that collecting somebody
+     * when their plane touched down was three hours too late.
+     */
+    flightDirection: text("flight_direction"),
+
     partnerQuoteCents: integer("partner_quote_cents"),
     customerPriceCents: integer("customer_price_cents"),
 

@@ -96,6 +96,8 @@ export interface ReservationInput {
    */
   flightAtLocal?: string | null;
   flightKind?: "DOMESTIC" | "INTERNATIONAL" | null;
+  /** ARRIVAL or DEPARTURE — whether that flight is a deadline or a start. */
+  flightDirection?: "ARRIVAL" | "DEPARTURE" | null;
   notes?: string | null;
 }
 
@@ -178,6 +180,7 @@ export interface QuotedTrip {
    */
   flightAt: Date | null;
   flightKind: string | null;
+  flightDirection: string | null;
 }
 
 /**
@@ -211,6 +214,7 @@ export function quotedTripsFrom(context: {
       affiliateCompany: trip.affiliate?.company ?? null,
       flightAt: trip.flightAt,
       flightKind: trip.flightKind,
+      flightDirection: trip.flightDirection,
     }));
 }
 
@@ -309,6 +313,7 @@ export async function createReservationFromTicket(
     flightNumber: input.flightNumber ?? null,
     flightAt: flightAt?.isValid ? flightAt.toJSDate() : null,
     flightKind: input.flightKind ?? null,
+    flightDirection: input.flightDirection ?? null,
     pickupLat: from.lat,
     pickupLng: from.lng,
     pickupState: from.state,

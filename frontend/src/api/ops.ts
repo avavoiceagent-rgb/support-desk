@@ -210,6 +210,8 @@ export interface Trip {
   /** The flight this pickup was worked back from. Null on older bookings. */
   flightAt: string | null;
   flightKind: "DOMESTIC" | "INTERNATIONAL" | null;
+  /** ARRIVAL or DEPARTURE — a deadline to beat, or a plane to wait for. */
+  flightDirection: "ARRIVAL" | "DEPARTURE" | null;
   status: TripStatus;
   assignedKind: string;
   driverId: string | null;
