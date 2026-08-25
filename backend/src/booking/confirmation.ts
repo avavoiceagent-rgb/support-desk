@@ -76,14 +76,20 @@ export function detailLines(trip: ConfirmableTrip): string[] {
 
   lines.push(`Vehicle: ${CLASS_WORD[trip.vehicleClass] ?? trip.vehicleClass}`);
 
-  // Only when we were told. "0 passengers" on a confirmation reads as a
-  // mistake, because it is one.
+  // Only when we were told. A blank count is not a zero, and "0 passengers"
+  // on a confirmation reads as a mistake, because it is one.
+  //
+  // A real zero is written in words. "0 bags" is how a database talks; a
+  // customer travelling with nothing reads "no bags" and knows we listened.
+  const count = (n: number, one: string, many: string) =>
+    n === 0 ? `no ${many}` : `${n} ${n === 1 ? one : many}`;
+
   const party: string[] = [];
   if (typeof trip.passengerCount === "number") {
-    party.push(`${trip.passengerCount} ${trip.passengerCount === 1 ? "passenger" : "passengers"}`);
+    party.push(count(trip.passengerCount, "passenger", "passengers"));
   }
   if (typeof trip.luggageCount === "number") {
-    party.push(`${trip.luggageCount} ${trip.luggageCount === 1 ? "bag" : "bags"}`);
+    party.push(count(trip.luggageCount, "bag", "bags"));
   }
   if (party.length) lines.push(`Party: ${party.join(", ")}`);
 

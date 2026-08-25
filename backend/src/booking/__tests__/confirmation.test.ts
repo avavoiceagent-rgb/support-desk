@@ -62,6 +62,14 @@ describe("the confirmation email", () => {
     expect(lines.join(" ")).not.toContain("Party");
   });
 
+  it("writes a real zero in words", () => {
+    // "0 bags" is how a database talks. Live on T-10306 it read
+    // "3 passengers, 0 bags", which looks like something we failed to fill in.
+    const lines = detailLines(trip({ passengerCount: 3, luggageCount: 0 }));
+
+    expect(lines.join(" ")).toContain("Party: 3 passengers, no bags");
+  });
+
   it("says nothing about a flight when there is none", () => {
     const lines = detailLines(trip({ flightAt: null, flightNumber: null }));
 
