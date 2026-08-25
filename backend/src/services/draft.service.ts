@@ -25,6 +25,7 @@ import { DateTime } from "luxon";
 import { OPERATING_TIME_ZONE } from "../booking/pickup-time";
 import { emailFromHeader } from "../mail/address";
 import { stripQuotedReply } from "../mail/quoted";
+import { toModelText } from "../mail/body-text";
 import { mergeFacts, describeFactChanges } from "../booking/facts";
 import { implausible } from "../booking/plausible";
 import { bookingUpdateFrom } from "../booking/booking-update";
@@ -84,7 +85,10 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
     // --- 1. What did the email actually say? -----------------------------
     const booking = await extractBooking({
       subject: first.subject,
-      body: toPlainText(first.bodyHtml, first.bodyText),
+      // Lines intact, not flattened. The prompt tells the model a sign-off
+      // beats the mailbox display name, and a sign-off only looks like one
+      // while it still has a line to itself.
+      body: toModelText(first.bodyHtml, first.bodyText),
       fromAddress: first.fromAddress,
       receivedAt: first.sentAt,
     });
@@ -268,7 +272,18 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
           passengerPhone:
             booking.passengerPhone ??
             (booking.useBookerPhoneForPassenger ? booking.bookerPhone : null),
-          bookerName: booking.bookerName ?? ticket.requesterName ?? null,
+          // Only a name somebody actually established. `requesterName` is the
+          // mailbox display name, which is whoever owns the account rather
+          // than whoever wrote the email — a test booking signed "Priya
+          // Raman" came through as "Amar Pant" because the tester sends from
+          // his own Gmail. `questions.ts` already confirms `Booker:` from the
+          // extracted name alone; this is the same rule, applied where the
+          // value is stored rather than where it is asked about.
+          //
+          // The greeting a few lines up keeps its fallback on purpose: being
+          // addressed by the name on the mailbox is what any reply would do,
+          // and it is not written down anywhere as a fact about the booking.
+          bookerName: booking.bookerName ?? null,
           // Parsed, never the raw header. `booker_email` is matched with
           // `lower(...) = ...` when a customer's history is looked up, so
           // storing "Ana Costa <ana@…>" means those trips never surface for
@@ -424,7 +439,11 @@ export async function refreshFactsFromReply(ticketId: string): Promise<string[]>
     // stored facts already came from.
     if (!latest || inbound.length < 2) return [];
 
-    const said = stripQuotedReply(toPlainText(latest.bodyHtml, latest.bodyText));
+    // `stripQuotedReply` splits on newlines. Handed flattened text it saw one
+    // line, matched nothing, and returned the whole thing — so every re-read
+    // was fed our own quoted draft as though the customer had written it,
+    // including the greeting we addressed to a name we had guessed.
+    const said = stripQuotedReply(toModelText(latest.bodyHtml, latest.bodyText));
     if (!said) return [];
 
     const booking = await extractBooking({
