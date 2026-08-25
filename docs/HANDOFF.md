@@ -704,6 +704,213 @@ range.
 
 ---
 
+## Where things stand — 25 August
+
+Live on Railway, deployed and verified: commit *"Guard quoted references and
+stale offers; add roster top-up tool"*. `extend-roster` has been run against
+production — 8 vehicles, 15 drivers, 16 partners, 64 rate bands, 7,965 shifts,
+rostered through **25 August 2027**.
+
+653 backend tests pass. Both typechecks clean. Frontend builds.
+
+### What shipped
+
+**A quoted reference now has to belong to the sender.** Our references start at
+T-10000 and INV-10000, which is exactly the five-digit space airline and hotel
+confirmation numbers occupy, and `extractReferences` takes a third party's
+label at face value: "Booking reference 10432 — Delta DL2801" resolved to
+T-10432. A customer forwarding their own airline confirmation was enough to
+attach a stranger's booking to their ticket — passenger name, both addresses,
+the flight, and the whole dispatch thread underneath. Confirmed against the
+live desk, not reasoned about.
+
+`bookedBy` and `theirBooking` in `ops/lookup.ts` are the guard; `billedTo` is
+the same for invoices. Both `tripsThisTicketIsAbout` and `getOpsContext` run
+quoted references through it, and a booking that is not theirs is reported as
+a reference we could not find rather than silently dropped.
+
+`theirBooking` allows a second proof — the ticket the trip was created from was
+raised by the sender — because a booking typed into the Reservations screen
+often has no `bookerEmail` at all, and refusing those hid a customer's own trip
+from their own follow-up. That case is the one existing test that failed when
+the guard first went in, and it was the test that was right.
+
+**`respondToOffer` refuses a yes that has been overtaken.** Three contacts are
+asked, the second says yes and is assigned, the third says yes an hour later —
+nothing in the offer sitting in their inbox knows. It ran straight through
+`updateTrip` and took the job off whoever held it, with both threads reading as
+accepted. Now refused, across both kinds, so a partner cannot take a job a
+driver holds either. Same for a cancelled booking. Declining still works in
+both cases, so a thread can always be closed.
+
+**`findAvailableDrivers` bounds the clash search by the window, not the UTC
+calendar date.** Two separate bugs in one line. An evening booking runs past
+midnight, so a clash early the next morning fell outside the old bounds and the
+driver came back marked free. And `tripsThatDay` — the figure the list sorts on
+— was sliced at midnight UTC, which in New York is 8pm the evening before, so a
+9pm booking counted against a day the driver would not recognise. Now
+`LONGEST_BOOKING_HOURS` back from the window start, and the day is
+`OPERATING_TIME_ZONE`.
+
+**`pendingOfferCounts` counts unanswered quote requests too.** It filtered
+`kind = "OFFER"`, which is the whole of a driver's side of the conversation but
+only the back half of a partner's — a partner is sent a QUOTE_REQUEST first and
+an OFFER only once the money is agreed. So every partner sitting on an
+unanswered rate request showed no badge while drivers showed theirs. Amar spotted
+it from the screen.
+
+**New: `backend/src/db/extend-roster.ts`, `npm run roster:extend`.**
+
+This one is worth reading before touching the fleet fixtures. The reported
+symptom was "we keep running short of drivers"; the cause was not the number of
+drivers. `seed-ops` rosters `now-30d` to `now+14d`, so shifts ended 5 September
+and every test booking past that fell off the rota and farmed out. Adding
+drivers would have changed nothing. Verified live before writing anything.
+
+`extend-roster` is purely additive — it never deletes, is safe to run again, and
+touches no trip, invoice, ticket or message. `seed-ops --reset` remains
+unusable on a database in use because it deletes every trip.
+
+It also fixes two real fixture faults:
+
+- The seed handed cars out one driver each, so every van and sprinter had
+  exactly one driver — on the road about a third of the week. Both sprinter
+  drivers happened to draw morning starts, so every sprinter was off the road
+  by 5pm and a 9pm booking for fourteen people found nobody, every day.
+- Thirteen states and DC were covered by partners. A real ticket asked for
+  Oklahoma City and there was nobody to ask at all. Now every state is covered,
+  several by two so a rate request has somebody to lose.
+
+Start hours and rest days are **computed**, not picked — `spreadShifts`, a
+greedy leximin over the week's 168 hours. Two things learned the hard way and
+written into the comments: an eleven-hour shift is only usable for about seven
+hours of work once you allow for getting there and finishing, and comparing
+candidates on the single worst hour alone is degenerate when full cover is
+impossible (every candidate ties at zero, and everybody gets handed midnight).
+The test checks the result by asking `findAvailableDrivers`, not by trusting the
+arithmetic. Past the seeded fortnight, every hour of every day of the week has a
+car of every class free.
+
+`patternsFor` reads each existing driver's pattern off their own shifts so the
+rota continues rather than restarting. Note the trap: the seed drifts each start
+by ±1 hour, so the **commonest** hour in a driver's history is a coin toss
+between three — `usualStartHour` takes a circular mean instead. Driver insertion
+order cannot be relied on either; the seed inserts them in one statement, so they
+share a `createdAt` and come back in whatever order the database likes. That is
+why the hour is read from the shifts and not from a position in a list.
+
+### Open
+
+- ~~Check `docs/DEPLOY_RAILWAY.md` is committed.~~ **Done** — it went in with
+  the deploy commit (`7cb4e8e`), verified on Amar's disk.
+- **Booker name comes from the wrong place.** Priya Raman's booking came through
+  as "Amar Pant" — the sender's Gmail display name is not being read.
+- **Nobody tells the partners who lost.** Garden State Chauffeur is still
+  holding a quote request for a job Metro won. There is no "tell the others"
+  action anywhere.
+- **A confirmation email can be sent before any partner has accepted.** Nothing
+  gates it on the trip actually being covered.
+- **`leavesTheArea` decides out-of-area from the drop-off alone**
+  (`ops/candidates.ts` ~line 99), and its own comment says it reads the stored
+  decision when the code directly below re-derives it from a local
+  `HOME_STATES` list. Both halves are wrong, and the second is the dangerous
+  one: a **Philadelphia pickup returning to Manhattan** has `dropoffState: "NY"`
+  and reads as ordinary local work, so `candidatesForTrip` offers one of our own
+  drivers a 95-mile run into Pennsylvania and back. `trips.pickupState` exists
+  and is simply never consulted. There is also no stored INTERNAL/EXTERNAL flag
+  on a trip for the comment to be describing, so the comment is doubly untrue.
+  Found by the Cowork session on 25 August; confirmed by reading the file.
+- **`lastSpokeTo` has no direction filter** (`ops/dispatch.ts` ~line 424). It
+  returns the newest dispatch row for the contact whatever its direction, so a
+  driver tapping Accept on the offer already sitting on their phone marks them
+  as *told* about a change they never saw — and `toldOfLatest` on the
+  Reservations screen then reads green. It should count outbound only.
+- **Rotate the Google Maps API key.** Amar only.
+- **Railway credit.** $4.17 / 7 days as of this afternoon, for the whole
+  project. When it runs out the desk stops.
+- Findings 3, 5, 6, 7, 8 from the 24 August review, and the "Smaller, same
+  review" list above, are all still open.
+
+### Corrections to what is written above in this file
+
+- `pendingResponse` was renamed and its race closed some time ago; item 14's
+  first two bullets are stale. The accept-twice race is now handled by
+  `insertAnswer` translating the `dispatch_one_answer_per_offer` unique
+  violation into a 409, so the check-then-act is backed by a constraint.
+
+---
+
+## Task — 25 August: a guessed booker name is stated as fact
+
+**The symptom Amar saw.** A test booking whose email was signed "Priya Raman"
+came through the desk as **Amar Pant** — Amar's own mailbox display name, since
+the mail-tester sends every scenario from his Gmail.
+
+**What I could and could not establish.** I read the path; I could not run the
+extractor, because the Anthropic key lives in Railway and neither of us has it.
+So treat the diagnosis below as traced, not proven, and correct me if the code
+says otherwise.
+
+The name reaches the customer down two separate paths in `draft.service.ts`, and
+only one of them is a problem:
+
+    // ~line 226 — the greeting
+    customerName: booking.bookerName ?? ticket.requesterName ?? nameFromAddress(first.fromAddress)
+
+    // ~line 271 — stored on the draft, and carried onto the trip
+    bookerName: booking.bookerName ?? ticket.requesterName ?? null
+
+The greeting is defensible: addressing a reply to the mailbox it came from is
+what anybody would do, and being wrong there is a mild awkwardness.
+
+The second is not. `facts.bookerName` becomes the reservation's Booked-by field
+and is printed in the confirmation email by `booking/confirmation.ts`, so a name
+guessed from an email header leaves the building as a statement of fact. That is
+the rule in CLAUDE.md — *never invent a fact for a customer* — and the codebase
+already agrees with itself about this everywhere else:
+
+- `reviewBooking` in `booking/questions.ts` confirms `Booker: X` **only** from
+  `booking.bookerName`, the extracted one. It never touches the envelope. So the
+  questions layer treats the mailbox name as not-a-fact while the facts snapshot
+  treats it as one, and they are describing the same booking.
+- `bookerEmail` two lines below has exactly the right instinct written into its
+  comment: *"Null when it cannot be parsed: not knowing is recoverable, a wrong
+  key is not."*
+
+**What I think should change**, though you are closer to the code than I am:
+
+`facts.bookerName` should carry only a name somebody actually established —
+`booking.bookerName`, or null. If the envelope name is worth having, it belongs
+somewhere that marks it as unconfirmed, so Adam asks *"am I right that you're
+booking this on behalf of Ms Costa?"* rather than asserting it. What it must not
+do is arrive at the customer inside a confirmation as though they had said it.
+
+**The second half, which is the more interesting one.** The comment above line
+226 says the sign-off beats the mailbox display name, and the `??` chain does
+exactly that — *provided extraction returns something*. The observed result
+means `booking.bookerName` came back null for an email signed "Priya Raman", and
+`extract.ts` has a prompt that explicitly says the sign-off wins. Work out why.
+Read the prompt and the schema around lines 96 and 118 and say what you find,
+even if the answer is "the prompt is fine and this needs a live run to catch".
+Do not paper over it by making the fallback smarter — that would hide the
+failure rather than fix it.
+
+**Before you start:** check whether the greeting should change at all. I have
+argued it should not. If you disagree, say so instead of changing it.
+
+**Notes.** The DB tests do not run on your machine — that is the environment,
+not you; check the failures are refused connections rather than assertions.
+`npx tsc --noEmit` must pass. Amar's working copy often carries uncommitted
+files from this session, so read `git status` before committing and ask him
+about anything you did not write.
+
+## Reply — 25 August
+
+_(Claude Code: replace this with what you actually did, including anything you
+disagreed with, could not verify, or deliberately left alone.)_
+
+---
+
 ## Notes that still apply
 
 - **The database tests can't run on the Claude Code machine.** They need
@@ -715,10 +922,25 @@ range.
   `node backend/dist/db/seed-ops.js --reset` in Railway's Console tab — not
   `npm run seed:ops`, which only exists in `backend/package.json` while the
   console opens at the repo root, and which would need `tsx` that the
-  production image does not carry.
+  production image does not carry. The same applies to the rota top-up:
+  `node backend/dist/db/extend-roster.js --days 365`. That one is additive and
+  safe to repeat; `seed-ops --reset` is not, and deletes every trip.
+  `docs/DEPLOY_RAILWAY.md` now has this written down for Amar in plain language.
 - **Amar pushes.** The Cowork session writes files onto his disk through the
   desktop bridge and he commits them in GitHub Desktop. It has no push rights
   to the repo and never has.
-- **Line endings.** His working copy is CRLF and the repo is LF, which is
-  Windows Git doing its job. `git status` from a Linux view shows every file as
-  modified; ignore it.
+- **Line endings — and do not just "ignore it".** His working copy is CRLF and
+  the repo is LF, so `git status` from a Linux view shows a wall of modified
+  files that are not modified at all. The advice here used to end at "ignore
+  it", and on 25 August that cost us: a session read the wall, declared the
+  disk clean, and missed 197 genuinely uncommitted lines in this very file plus
+  an untracked `docs/NEXT_SESSION.md`. Dismissing the noise means dismissing
+  whatever real work is standing in it.
+
+  Ask a question the noise cannot answer:
+
+        git diff --stat --ignore-all-space HEAD    # real content changes only
+        git ls-files --others --exclude-standard   # new files, never noise
+
+  An empty result from both is a clean tree. A wall from plain `git status` is
+  not evidence of anything either way.

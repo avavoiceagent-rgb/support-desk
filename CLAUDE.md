@@ -119,6 +119,10 @@ wrote, watch Railway, and run the full test suite against a real Postgres — bu
 it cannot push to GitHub or delete files here. This session can do all of those
 and none of the former.
 
+`docs/NEXT_SESSION.md` holds the prompts Amar pastes to start either session,
+one per Claude. It is for him, not for you — but keep it true if you change how
+a session has to be set up.
+
 The two cannot message each other. `docs/HANDOFF.md` is the channel: a task is
 written there, Amar says "read docs/HANDOFF.md and do it", and the reply goes
 back into the same file and gets committed. Read that file before starting such

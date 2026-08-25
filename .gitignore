@@ -3,3 +3,8 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Claude Code's per-machine tool permissions. Local to whoever is sitting at
+# the keyboard, so it is not the repo's business. A shared .claude/settings.json
+# or a skill would be, which is why this ignores the one file and not the folder.
+.claude/settings.local.json
