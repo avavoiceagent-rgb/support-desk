@@ -285,4 +285,74 @@ describe("getOpsContext", () => {
     expect(context?.senderEmail).toBeNull();
     expect(context?.trips).toEqual([]);
   });
+
+  it("will not hand somebody else's booking to whoever quotes the number", async () => {
+    // Our references start at T-10000, which is exactly the five-digit space
+    // airline and hotel confirmation numbers occupy, and the extractor takes a
+    // third party's label at face value. Forwarding your own Delta
+    // confirmation was enough to pull a stranger's passenger name, both
+    // addresses and their whole dispatch thread onto your ticket.
+    await makeTrip({ bookerEmail: "daniel@somebodyelse.example" });
+    const ticket = await makeTicketWithEmail({
+      subject: "My flight",
+      body: "Booking reference 10432 — Delta DL2801, landing at six.",
+    });
+
+    const context = await getOpsContext(ticket.id);
+    expect(context?.trips).toEqual([]);
+    // Treated as a reference we could not find, rather than vanishing.
+    expect(context?.unresolvedReferences).toContain("T-10432");
+  });
+
+  it("still shows the sender their own booking when they quote it", async () => {
+    await makeTrip({ bookerEmail: "ana@customer.example" });
+    const ticket = await makeTicketWithEmail({
+      subject: "Change to T-10432",
+      body: "Could we move T-10432 an hour later?",
+    });
+
+    const context = await getOpsContext(ticket.id);
+    expect(context?.trips.map((t) => t.trip.reference)).toContain("T-10432");
+    expect(context?.trips.find((t) => t.trip.reference === "T-10432")?.reason).toBe(
+      "QUOTED_IN_EMAIL"
+    );
+  });
+
+  it("counts a booking as theirs when it came from a ticket they raised", async () => {
+    // A booking typed straight into the Reservations screen often carries no
+    // address at all. Refusing those would hide a customer's own trip from
+    // their own follow-up — the guard doing damage rather than preventing it.
+    const first = await makeTicketWithEmail({ subject: "Car to JFK", body: "Need a car Friday." });
+    await makeTrip({ bookerEmail: null, ticketId: first.id });
+
+    const ticket = await makeTicketWithEmail({
+      subject: "Change to T-10432",
+      body: "Could we move T-10432 an hour later?",
+    });
+
+    const context = await getOpsContext(ticket.id);
+    expect(context?.trips.map((t) => t.trip.reference)).toContain("T-10432");
+  });
+
+  it("will not hand over an invoice billed to somebody else either", async () => {
+    const trip = await makeTrip({ bookerEmail: "daniel@somebodyelse.example" });
+    await db.insert(invoices).values({
+      reference: "INV-10432",
+      tripId: trip.id,
+      billToName: "Daniel Weiss",
+      billToEmail: "daniel@somebodyelse.example",
+      issuedOn: daysFromNow(-1),
+      subtotalCents: 114_000,
+      totalCents: 114_000,
+    });
+
+    const ticket = await makeTicketWithEmail({
+      subject: "Query",
+      body: "About invoice 10432 — I think it is wrong.",
+    });
+
+    const context = await getOpsContext(ticket.id);
+    expect(context?.invoices).toEqual([]);
+    expect(context?.unresolvedReferences).toContain("INV-10432");
+  });
 });

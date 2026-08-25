@@ -324,3 +324,92 @@ describe("an offer gets one answer", () => {
     );
   });
 });
+
+describe("an offer that has been overtaken", () => {
+  beforeEach(reset);
+
+  it("refuses a yes for a job somebody else already has", async () => {
+    // Three drivers are asked, the second says yes and is assigned, and an
+    // hour later the third says yes as well — nothing in the offer sitting in
+    // their inbox knows the job has gone. Left alone this ran straight through
+    // updateTrip and quietly took the booking off the driver who had it, and
+    // both threads then read as accepted. Two cars, one job, no sign of it.
+    const first = await makeDriver("Marco Rinaldi");
+    const second = await makeDriver("Amrit Singh");
+    const trip = await makeTrip();
+    const actor = await actorFor(undefined);
+
+    const toFirst = await sendOffer({ contact: { kind: "DRIVER", id: first.id }, tripId: trip.id, actor });
+    const toSecond = await sendOffer({ contact: { kind: "DRIVER", id: second.id }, tripId: trip.id, actor });
+
+    await respondToOffer({ offerId: toSecond.id, accept: true, actor });
+
+    await expect(respondToOffer({ offerId: toFirst.id, accept: true, actor })).rejects.toThrow(
+      /already been covered/
+    );
+    expect((await record(trip.id)).driverId).toBe(second.id);
+  });
+
+  it("refuses a partner's yes for a job one of our own drivers has", async () => {
+    // The check has to look at both sorts. A job can have a driver offer still
+    // outstanding from before it was farmed out, and the partner accepting
+    // afterwards would take it off him.
+    const driver = await makeDriver("Marco Rinaldi");
+    const [partner] = await db.insert(affiliates).values({
+      company: "Metro Overflow Group", phone: "+1 718 555 0198", email: "d@metro.example",
+    }).returning();
+    const trip = await makeTrip();
+    const actor = await actorFor(undefined);
+
+    const toPartner = await sendOffer({ contact: { kind: "AFFILIATE", id: partner.id }, tripId: trip.id, actor });
+    const toDriver = await sendOffer({ contact: { kind: "DRIVER", id: driver.id }, tripId: trip.id, actor });
+
+    await respondToOffer({ offerId: toDriver.id, accept: true, actor });
+
+    await expect(respondToOffer({ offerId: toPartner.id, accept: true, actor })).rejects.toThrow(
+      /already been covered/
+    );
+  });
+
+  it("still lets the driver who holds it accept a re-offer", async () => {
+    // A booking that moves is offered again to the person already on it, and
+    // saying yes to the new time must not be mistaken for stealing the job
+    // from themselves.
+    const driver = await makeDriver("Marco Rinaldi");
+    const trip = await makeTrip();
+    const actor = await actorFor(undefined);
+
+    const first = await sendOffer({ contact: { kind: "DRIVER", id: driver.id }, tripId: trip.id, actor });
+    await respondToOffer({ offerId: first.id, accept: true, actor });
+
+    const again = await sendOffer({ contact: { kind: "DRIVER", id: driver.id }, tripId: trip.id, actor });
+    const { trip: after } = await respondToOffer({ offerId: again.id, accept: true, actor });
+    expect(after?.driverId).toBe(driver.id);
+  });
+
+  it("refuses a yes for a booking the customer has cancelled", async () => {
+    // Nobody should be told they are on a trip that is not happening.
+    const driver = await makeDriver("Marco Rinaldi");
+    const trip = await makeTrip();
+    const actor = await actorFor(undefined);
+
+    const offer = await sendOffer({ contact: { kind: "DRIVER", id: driver.id }, tripId: trip.id, actor });
+    await db.update(trips).set({ status: "CANCELLED" }).where(eq(trips.id, trip.id));
+
+    await expect(respondToOffer({ offerId: offer.id, accept: true, actor })).rejects.toThrow(
+      /cancelled/
+    );
+  });
+
+  it("still lets them decline a cancelled job, so the thread closes", async () => {
+    const driver = await makeDriver("Marco Rinaldi");
+    const trip = await makeTrip();
+    const actor = await actorFor(undefined);
+
+    const offer = await sendOffer({ contact: { kind: "DRIVER", id: driver.id }, tripId: trip.id, actor });
+    await db.update(trips).set({ status: "CANCELLED" }).where(eq(trips.id, trip.id));
+
+    const { message } = await respondToOffer({ offerId: offer.id, accept: false, actor });
+    expect(message.kind).toBe("DECLINE");
+  });
+});

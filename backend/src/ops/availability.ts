@@ -10,8 +10,10 @@
 // overlaps it. A flag on the driver would be wrong the moment a trip moved.
 
 import { and, asc, eq, gte, lte, ne, or, sql } from "drizzle-orm";
+import { DateTime } from "luxon";
 import { db } from "../db/client";
 import { affiliates, driverShifts, drivers, trips, vehicles } from "../db/schema";
+import { OPERATING_TIME_ZONE } from "../booking/pickup-time";
 
 export type VehicleClass = "SEDAN" | "SUV" | "VAN" | "SPRINTER";
 
@@ -78,6 +80,16 @@ export interface AvailableDriver {
 const DEFAULT_BUFFER_MINUTES = 45;
 
 /**
+ * How far back the clash search has to reach.
+ *
+ * A trip that started before the window can still be in the middle of it, and
+ * a booking is only found by its pickup time. Nothing here is booked for more
+ * than a day; a longer one would need this raised, and the failure would be a
+ * driver shown as free while they are out on it.
+ */
+const LONGEST_BOOKING_HOURS = 24;
+
+/**
  * Drivers who could take this trip, in the order a dispatcher would consider
  * them: least busy first, so the work spreads.
  */
@@ -114,12 +126,29 @@ export async function findAvailableDrivers(query: AvailabilityQuery): Promise<Av
 
   if (rows.length === 0) return [];
 
-  // One query for every trip that could clash, rather than one per driver.
-  const dayStart = new Date(query.pickupAt);
-  dayStart.setUTCHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+  // The driver's day, not the server's.
+  //
+  // This used to slice the day with setUTCHours(0), which in New York is 8pm
+  // the evening before. A 9pm pickup counted against the following day, so the
+  // "trips that day" figure a dispatcher sorts on was for a day the driver
+  // does not recognise.
+  const day = DateTime.fromJSDate(query.pickupAt).setZone(OPERATING_TIME_ZONE).startOf("day");
+  const dayStart = day.toJSDate();
+  const dayEnd = day.plus({ days: 1 }).toJSDate();
 
-  const sameDayTrips = await db
+  // One query for every trip that could clash, rather than one per driver.
+  //
+  // Bounded by the window we actually care about, not by the calendar day.
+  // The old bounds were the pickup's day give or take one, which quietly
+  // missed both ends: a late-evening pickup runs past midnight, so a clash
+  // early the next morning fell outside them, and the driver came back marked
+  // free. Widened at the start by the longest booking anyone takes, because a
+  // trip that STARTS before the window can still be running inside it.
+  const clashFrom = new Date(windowStart.getTime() - LONGEST_BOOKING_HOURS * HOUR_MS);
+  const searchFrom = new Date(Math.min(clashFrom.getTime(), dayStart.getTime()));
+  const searchTo = new Date(Math.max(windowEnd.getTime(), dayEnd.getTime()));
+
+  const nearbyTrips = await db
     .select({
       id: trips.id,
       driverId: trips.driverId,
@@ -129,15 +158,15 @@ export async function findAvailableDrivers(query: AvailabilityQuery): Promise<Av
     .from(trips)
     .where(
       and(
-        gte(trips.pickupAt, new Date(dayStart.getTime() - 86_400_000)),
-        lte(trips.pickupAt, dayEnd),
+        gte(trips.pickupAt, searchFrom),
+        lte(trips.pickupAt, searchTo),
         ne(trips.status, "CANCELLED")
       )
     );
 
   const clashes = new Map<string, number>();
   const dayCount = new Map<string, number>();
-  for (const trip of sameDayTrips) {
+  for (const trip of nearbyTrips) {
     if (!trip.driverId) continue;
     if (query.excludeTripId && trip.id === query.excludeTripId) continue;
     if (trip.pickupAt >= dayStart && trip.pickupAt < dayEnd) {

@@ -10,6 +10,11 @@
 //
 // Run with:  npm run seed:ops -- --reset
 //
+// This one is for a fresh database. It refuses to run twice without --reset,
+// and --reset deletes every trip. To keep a database that is already in use
+// going — more rota, more cars, more of the map — use `extend-roster.ts`,
+// which only ever inserts.
+//
 // Everything is hourly ("as directed"), which is how this company charges.
 
 import { sql } from "drizzle-orm";
@@ -223,6 +228,103 @@ export interface SeedSummary {
   invoices: number;
 }
 
+// --- The rota ---------------------------------------------------------------
+//
+// A rota, not a rubber stamp — and exported, because `extend-roster.ts` has to
+// carry the same one forward past the end of the seeded window without
+// inventing a second set of working patterns.
+
+/** How long a driver is on for. */
+export const SHIFT_HOURS = 11;
+
+/**
+ * The two weekdays this driver is off. Staggered by index so cover never
+ * collapses: everybody resting on Sunday is a fleet with no Sunday.
+ */
+export function restDays(driverIndex: number): [number, number] {
+  return [(driverIndex % 7) + 1, ((driverIndex + 3) % 7) + 1];
+}
+
+/**
+ * The hour a driver normally starts.
+ *
+ * Starts spaced two hours apart right around the clock. Eleven-hour shifts
+ * every two hours means roughly five drivers are on at any moment, including
+ * 3am, which is when airport work actually happens. The first pass ran 5am to
+ * 7pm and left the ends of the day bare: a 9pm booking had two drivers in the
+ * whole company who could take it, so a third of the month farmed out for no
+ * reason a dispatcher would recognise.
+ *
+ * Stepped by 5 rather than read straight off the index, and that detail is the
+ * whole point. Drivers get their car by index too, so reading the hours in
+ * order tied class to time of day: both van drivers landed on night shifts and
+ * every afternoon van booking in the month farmed out for want of a driver who
+ * was never rostered. 5 and 16 share no factor, so each class ends up spread
+ * right around the clock.
+ */
+const HOME_HOURS = [4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0, 2, 5, 9, 15, 21];
+
+export function homeHourFor(driverIndex: number): number {
+  return HOME_HOURS[(driverIndex * 5) % HOME_HOURS.length];
+}
+
+// --- Partner rate cards ----------------------------------------------------
+//
+// Built off the flat rate each partner already had, so the numbers stay
+// recognisable, then spread the way a real sheet is: dearer the further out
+// you go, and a longer minimum with it, because a car sent forty miles has
+// half a day gone whatever the job turns out to be.
+//
+// The multipliers are per class of car and are the same everywhere, which is
+// the one thing here that is tidier than life. Five Boroughs is the exception
+// the fixture needs: sedans only, so a quote for anything bigger has to come
+// back empty rather than guessed.
+//
+// Exported because `extend-roster.ts` adds partners to a database that is
+// already in use, and a second copy of these numbers would drift: two partners
+// added a month apart would price the same job differently for no reason.
+export const CLASS_MULTIPLIER = { SEDAN: 1, SUV: 1.35, VAN: 1.6, SPRINTER: 2.1 } as const;
+
+export const BANDS = [
+  { label: "Metro", fromMiles: 0, toMiles: 15, minimumHours: 2, uplift: 1 },
+  { label: "Suburban", fromMiles: 15, toMiles: 40, minimumHours: 3, uplift: 1.12 },
+  { label: "Regional", fromMiles: 40, toMiles: 100, minimumHours: 4, uplift: 1.25 },
+  // Ends at 250 rather than running on for ever. A card with an open last band
+  // answers "2,447 miles" with a confident price, which is how an LA partner
+  // came to be quoted $1,200 for a Manhattan pickup. Real sheets stop
+  // somewhere and say "call us" past it; here, past it the quote comes back as
+  // a sentence instead of a number.
+  { label: "Long haul", fromMiles: 100, toMiles: 250, minimumHours: 6, uplift: 1.4 },
+] as const;
+
+/** Every band of one partner's card, ready to insert. */
+export function rateCardFor(affiliate: {
+  id: string;
+  company: string;
+  hourlyRateUsd: number | null;
+}): (typeof affiliateZones.$inferInsert)[] {
+  const baseCents = (affiliate.hourlyRateUsd ?? 80) * 100;
+  const sedanOnly = affiliate.company === "Five Boroughs Car Service";
+
+  return BANDS.map((band) => {
+    const rateCents: Record<string, number> = {};
+    for (const [vehicleClass, multiplier] of Object.entries(CLASS_MULTIPLIER)) {
+      if (sedanOnly && vehicleClass !== "SEDAN") continue;
+      // Rounded to the nearest five dollars: nobody quotes $103.87 an hour.
+      rateCents[vehicleClass] = Math.round((baseCents * multiplier * band.uplift) / 500) * 500;
+    }
+    return {
+      affiliateId: affiliate.id,
+      label: band.label,
+      fromMiles: band.fromMiles,
+      toMiles: band.toMiles,
+      minimumHours: band.minimumHours,
+      rateCents,
+      sortOrder: band.fromMiles,
+    };
+  });
+}
+
 export async function seedOperations(options: { reset?: boolean; seed?: number } = {}): Promise<SeedSummary> {
   const rng = makeRandom(options.seed ?? 20260821);
   const now = DateTime.now().setZone(OPERATING_TIME_ZONE);
@@ -270,53 +372,7 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
     }))
   ).returning();
 
-  // --- Partner rate cards --------------------------------------------------
-  //
-  // Built off the flat rate each partner already had, so the numbers stay
-  // recognisable, then spread the way a real sheet is: dearer the further out
-  // you go, and a longer minimum with it, because a car sent forty miles has
-  // half a day gone whatever the job turns out to be.
-  //
-  // The multipliers are per class of car and are the same everywhere, which is
-  // the one thing here that is tidier than life. Five Boroughs is the
-  // exception the fixture needs: sedans only, so a quote for anything bigger
-  // has to come back empty rather than guessed.
-  const CLASS_MULTIPLIER = { SEDAN: 1, SUV: 1.35, VAN: 1.6, SPRINTER: 2.1 } as const;
-  const BANDS = [
-    { label: "Metro", fromMiles: 0, toMiles: 15, minimumHours: 2, uplift: 1 },
-    { label: "Suburban", fromMiles: 15, toMiles: 40, minimumHours: 3, uplift: 1.12 },
-    { label: "Regional", fromMiles: 40, toMiles: 100, minimumHours: 4, uplift: 1.25 },
-    // Ends at 250 rather than running on for ever. A card with an open last
-    // band answers "2,447 miles" with a confident price, which is how an LA
-    // partner came to be quoted $1,200 for a Manhattan pickup. Real sheets
-    // stop somewhere and say "call us" past it; here, past it the quote comes
-    // back as a sentence instead of a number.
-    { label: "Long haul", fromMiles: 100, toMiles: 250, minimumHours: 6, uplift: 1.4 },
-  ] as const;
-
-  const zoneRows: (typeof affiliateZones.$inferInsert)[] = [];
-  for (const affiliate of insertedAffiliates) {
-    const baseCents = (affiliate.hourlyRateUsd ?? 80) * 100;
-    const sedanOnly = affiliate.company === "Five Boroughs Car Service";
-    for (const band of BANDS) {
-      const rateCents: Record<string, number> = {};
-      for (const [vehicleClass, multiplier] of Object.entries(CLASS_MULTIPLIER)) {
-        if (sedanOnly && vehicleClass !== "SEDAN") continue;
-        // Rounded to the nearest five dollars: nobody quotes $103.87 an hour.
-        const exact = baseCents * multiplier * band.uplift;
-        rateCents[vehicleClass] = Math.round(exact / 500) * 500;
-      }
-      zoneRows.push({
-        affiliateId: affiliate.id,
-        label: band.label,
-        fromMiles: band.fromMiles,
-        toMiles: band.toMiles,
-        minimumHours: band.minimumHours,
-        rateCents,
-        sortOrder: band.fromMiles,
-      });
-    }
-  }
+  const zoneRows = insertedAffiliates.flatMap(rateCardFor);
   await db.insert(affiliateZones).values(zoneRows);
 
   // --- Shifts -------------------------------------------------------------
@@ -331,13 +387,6 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
   // or night people and a rota that reshuffles everyone daily is its own kind
   // of fiction. Around that, the start drifts by an hour and each driver takes
   // two rest days a week, staggered by index so the fleet is always covered.
-  const SHIFT_HOURS = 11;
-
-  /** The two weekdays this driver is off. Staggered so cover never collapses. */
-  function restDays(driverIndex: number): [number, number] {
-    return [(driverIndex % 7) + 1, ((driverIndex + 3) % 7) + 1];
-  }
-
   interface Roster {
     driverIndex: number;
     startMs: number;
@@ -353,20 +402,7 @@ export async function seedOperations(options: { reset?: boolean; seed?: number }
       const [restA, restB] = restDays(i);
       if (date.weekday === restA || date.weekday === restB) continue;
 
-      // Starts spaced two hours apart right around the clock. Eleven-hour
-      // shifts every two hours means roughly five drivers are on at any moment,
-      // including 3am, which is when airport work actually happens. The first
-      // pass ran 5am to 7pm and left the ends of the day bare: a 9pm booking
-      // had two drivers in the whole company who could take it, so a third of
-      // the month farmed out for no reason a dispatcher would recognise.
-      // Stepped by 5 rather than read straight off the index, and that detail
-      // is the whole point. Drivers get their car by index too, so reading the
-      // hours in order tied class to time of day: both van drivers landed on
-      // night shifts and every afternoon van booking in the month farmed out
-      // for want of a driver who was never rostered. 5 and 16 share no factor,
-      // so each class ends up spread right around the clock.
-      const HOURS = [4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0, 2, 5, 9, 15, 21];
-      const homeHour = HOURS[(i * 5) % HOURS.length];
+      const homeHour = homeHourFor(i);
       // A little drift, so the rota reads as written by a person.
       const startHour = (homeHour + rng.int(-1, 1) + 24) % 24;
       const start = date.set({ hour: startHour, minute: 0 });

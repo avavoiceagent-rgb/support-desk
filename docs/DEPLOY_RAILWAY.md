@@ -22,6 +22,51 @@ under the service's **Deployments** tab.
 If a build fails, Railway keeps the previous working version running, so the app your
 team is using never goes down mid-build.
 
+## Running a one-off command on the live database
+
+Occasionally something has to be run against the real database once — topping up
+the driver rota, for instance. The live `DATABASE_URL` lives in Railway and stays
+there, so this is your step and nobody else's.
+
+In the Railway dashboard, open the app service and click the **Console** tab. It
+opens at the root of the project, and it runs the built app, not the source. Two
+things follow from that:
+
+- Use `node backend/dist/...`, not `npm run something`. The `npm run` shortcuts
+  live in `backend/package.json` while the console starts a directory above it,
+  and they rely on a tool called `tsx` that the production image does not carry.
+- Run it after the deploy has finished, so the file you are calling is the one
+  you just pushed.
+
+### Topping up the driver rota
+
+    node backend/dist/db/extend-roster.js --days 365
+
+Drivers are only bookable on days they are rostered, and the rota does not
+stretch on for ever. When it runs out, every booking past the end of it finds no
+driver and offers itself to a partner instead — which on the screen looks exactly
+like being short of drivers, and is not. Running this pushes the rota out by
+however many days you ask for, from today.
+
+It only ever adds. It does not change or delete a booking, an invoice, a ticket
+or a message, it leaves days that are already rostered exactly as they are
+(including anybody's booked leave), and running it twice does nothing the second
+time. So if you are not sure whether you have run it, run it — it will tell you
+it added nothing.
+
+It prints what it did:
+
+    Roster extended: {
+      vehiclesAdded: 8,
+      driversAdded: 15,
+      affiliatesAdded: 16,
+      rateBandsAdded: 64,
+      shiftsAdded: 7931,
+      rosteredThrough: 'Wednesday 25 August 2027'
+    }
+
+`rosteredThrough` is the date to remember. Run it again before then.
+
 ---
 
 Everything below is one-time setup. It has already been done — it's written down here

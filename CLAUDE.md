@@ -65,6 +65,22 @@ EXTERNAL and gets farmed out to a partner, so the draft must not promise a car.
 
 Always run the backend tests and the typecheck before committing.
 
+## Keeping the test fleet usable
+
+`npm run seed:ops -- --reset` builds the whole dummy world and **deletes every
+trip**, so it is for a fresh database only. Its rota runs 30 days back and 14
+forward from the day it was run, which means a few weeks later every test
+booking falls off the end of the rota and farms out to a partner. That looks
+exactly like a driver shortage and is not one.
+
+    cd backend && npm run roster:extend            # 90 more days of rota
+    cd backend && npm run roster:extend -- --days 180
+
+`roster:extend` only ever inserts. It carries each driver's own pattern
+forward, tops the fleet up to two drivers per van and sprinter, and adds
+partners until every US state is covered by somebody. Safe to run again; it
+never touches trips, invoices, tickets or messages.
+
 ## Checking Adam for real
 
 The unit tests cover the rules; `tools/mail-tester` covers the behaviour. It

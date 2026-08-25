@@ -15,7 +15,7 @@
 
 import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { affiliates, drivers, invoiceLines, invoices, trips, vehicles } from "../db/schema";
+import { affiliates, drivers, invoiceLines, invoices, tickets, trips, vehicles } from "../db/schema";
 
 /** How many trips a history lookup will ever return. */
 const MAX_HISTORY = 20;
@@ -232,6 +232,78 @@ export interface TripHistoryOptions {
  * twenty, a newest-first forward list would return the twenty furthest-away
  * bookings and silently drop the one tomorrow.
  */
+/**
+ * Is this booking the one this person is allowed to see?
+ *
+ * A reference on its own proves nothing. Ours start at T-10000, which is
+ * exactly the five-digit space airline and hotel confirmation numbers occupy,
+ * and the extractor takes a third party's label at face value: "Booking
+ * reference 10432 — Delta DL2801" resolves to T-10432, and "Your reservation
+ * 10005 at Marriott" to T-10005. Verified live. A customer forwarding their
+ * own airline confirmation was enough to attach somebody else's booking to
+ * their ticket — their passenger name, both addresses, their flight, and the
+ * whole dispatch thread underneath.
+ *
+ * So a quoted reference has to be theirs as well as real. Matched the same way
+ * `findTripsForEmail` matches, because people capitalise their own address
+ * inconsistently and a booking taken by phone is typed by whoever answered.
+ *
+ * A booking with no booker email on it is not provably anybody's, so it is not
+ * theirs. That can hide a legitimate trip; showing a stranger somebody's
+ * movements is the worse of the two.
+ */
+export function bookedBy(trip: TripRecord | null, senderEmail: string | null): boolean {
+  if (!trip || !senderEmail) return false;
+  const booked = trip.bookerEmail?.trim().toLowerCase();
+  return Boolean(booked) && booked === senderEmail.trim().toLowerCase();
+}
+
+/**
+ * The same question, allowed one more way of answering yes.
+ *
+ * `bookedBy` reads the address on the booking, which is how a booking made
+ * from an email is stamped. A booking typed straight into the Reservations
+ * screen often has no address on it at all, and refusing those would hide a
+ * customer's own trip from their own follow-up email — the guard doing damage
+ * instead of preventing it.
+ *
+ * So a trip is also theirs when the ticket it was created from was raised by
+ * them. That is the same proof by a different route, and it does not reopen
+ * the hole: a stranger quoting T-10432 gets the ticket belonging to whoever
+ * really booked it, and their address, which is not the stranger's.
+ *
+ * The extra query only runs when the address on the booking has not already
+ * settled it.
+ */
+export async function theirBooking(
+  trip: TripRecord | null,
+  senderEmail: string | null
+): Promise<boolean> {
+  if (!trip || !senderEmail) return false;
+  if (bookedBy(trip, senderEmail)) return true;
+  if (!trip.ticketId) return false;
+
+  const [row] = await db
+    .select({ requesterEmail: tickets.requesterEmail })
+    .from(tickets)
+    .where(eq(tickets.id, trip.ticketId))
+    .limit(1);
+
+  const asked = row?.requesterEmail?.trim().toLowerCase();
+  return Boolean(asked) && asked === senderEmail.trim().toLowerCase();
+}
+
+/**
+ * The billing twin of `bookedBy`. An invoice reference leaks the same way a
+ * trip reference does — quote "INV-10432" at the desk and back comes the
+ * billing name, the address, every line of the charge and the trip underneath
+ * it. `billToEmail` is not nullable, so there is no unprovable case here.
+ */
+export function billedTo(invoice: InvoiceRecord | null, senderEmail: string | null): boolean {
+  if (!invoice || !senderEmail) return false;
+  return invoice.billToEmail.trim().toLowerCase() === senderEmail.trim().toLowerCase();
+}
+
 export async function findTripsForEmail(
   email: string,
   options: TripHistoryOptions = {}

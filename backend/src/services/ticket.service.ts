@@ -6,7 +6,7 @@ import { reservationForTicket } from "../ops/reservations";
 import { listDispatchForTrip } from "../ops/dispatch";
 import { listTripEvents } from "../ops/trip-events";
 import { extractReferences } from "../ops/references";
-import { findTripByReference } from "../ops/lookup";
+import { findTripByReference, theirBooking } from "../ops/lookup";
 import { toPlainText } from "../ai/classifier";
 import type { TicketStatus, TicketQueue, TicketChannel, ReservationType, ReservationSource } from "../types";
 
@@ -211,7 +211,20 @@ export async function tripsThisTicketIsAbout(ticketId: string): Promise<string[]
       ).trips
     : [];
 
-  const quoted = await Promise.all(references.map((ref) => findTripByReference(ref)));
+  // Only the sender's own bookings. A reference proves the trip exists, not
+  // that it is theirs — see `theirBooking`. Without this a customer forwarding
+  // an airline confirmation whose number happened to land in our range got
+  // somebody else's dispatch thread attached to their ticket.
+  const [ticketRow] = await db
+    .select({ requesterEmail: tickets.requesterEmail })
+    .from(tickets)
+    .where(eq(tickets.id, ticketId))
+    .limit(1);
+  const asker = ticketRow?.requesterEmail ?? null;
+
+  const found = await Promise.all(references.map((ref) => findTripByReference(ref)));
+  const theirs = await Promise.all(found.map((t) => theirBooking(t, asker)));
+  const quoted = found.filter((_, i) => theirs[i]);
 
   const ids: string[] = [];
   for (const id of [own?.id, ...quoted.map((t) => t?.id)]) {

@@ -127,6 +127,97 @@ describe("findAvailableDrivers", () => {
   it("reports the fleet as fully committed when nobody is left", async () => {
     expect(await isFleetFullyCommitted(query)).toBe(true);
   });
+
+  it("sees a clash on the far side of midnight", async () => {
+    // The clash search was bounded by the pickup's UTC calendar date give or
+    // take a day. A late-evening booking runs past midnight, so a job starting
+    // in the small hours of the next day fell outside those bounds and was
+    // never compared — the driver came back marked free for a night they were
+    // already out on.
+    const v = await makeVehicle({ label: "Sedan Night", plate: "TN" });
+    // 7pm New York on the Tuesday. The booking plus its buffer runs to about
+    // a quarter to three the next morning UTC, past the old upper bound of
+    // midnight — so the clashing job an hour later was never even fetched.
+    const lateEvening = new Date("2026-09-22T23:00:00.000Z");
+    const [driver] = await db.insert(drivers).values({
+      name: "Night Driver", phone: "+1 917 555 0000", defaultVehicleId: v.id,
+    }).returning();
+    await db.insert(driverShifts).values({
+      driverId: driver.id, vehicleId: v.id,
+      startsAt: new Date("2026-09-22T20:00:00.000Z"),
+      endsAt: new Date("2026-09-23T07:00:00.000Z"),
+    });
+    await db.insert(trips).values({
+      reference: "T-NIGHT", passengerName: "Someone",
+      pickupAddress: "A", dropoffAddress: "B",
+      pickupAt: new Date("2026-09-23T01:00:00.000Z"), bookedHours: 3,
+      vehicleClass: "SEDAN", assignedKind: "DRIVER", driverId: driver.id, vehicleId: v.id,
+    });
+
+    const free = await findAvailableDrivers({
+      pickupAt: lateEvening,
+      hours: 3,
+      vehicleClass: "SEDAN",
+    });
+    expect(free).toEqual([]);
+  });
+
+  it("sees a long job that started before the window and is still running", async () => {
+    // A booking is only found by its pickup time, so the search has to reach
+    // back far enough to catch one that began earlier and has not finished.
+    const v = await makeVehicle({ label: "Sedan Long", plate: "TL" });
+    const [driver] = await db.insert(drivers).values({
+      name: "Long Driver", phone: "+1 917 555 0000", defaultVehicleId: v.id,
+    }).returning();
+    await db.insert(driverShifts).values({
+      driverId: driver.id, vehicleId: v.id,
+      startsAt: hoursBefore(12), endsAt: hoursAfter(12),
+    });
+    // Started at six the previous evening — before the start of this driver's
+    // day, so nothing about today's date would find it — and booked for twenty
+    // hours, which means it is still running at the pickup being asked about.
+    await db.insert(trips).values({
+      reference: "T-LONG", passengerName: "Someone",
+      pickupAddress: "A", dropoffAddress: "B",
+      pickupAt: new Date("2026-09-21T22:00:00.000Z"), bookedHours: 20,
+      vehicleClass: "SEDAN", assignedKind: "DRIVER", driverId: driver.id, vehicleId: v.id,
+    });
+
+    expect(await findAvailableDrivers(query)).toEqual([]);
+  });
+
+  it("counts the driver's day, not the server's", async () => {
+    // "Trips that day" used to be sliced at midnight UTC, which in New York is
+    // 8pm the evening before, so a 9pm booking counted against the following
+    // day — a figure a dispatcher sorts on, for a day the driver would not
+    // recognise.
+    const v = await makeVehicle({ label: "Sedan Day", plate: "TD" });
+    const [driver] = await db.insert(drivers).values({
+      name: "Day Driver", phone: "+1 917 555 0000", defaultVehicleId: v.id,
+    }).returning();
+    await db.insert(driverShifts).values({
+      driverId: driver.id, vehicleId: v.id,
+      startsAt: new Date("2026-09-22T12:00:00.000Z"),
+      endsAt: new Date("2026-09-23T05:00:00.000Z"),
+    });
+    // 10am New York on the Tuesday — the same New York day as a 9pm pickup,
+    // but a different UTC day.
+    await db.insert(trips).values({
+      reference: "T-DAY", passengerName: "Someone",
+      pickupAddress: "A", dropoffAddress: "B",
+      pickupAt: new Date("2026-09-22T14:00:00.000Z"), bookedHours: 2,
+      vehicleClass: "SEDAN", status: "COMPLETED",
+      assignedKind: "DRIVER", driverId: driver.id, vehicleId: v.id,
+    });
+
+    const free = await findAvailableDrivers({
+      pickupAt: new Date("2026-09-23T01:00:00.000Z"), // 9pm Tuesday, New York
+      hours: 2,
+      vehicleClass: "SEDAN",
+    });
+    expect(free.map((d) => d.name)).toEqual(["Day Driver"]);
+    expect(free[0].tripsThatDay).toBe(1);
+  });
 });
 
 describe("suggestAffiliates", () => {

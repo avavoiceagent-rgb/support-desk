@@ -4,7 +4,7 @@ import {
   affiliates, dispatchMessages, driverShifts, drivers, invoiceLines, invoices,
   tripEvents, trips, users, vehicles,
 } from "../../db/schema";
-import { pendingOfferCounts, respondToOffer, sendOffer, sendText } from "../dispatch";
+import { pendingOfferCounts, requestQuotes, recordQuote, respondToOffer, sendOffer, sendText } from "../dispatch";
 import { actorFor } from "../trip-events";
 
 afterAll(async () => {
@@ -113,5 +113,41 @@ describe("pendingOfferCounts", () => {
 
   it("is empty when nothing is outstanding", async () => {
     expect(await pendingOfferCounts()).toEqual({ drivers: {}, affiliates: {} });
+  });
+
+  it("counts a rate request a partner has not come back on", async () => {
+    // The badge was for offers only, which is the whole of a driver's side of
+    // the conversation but only the back half of a partner's: a partner is
+    // sent a QUOTE_REQUEST first and an OFFER only once the money is agreed.
+    // So every partner sitting on an unanswered rate request showed nothing,
+    // while drivers showed their badge — which is exactly what Amar saw.
+    const [partner] = await db.insert(affiliates).values({
+      company: "Liberty Bell Executive", phone: "+1 215 555 0142", email: "d@liberty.example",
+    }).returning();
+    const trip = await makeTrip("T-10316");
+
+    const asked = await requestQuotes({
+      tripId: trip.id,
+      affiliateIds: [partner.id],
+      actor: await actorFor(undefined),
+    });
+    expect(asked.refused).toEqual([]);
+
+    const pending = await pendingOfferCounts();
+    expect(pending.affiliates[partner.id]).toBe(1);
+  });
+
+  it("stops counting the rate request once the quote comes in", async () => {
+    const [partner] = await db.insert(affiliates).values({
+      company: "Charter Oak Livery", phone: "+1 860 555 0119", email: "d@charteroak.example",
+    }).returning();
+    const trip = await makeTrip("T-10317");
+    const actor = await actorFor(undefined);
+
+    const { sent } = await requestQuotes({ tripId: trip.id, affiliateIds: [partner.id], actor });
+    await recordQuote({ requestId: sent[0].id, amountCents: 30_000, actor });
+
+    const pending = await pendingOfferCounts();
+    expect(pending.affiliates[partner.id]).toBeUndefined();
   });
 });

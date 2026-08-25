@@ -17,9 +17,11 @@ import { messages, tickets } from "../db/schema";
 import { toPlainText } from "../ai/classifier";
 import { extractReferences } from "../ops/references";
 import {
+  billedTo,
   findInvoiceByReference,
   findTripByReference,
   findTripsForEmail,
+  theirBooking,
   type InvoiceRecord,
   type TripRecord,
 } from "../ops/lookup";
@@ -88,9 +90,26 @@ export async function getOpsContext(ticketId: string): Promise<OpsContext | null
   // header and can carry a display name, so it is the wrong thing to match on.
   const senderEmail = ticket.requesterEmail;
 
+  // A reference resolving is not the same as it being theirs. Ours start at
+  // T-10000 and INV-10000, the five-digit space airline and hotel confirmation
+  // numbers live in, and the extractor takes a third party's label at face
+  // value — "Booking reference 10432 — Delta DL2801" resolves to T-10432.
+  // Forwarding their own airline confirmation was enough to pull a stranger's
+  // passenger name, both addresses and the dispatch thread onto this panel.
+  // Somebody else's booking is treated exactly like a reference that does not
+  // exist, so it shows up under "we could not find that" rather than silently
+  // disappearing.
   const [quotedTrips, quotedInvoices, recent, upcoming] = await Promise.all([
-    Promise.all(quoted.trips.map((ref) => findTripByReference(ref))),
-    Promise.all(quoted.invoices.map((ref) => findInvoiceByReference(ref))),
+    Promise.all(
+      quoted.trips.map((ref) =>
+        findTripByReference(ref).then(async (t) => ((await theirBooking(t, senderEmail)) ? t : null))
+      )
+    ),
+    Promise.all(
+      quoted.invoices.map((ref) =>
+        findInvoiceByReference(ref).then((i) => (billedTo(i, senderEmail) ? i : null))
+      )
+    ),
     senderEmail ? findTripsForEmail(senderEmail) : Promise.resolve([]),
     senderEmail ? findTripsForEmail(senderEmail, { upcoming: true }) : Promise.resolve([]),
   ]);

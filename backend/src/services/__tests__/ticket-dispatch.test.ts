@@ -161,6 +161,44 @@ describe("dispatch traffic on the ticket", () => {
     expect(detail?.tripEvents[0].changes.map((c) => c.field)).toContain("Pickup");
   });
 
+  it("does not follow a booking that is not the sender's", async () => {
+    // The same reference-adoption leak, on the timeline. A stranger quoting a
+    // number in our range got the other customer's dispatch thread and every
+    // change ever made to their booking.
+    const { trip } = await makeTicketWithTrip();
+
+    const [account] = await db.select().from(emailAccounts).limit(1);
+    const [stranger] = await db.insert(tickets).values({
+      emailAccountId: account.id,
+      subject: "My flight",
+      providerThreadId: "t-stranger",
+      requesterEmail: "nobody@elsewhere.test",
+    }).returning();
+    await db.insert(messages).values({
+      ticketId: stranger.id,
+      direction: "INBOUND",
+      fromAddress: "nobody@elsewhere.test",
+      toAddresses: ["support@ourcompany.example"],
+      ccAddresses: [],
+      subject: "My flight",
+      bodyHtml: "<p>Booking reference 10308 - Delta DL2801.</p>",
+      bodyText: "Booking reference 10308 - Delta DL2801.",
+      providerMessageId: "m-stranger",
+      providerThreadId: "t-stranger",
+      sentAt: new Date(),
+    });
+
+    await updateTrip(
+      trip.id,
+      { pickupAt: new Date("2026-09-01T20:15:00.000Z") },
+      await actorFor(undefined)
+    );
+
+    const detail = await getTicketDetail(stranger.id);
+    expect(detail?.tripEvents).toEqual([]);
+    expect(detail?.dispatch).toEqual([]);
+  });
+
   it("is empty for a ticket with no reservation, rather than absent", async () => {
     // The timeline maps over this. Undefined would be a crash on every
     // ordinary ticket, which is most of them.

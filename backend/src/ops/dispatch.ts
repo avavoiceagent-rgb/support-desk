@@ -11,7 +11,7 @@
 // records it. Two paths to the same change with two sets of rules is how a
 // system starts contradicting itself.
 
-import { and, asc, desc, eq, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "../db/client";
 import { affiliates, dispatchMessages, drivers, trips } from "../db/schema";
@@ -262,6 +262,42 @@ export async function respondToOffer(params: {
   let trip: TripRecord | null = null;
   if (params.accept) {
     if (!offer.tripId) throw new OpsError("That offer is not about a job.");
+
+    // An offer stays live in a mailbox after the job has moved on. Three
+    // people are asked, the second says yes and is assigned, and an hour later
+    // the third says yes too — nothing in the offer itself knows that. Left
+    // alone, the later yes runs straight through updateTrip and quietly takes
+    // the job off the driver who already has it, and both threads read as
+    // accepted. Same for a booking the customer has since cancelled: nobody
+    // should be told they are on a trip that is not happening.
+    //
+    // The offer is not marked answered either way, so if the desk does want
+    // to move the job, reassigning it on the Reservations screen still works.
+    const [held] = await db
+      .select({
+        status: trips.status,
+        driverId: trips.driverId,
+        affiliateId: trips.affiliateId,
+      })
+      .from(trips)
+      .where(eq(trips.id, offer.tripId))
+      .limit(1);
+
+    if (held?.status === "CANCELLED") {
+      throw new OpsError("That booking has been cancelled, so the job is no longer going out.", 409);
+    }
+    // Across both kinds, not just the offer's own: a job a partner is holding
+    // can still have a driver offer outstanding on it from before it was
+    // farmed out, and the other way round.
+    const heldByDriver = held?.driverId ?? null;
+    const heldByAffiliate = held?.affiliateId ?? null;
+    const takenByAnother = offer.driverId
+      ? (Boolean(heldByDriver) && heldByDriver !== offer.driverId) || Boolean(heldByAffiliate)
+      : (Boolean(heldByAffiliate) && heldByAffiliate !== offer.affiliateId) || Boolean(heldByDriver);
+    if (takenByAnother) {
+      throw new OpsError("That job has already been covered by somebody else.", 409);
+    }
+
     // Through updateTrip, so the double-booking refusal and the trip's own
     // history apply exactly as they do on the Reservations screen.
     trip = await updateTrip(
@@ -454,17 +490,26 @@ export async function sendChangeNotice(params: {
 }
 
 /**
- * How many offers each contact has been sent and not yet answered.
+ * How many asks each contact has been sent and not yet answered.
  *
  * The Messages list gives no sign of who is waiting on you: a dispatcher has
  * to click through fourteen drivers to find the one with a job outstanding.
- * An unanswered offer is the one piece of state on that screen that is
- * genuinely urgent — a car is not yet booked and somebody is expected to say
- * yes or no.
+ * An unanswered ask is the one piece of state on that screen that is genuinely
+ * urgent — a car is not yet booked and somebody is expected to reply.
  *
- * "Unanswered" is the absence of a reply pointing back at the offer, which is
- * the same definition `answerTo` uses; asking the database rather than
- * counting in memory keeps the two from drifting apart.
+ * Quote requests count as well as offers. This looked only for OFFERs, which
+ * is the whole of a driver's side of the conversation but only the back half of
+ * a partner's: the first thing a partner is ever sent is a QUOTE_REQUEST, so
+ * every partner sitting on an unanswered rate request showed no badge at all,
+ * while drivers showed theirs. Amar spotted it as "the messages for driver
+ * highlight new unread message but not for partners". The two are the same
+ * thing to a dispatcher — we asked, they have not come back.
+ *
+ * "Unanswered" is the absence of a reply pointing back at the message, which
+ * is the same definition `answerTo` uses; asking the database rather than
+ * counting in memory keeps the two from drifting apart. A QUOTE carries the
+ * request's id in `respondsToId`, exactly as an ACCEPT carries the offer's, so
+ * one rule covers both.
  */
 export interface PendingOffers {
   drivers: Record<string, number>;
@@ -486,7 +531,7 @@ export async function pendingOfferCounts(): Promise<PendingOffers> {
     .from(dispatchMessages)
     .where(
       and(
-        eq(dispatchMessages.kind, "OFFER"),
+        inArray(dispatchMessages.kind, ["OFFER", "QUOTE_REQUEST"]),
         notInArray(dispatchMessages.id, answers)
       )
     )

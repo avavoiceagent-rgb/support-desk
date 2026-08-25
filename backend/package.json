@@ -10,7 +10,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "test": "vitest run",
     "seed": "tsx src/db/seed.ts",
-    "seed:ops": "tsx src/db/seed-ops.ts"
+    "seed:ops": "tsx src/db/seed-ops.ts",
+    "roster:extend": "tsx src/db/extend-roster.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

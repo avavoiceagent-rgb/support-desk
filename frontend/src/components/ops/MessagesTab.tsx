@@ -277,7 +277,10 @@ export function MessagesTab({
                         {waiting > 0 && (
                           <span
                             className="shrink-0 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"
-                            title={`${waiting} ${waiting === 1 ? "offer" : "offers"} sent, no answer yet`}
+                            // "Ask" covers both sorts: a driver gets offers, a
+                            // partner gets a rate request first and an offer
+                            // only once we have agreed the money.
+                            title={`${waiting} ${waiting === 1 ? "message" : "messages"} sent, no answer yet`}
                           >
                             {waiting}
                           </span>
