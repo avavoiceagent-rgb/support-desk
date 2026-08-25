@@ -97,6 +97,17 @@ export interface PickupPlan {
    * being careless with their afternoon.
    */
   bufferMinutes: number;
+  /**
+   * True when the pickup is a landing time rather than something worked out.
+   *
+   * The brief reads this to know there is no arithmetic to explain. Adam was
+   * telling a customer collecting a colleague off a plane that "the drive
+   * from JFK to Midtown runs about 51 minutes, plus a further 15 we build in
+   * as a buffer" — true of the journey, and beside the point: that drive
+   * happens after the passenger is in the car, and moves the pickup by
+   * nothing at all.
+   */
+  collectedOnArrival: boolean;
   /** True when the time the customer asked for would not get them there. */
   requestedIsTooLate: boolean;
   /** How much later than recommended the requested time is, in minutes. */
@@ -175,6 +186,7 @@ export function planPickup(input: PickupPlanInput): PickupPlan {
           ? input.driveMinutes
           : null,
       bufferMinutes: buffer,
+      collectedOnArrival: true,
       // Nothing about a landing time can be too late for itself.
       requestedIsTooLate: false,
       shortfallMinutes: null,
@@ -218,6 +230,7 @@ export function planPickup(input: PickupPlanInput): PickupPlan {
       stopAllowanceMinutes,
       driveMinutes,
       bufferMinutes: buffer,
+      collectedOnArrival: false,
       requestedIsTooLate: false,
       shortfallMinutes: null,
       missing,
@@ -244,6 +257,7 @@ export function planPickup(input: PickupPlanInput): PickupPlan {
     stopAllowanceMinutes,
     driveMinutes,
     bufferMinutes: buffer,
+    collectedOnArrival: false,
     requestedIsTooLate: shortfallMinutes !== null && shortfallMinutes > 0,
     shortfallMinutes,
     missing,

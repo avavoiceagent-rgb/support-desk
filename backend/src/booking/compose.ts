@@ -106,7 +106,19 @@ export function buildBrief(input: ComposeInput): string {
 
   const recommended = describeLocal(plan.recommendedPickupLocal);
   const mustArrive = describeLocal(plan.mustArriveAtLocal);
-  if (recommended || mustArrive) {
+
+  // Collecting somebody off a plane has no arithmetic behind it, so there is
+  // none to explain. Adam was telling a customer that "the drive from JFK to
+  // Midtown runs about 51 minutes, plus a further 15 we build in as a buffer"
+  // — both true of the journey and neither relevant to when the car turns up,
+  // because that drive happens after the passenger is in it.
+  if (plan.collectedOnArrival && recommended) {
+    lines.push("", "TIMING:");
+    lines.push(`- The car meets the flight. Pickup is ${recommended}, when it lands.`);
+    lines.push(
+      "- Say the driver will be there for the landing and will wait. Do NOT mention drive time, traffic or any buffer: none of it moves this pickup."
+    );
+  } else if (recommended || mustArrive) {
     lines.push("", "TIMING:");
     if (mustArrive && plan.leadMinutes) {
       lines.push(

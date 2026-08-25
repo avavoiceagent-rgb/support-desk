@@ -214,3 +214,50 @@ describe("unexpectedEmails", () => {
     expect(unexpectedEmails(body, "")).toEqual(["a@b.example", "c@d.example"]);
   });
 });
+
+describe("the brief for a flight being met", () => {
+  // Ticket #83. Collecting a colleague off BA117, and the draft explained
+  // that "the drive from JFK to Midtown runs about 51 minutes, plus a further
+  // 15 we build in as a buffer" — both true of the journey, neither relevant
+  // to when the car turns up, because that drive happens afterwards.
+  const meeting = brief({
+    plan: planPickup({
+      requestedPickupLocal: null,
+      flightDepartsLocal: null,
+      flightArrivesLocal: "2026-11-14T18:05",
+      flightKind: null,
+      driveMinutes: 51,
+    }),
+  });
+
+  it("gives the landing time as the pickup", () => {
+    expect(meeting).toContain("Pickup is Saturday 14 November, 6:05 PM, when it lands");
+  });
+
+  it("states neither the drive nor the cushion as a fact about this pickup", () => {
+    // Deliberately not "the word buffer never appears" — the instruction
+    // below uses it to forbid the thing, which is the opposite of stating it.
+    expect(meeting).not.toContain("51 minutes");
+    expect(meeting).not.toContain("current traffic");
+    expect(meeting).not.toContain("15 minutes of our own");
+  });
+
+  it("tells the writer to keep it out of the email too", () => {
+    // The model is given the drive time nowhere, but it also knows JFK is not
+    // next door — saying so plainly costs one line and closes the gap.
+    expect(meeting).toContain("Do NOT mention drive time");
+  });
+
+  it("still explains the arithmetic on a departure", () => {
+    const leaving = brief({
+      plan: planPickup({
+        requestedPickupLocal: null,
+        flightDepartsLocal: "2026-09-22T18:00",
+        flightKind: "INTERNATIONAL",
+        driveMinutes: 50,
+      }),
+    });
+    expect(leaving).toContain("about 50 minutes in current traffic");
+    expect(leaving).toContain("15 minutes of our own on top of the drive");
+  });
+});
