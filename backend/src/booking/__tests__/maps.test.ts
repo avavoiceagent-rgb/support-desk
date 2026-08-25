@@ -7,6 +7,7 @@ import {
   looksLikeAirport,
   resolveServiceArea,
   tidyAddress,
+  expandKnownPlace,
 } from "../maps";
 import type { VerifiedAddress } from "../maps";
 
@@ -344,5 +345,47 @@ describe("tidyAddress keeps the name of the place", () => {
     expect(tidyAddress("245 Park Avenue, 245 Park Ave, New York, NY 10167, USA")).toBe(
       "245 Park Ave, New York, NY 10167"
     );
+  });
+});
+
+describe("writing an airport code out before asking a map", () => {
+  // Ticket #79 and #80, twice. Asked for "JFK", Google answered "John F.
+  // Kennedy, Oklahoma City, OK 73117" — a street there, matched on the name —
+  // and neither restricting to the US nor biasing to the New York viewport
+  // outranked it. The mistake was asking a geocoder a question this desk
+  // already knows the answer to.
+  it("turns a bare code into the airport it means", () => {
+    expect(expandKnownPlace("JFK")).toBe("John F. Kennedy International Airport, Queens, NY");
+    expect(expandKnownPlace("ewr")).toBe("Newark Liberty International Airport, Newark, NJ");
+    expect(expandKnownPlace(" lga ")).toBe("LaGuardia Airport, Queens, NY");
+  });
+
+  it("copes with the ways a person writes one", () => {
+    expect(expandKnownPlace("JFK Airport")).toContain("John F. Kennedy International");
+    expect(expandKnownPlace("EWR.")).toContain("Newark Liberty");
+  });
+
+  it("knows the airports the partner network flies people to", () => {
+    // "PHL" is exactly as ambiguous to a geocoder as "JFK" was.
+    expect(expandKnownPlace("PHL")).toContain("Philadelphia International Airport");
+    expect(expandKnownPlace("BOS")).toContain("Boston Logan");
+  });
+
+  it("leaves a terminal alone, because the terminal is where the driver goes", () => {
+    // "JFK Terminal 4" already resolves correctly, and carries information
+    // that expanding it would throw away.
+    expect(expandKnownPlace("JFK Terminal 4")).toBe("JFK Terminal 4");
+  });
+
+  it("leaves an ordinary address alone", () => {
+    expect(expandKnownPlace("245 Park Avenue, New York")).toBe("245 Park Avenue, New York");
+    expect(expandKnownPlace("The Ritz-Carlton, 50 Central Park South")).toBe(
+      "The Ritz-Carlton, 50 Central Park South"
+    );
+  });
+
+  it("does not fire on a word that merely contains a code", () => {
+    expect(expandKnownPlace("Bosworth Street")).toBe("Bosworth Street");
+    expect(expandKnownPlace("Newark")).toBe("Newark");
   });
 });

@@ -84,6 +84,52 @@ interface GeocodeComponent {
  */
 const AIRPORT_TEXT = /\bairport\b|\bterminal\s*\d|\b(?:jfk|lga|ewr|hpn|swf|isp|teb)\b/i;
 
+/**
+ * Airport codes, written out before anybody asks a map about them.
+ *
+ * Biasing the geocoder to the New York viewport was supposed to fix this and
+ * did not: asked for "JFK", Google still answers "John F. Kennedy, Oklahoma
+ * City, OK 73117" — a street there, matched on the name — and `bounds` is a
+ * bias that this outranks. Restricting to the US had already failed the same
+ * way a country earlier.
+ *
+ * The mistake was asking at all. This desk serves a known, small set of
+ * airports, and which one "JFK" means is not a question that needs a lookup —
+ * it is a fact we hold. The same rule as postcodes coming from Google rather
+ * than a model, pointed the other way: never ask a service for something you
+ * already know.
+ *
+ * Out-of-area airports are here too. They are where the partner network flies
+ * people, and "PHL" is exactly as ambiguous to a geocoder as "JFK" was.
+ */
+const AIRPORT_NAMES: Record<string, string> = {
+  JFK: "John F. Kennedy International Airport, Queens, NY",
+  LGA: "LaGuardia Airport, Queens, NY",
+  EWR: "Newark Liberty International Airport, Newark, NJ",
+  TEB: "Teterboro Airport, Teterboro, NJ",
+  HPN: "Westchester County Airport, White Plains, NY",
+  SWF: "New York Stewart International Airport, New Windsor, NY",
+  ISP: "Long Island MacArthur Airport, Ronkonkoma, NY",
+  PHL: "Philadelphia International Airport, Philadelphia, PA",
+  BOS: "Boston Logan International Airport, Boston, MA",
+  DCA: "Ronald Reagan Washington National Airport, Arlington, VA",
+  IAD: "Washington Dulles International Airport, Dulles, VA",
+  BWI: "Baltimore/Washington International Airport, Baltimore, MD",
+};
+
+/**
+ * The query to actually send, with a bare airport code written out.
+ *
+ * Deliberately only when the code is the whole of what the customer gave us,
+ * give or take the word "airport". "JFK Terminal 4" already resolves
+ * correctly and carries information this would throw away — the terminal is
+ * where the driver goes.
+ */
+export function expandKnownPlace(query: string): string {
+  const bare = query.trim().replace(/[.,]/g, "").replace(/\s+airport$/i, "").trim();
+  return AIRPORT_NAMES[bare.toUpperCase()] ?? query;
+}
+
 export function looksLikeAirport(types: string[] | undefined, formattedAddress: string, query: string): boolean {
   if (types?.includes("airport")) return true;
   return AIRPORT_TEXT.test(formattedAddress) || AIRPORT_TEXT.test(query);
@@ -184,7 +230,11 @@ export function buildGeocodeUrl(query: string, key: string): string {
 
 export async function verifyAddress(query: string): Promise<VerifiedAddress | null> {
   if (!isMapsConfigured || !query.trim()) return null;
-  return parseGeocodeResponse(await getJson(buildGeocodeUrl(query, env.GOOGLE_MAPS_API_KEY)), query);
+  // The customer's own words are kept as `query` for everything downstream —
+  // `looksLikeAirport` reads them, and a note quoting what they wrote must
+  // quote what they wrote. Only the thing Google is asked is expanded.
+  const asked = expandKnownPlace(query);
+  return parseGeocodeResponse(await getJson(buildGeocodeUrl(asked, env.GOOGLE_MAPS_API_KEY)), query);
 }
 
 /** Exported for tests: reads the duration and distance out of a Routes reply. */
