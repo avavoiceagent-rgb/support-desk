@@ -26,6 +26,15 @@ export interface BookingReview {
   /** Warnings for the person reviewing the draft, never sent to the customer. */
   internalNotes: string[];
   vehicleSuggestion: string | null;
+  /**
+   * Do we know who the driver is actually meeting?
+   *
+   * A typed answer rather than something the composer works out from the
+   * wording of a question. False means the reader might be the passenger and
+   * might be an assistant booking for somebody else — and a draft that says
+   * the driver will be "waiting for you" has quietly picked one.
+   */
+  knowsWhoTravels: boolean;
 }
 
 export interface ReviewInput {
@@ -174,12 +183,22 @@ export function reviewBooking(input: ReviewInput): BookingReview {
   if (booking.flightTimeLocal) {
     const flight = describeLocal(booking.flightTimeLocal);
     const number = booking.flightNumber ? ` (${booking.flightNumber})` : "";
+    // Domestic or international, but only where it decides something.
+    //
+    // On a departure it decides the pickup: two hours at the airport or three,
+    // so confirming it back is confirming the arithmetic. On an arrival it
+    // decides nothing at all — the car meets the plane whatever kind of flight
+    // it was — and a customer who never mentioned it reads it as a fact we
+    // hold about their booking. "Flight lands 14:20" came back as "lands 2:20
+    // PM (domestic)", which the email had not said and nothing needed.
     const kind =
-      booking.flightKind === "INTERNATIONAL"
-        ? ", international"
-        : booking.flightKind === "DOMESTIC"
-          ? ", domestic"
-          : "";
+      booking.flightDirection === "ARRIVAL"
+        ? ""
+        : booking.flightKind === "INTERNATIONAL"
+          ? ", international"
+          : booking.flightKind === "DOMESTIC"
+            ? ", domestic"
+            : "";
     confirmations.push(
       booking.flightDirection === "ARRIVAL"
         ? `Flight${number} lands: ${flight}${kind}`
@@ -273,5 +292,14 @@ export function reviewBooking(input: ReviewInput): BookingReview {
     internalNotes.push(`Could not verify the drop-off address "${booking.dropoffAddressText}" on the map.`);
   }
 
-  return { confirmations, questions, internalNotes, vehicleSuggestion };
+  return {
+    confirmations,
+    questions,
+    internalNotes,
+    vehicleSuggestion,
+    // Known when somebody is named, or when the reader has said they are
+    // travelling themselves. Not known otherwise — including the commonest
+    // case of all, an email that simply never says.
+    knowsWhoTravels: Boolean(booking.passengerName) || booking.bookerIsPassenger === true,
+  };
 }

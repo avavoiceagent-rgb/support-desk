@@ -118,6 +118,15 @@ export function buildBrief(input: ComposeInput): string {
     lines.push(
       "- Say the driver will be there for the landing and will wait. Do NOT mention drive time, traffic or any buffer: none of it moves this pickup."
     );
+    // Who is met is a separate question from when. A draft that asks "are you
+    // travelling yourself or booking for someone else?" and, four lines above
+    // it, promises the driver will be "waiting for you", has answered its own
+    // question with a guess and then asked it anyway.
+    if (!review.knowsWhoTravels) {
+      lines.push(
+        "- We do not know yet whether the reader is the passenger. Say the driver will be waiting for the passenger, NOT \"waiting for you\"."
+      );
+    }
   } else if (recommended || mustArrive) {
     lines.push("", "TIMING:");
     if (mustArrive && plan.leadMinutes) {

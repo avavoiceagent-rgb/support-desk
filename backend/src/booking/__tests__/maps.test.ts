@@ -8,6 +8,7 @@ import {
   resolveServiceArea,
   tidyAddress,
   expandKnownPlace,
+  withoutTheWrongDoor,
 } from "../maps";
 import type { VerifiedAddress } from "../maps";
 
@@ -387,5 +388,53 @@ describe("writing an airport code out before asking a map", () => {
   it("does not fire on a word that merely contains a code", () => {
     expect(expandKnownPlace("Bosworth Street")).toBe("Bosworth Street");
     expect(expandKnownPlace("Newark")).toBe("Newark");
+  });
+});
+
+describe("a terminal door that contradicts the flight", () => {
+  // Google's place for "JFK Terminal 4" is the departures hall. An arrival
+  // pickup came back as "Terminal 4 Departures" and went to the customer as
+  // the meeting point for a flight that was landing — and would have gone to
+  // the driver the same way. The wrong end of a very large building.
+
+  it("drops Departures from an arrival pickup, keeping the terminal", async () => {
+    expect(withoutTheWrongDoor("Terminal 4 Departures, Jamaica, NY 11430", "ARRIVAL")).toBe(
+      "Terminal 4, Jamaica, NY 11430"
+    );
+  });
+
+  it("drops Arrivals from a departure pickup", async () => {
+    expect(withoutTheWrongDoor("Terminal B Arrivals, East Elmhurst, NY 11371", "DEPARTURE")).toBe(
+      "Terminal B, East Elmhurst, NY 11371"
+    );
+  });
+
+  it("leaves a door that agrees with the direction alone", async () => {
+    const address = "Terminal 4 Arrivals, Jamaica, NY 11430";
+    expect(withoutTheWrongDoor(address, "ARRIVAL")).toBe(address);
+  });
+
+  it("leaves an address with no door in it alone", async () => {
+    const address = "400 5th Ave, New York, NY 10018";
+    expect(withoutTheWrongDoor(address, "ARRIVAL")).toBe(address);
+  });
+
+  it("does nothing when we do not know which way they are flying", async () => {
+    const address = "Terminal 4 Departures, Jamaica, NY 11430";
+    expect(withoutTheWrongDoor(address, null)).toBe(address);
+  });
+
+  it("keeps a wrong door rather than returning half an address", async () => {
+    // "Departures" with nothing in front of it is the whole of what we have.
+    // A meeting point at the wrong door beats a meeting point of "".
+    expect(withoutTheWrongDoor("Departures, Jamaica, NY 11430", "ARRIVAL")).toBe(
+      "Departures, Jamaica, NY 11430"
+    );
+  });
+
+  it("does not eat a street that happens to be called Arrivals", async () => {
+    // Only a trailing qualifier goes. "Arrivals Road" is a road.
+    const address = "12 Arrivals Road, Jamaica, NY 11430";
+    expect(withoutTheWrongDoor(address, "DEPARTURE")).toBe(address);
   });
 });

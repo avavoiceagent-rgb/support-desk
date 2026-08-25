@@ -422,3 +422,53 @@ describe("collecting somebody off a plane", () => {
     expect(asks(r, "flight number")).toBe(true);
   });
 });
+
+describe("domestic or international, only where it decides something", () => {
+  // On a departure it decides the pickup — two hours at the airport or three —
+  // so confirming it back confirms the arithmetic. On an arrival it decides
+  // nothing: the car meets the plane either way. "Flight lands 14:20" came
+  // back to a customer as "lands 2:20 PM (domestic)", which the email never
+  // said and nothing needed.
+
+  const flightLine = (r: { confirmations: string[] }) =>
+    r.confirmations.find((c) => c.startsWith("Flight"));
+
+  it("does not tell an arriving customer what kind of flight they are on", async () => {
+    const r = review(
+      {
+        flightDirection: "ARRIVAL",
+        flightTimeLocal: "2026-11-14T18:05",
+        flightKind: "DOMESTIC",
+      },
+      { pickup: jfk, dropoff: verified() }
+    );
+    expect(flightLine(r)).toContain("lands");
+    expect(flightLine(r)).not.toMatch(/domestic|international/i);
+  });
+
+  it("still says so on a departure, where it sets the pickup", async () => {
+    const r = review({
+      flightDirection: "DEPARTURE",
+      flightTimeLocal: "2026-11-14T18:05",
+      flightKind: "INTERNATIONAL",
+    });
+    expect(flightLine(r)).toMatch(/international/i);
+  });
+});
+
+describe("knowing who the driver is meeting", () => {
+  it("is known when a passenger is named", async () => {
+    expect(review({ passengerName: "Daniel Weiss" }).knowsWhoTravels).toBe(true);
+  });
+
+  it("is known when the reader says they are travelling themselves", async () => {
+    expect(review({ bookerIsPassenger: true }).knowsWhoTravels).toBe(true);
+  });
+
+  it("is not known when the email simply never says", async () => {
+    // The commonest case of all, and the one that produced a draft promising
+    // the driver would be "waiting for you" four lines above asking whether
+    // the reader was travelling.
+    expect(review({ bookerName: "Priya Raman" }).knowsWhoTravels).toBe(false);
+  });
+});

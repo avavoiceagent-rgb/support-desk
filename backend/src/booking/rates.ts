@@ -164,6 +164,22 @@ export async function lookupIndicativeRate(input: RateLookupInput): Promise<Rate
 }
 
 /** How the range should read in an email — always hedged, never "our price". */
+/**
+ * The range on its own, for a sentence somebody else is writing.
+ *
+ * `describeRate` returns a whole sentence, which is right for a draft and
+ * wrong inside one. Dropped into "the market range is ${...}" it produced
+ * "the market range is As a rough guide, published market rates for this
+ * journey run about $480–$675 (...). We'll confirm our own price separately."
+ * — two sentences wearing each other's clothes, on an internal note a
+ * dispatcher has to read at speed.
+ */
+export function rateRange(estimate: RateEstimate | null): string | null {
+  if (!estimate) return null;
+  const money = (n: number) => (estimate.currency === "USD" ? `$${n}` : `${n} ${estimate.currency}`);
+  return `${money(estimate.low)}–${money(estimate.high)} (${estimate.basis})`;
+}
+
 export function describeRate(estimate: RateEstimate | null): string | null {
   if (!estimate) return null;
   const money = (n: number) => (estimate.currency === "USD" ? `$${n}` : `${n} ${estimate.currency}`);

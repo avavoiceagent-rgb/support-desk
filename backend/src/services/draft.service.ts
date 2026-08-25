@@ -13,11 +13,17 @@ import { tickets, messages, ticketDrafts, users, type DraftFacts } from "../db/s
 import { vehicleClassFor } from "../booking/vehicles";
 import { isClassificationEnabled } from "../ai/classifier";
 import { extractBooking } from "../booking/extract";
-import { verifyAddress, estimateRoute, isMapsEnabled, resolveServiceArea } from "../booking/maps";
+import {
+  verifyAddress,
+  estimateRoute,
+  isMapsEnabled,
+  resolveServiceArea,
+  withoutTheWrongDoor,
+} from "../booking/maps";
 import type { VerifiedAddress } from "../booking/maps";
 import { planPickup } from "../booking/pickup-time";
 import { reviewBooking } from "../booking/questions";
-import { lookupIndicativeRate, describeRate } from "../booking/rates";
+import { lookupIndicativeRate, describeRate, rateRange } from "../booking/rates";
 import { composeReply } from "../booking/compose";
 import { toPlainText } from "../ai/classifier";
 import { SERVICE_AREA_STATES } from "../types";
@@ -95,10 +101,26 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
     if (!booking) return false;
 
     // --- 2. Check the places against a map -------------------------------
-    const [pickup, dropoff] = await Promise.all([
+    const [rawPickup, dropoff] = await Promise.all([
       booking.pickupAddressText ? verifyAddress(booking.pickupAddressText) : Promise.resolve(null),
       booking.dropoffAddressText ? verifyAddress(booking.dropoffAddressText) : Promise.resolve(null),
     ]);
+
+    // Corrected here, once, rather than wherever it happens to be printed.
+    // This address is the draft's pickup line, the reservation's pickup, and
+    // the meeting point the driver is sent — so a door that contradicts the
+    // flight has to stop being wrong before any of them read it. The
+    // coordinates are untouched: only the words change.
+    const pickup =
+      rawPickup && booking.flightDirection
+        ? {
+            ...rawPickup,
+            formattedAddress: withoutTheWrongDoor(
+              rawPickup.formattedAddress,
+              booking.flightDirection
+            ),
+          }
+        : rawPickup;
     const stops: (VerifiedAddress | null)[] = [];
     for (const stop of booking.stops) {
       stops.push(await verifyAddress(stop.addressText));
@@ -256,7 +278,7 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
           // reference point you have when a partner quotes.
           ...(isExternal && describeRate(rate)
             ? [
-                `This one goes out to a partner, so the reply quotes no price. For your own use, the market range is ${describeRate(rate)}`,
+                `This one goes out to a partner, so the reply quotes no price. For your own use, the market range is ${rateRange(rate)}.`,
               ]
             : []),
         ],

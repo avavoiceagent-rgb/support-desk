@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildBrief, cleanBody, unexpectedEmails } from "../compose";
-import { parseRateEstimate, describeRate } from "../rates";
+import { parseRateEstimate, describeRate, rateRange } from "../rates";
 import { planPickup } from "../pickup-time";
 import type { BookingReview } from "../questions";
 
@@ -9,6 +9,9 @@ const review = (over: Partial<BookingReview> = {}): BookingReview => ({
   questions: ["the passenger's name", "a contact number for the day of travel"],
   internalNotes: [],
   vehicleSuggestion: null,
+  // The default fixture names nobody, so the honest default is "we do not
+  // know". Tests that care set it explicitly.
+  knowsWhoTravels: false,
   ...over,
 });
 
@@ -259,5 +262,55 @@ describe("the brief for a flight being met", () => {
     });
     expect(leaving).toContain("about 50 minutes in current traffic");
     expect(leaving).toContain("15 minutes of our own on top of the drive");
+  });
+});
+
+describe("the brief, on who is being met", () => {
+  const arrival = (over = {}) =>
+    brief({
+      plan: planPickup({
+        requestedPickupLocal: null,
+        flightDepartsLocal: null,
+        flightArrivesLocal: "2026-11-14T18:05",
+        flightKind: null,
+        driveMinutes: 50,
+      }),
+      ...over,
+    });
+
+  it("tells the model not to say 'waiting for you' when nobody has been named", async () => {
+    // The draft said the driver would be "waiting for you" and then asked
+    // whether the reader was travelling at all — an answer and the question
+    // it answers, in the same email.
+    const text = arrival({ review: review({ knowsWhoTravels: false }) });
+    expect(text).toContain("waiting for the passenger");
+  });
+
+  it("says nothing about it once we know who travels", async () => {
+    const text = arrival({ review: review({ knowsWhoTravels: true }) });
+    expect(text).not.toContain("waiting for the passenger");
+  });
+});
+
+describe("rateRange", () => {
+  it("is the figure alone, for a sentence somebody else is writing", async () => {
+    // describeRate returns a whole sentence. Dropped into "the market range
+    // is ${...}" it produced "the market range is As a rough guide, published
+    // market rates ... We'll confirm our own price separately." — on an
+    // internal note a dispatcher reads at speed.
+    const estimate = {
+      low: 480,
+      high: 675,
+      currency: "USD",
+      basis: "SUV, one way",
+      sources: [],
+    };
+    expect(rateRange(estimate)).toBe("$480–$675 (SUV, one way)");
+    expect(rateRange(estimate)).not.toMatch(/rough guide|separately/i);
+    expect(describeRate(estimate)).toMatch(/rough guide/);
+  });
+
+  it("has nothing to say without an estimate", async () => {
+    expect(rateRange(null)).toBeNull();
   });
 });

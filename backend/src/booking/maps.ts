@@ -366,6 +366,45 @@ function saysNothingNew(first: string, second: string): boolean {
   return longer.startsWith(shorter) && longer.length - shorter.length <= SAME_PLACE_SLACK;
 }
 
+/**
+ * A terminal door that contradicts which way the passenger is flying.
+ *
+ * Google's place for "JFK Terminal 4" is the departures hall, so an arrival
+ * pickup came back as "Terminal 4 Departures, Jamaica, NY 11430" and went out
+ * to the customer — and would have gone to the driver — as the meeting point
+ * for a flight that was landing. The wrong end of a very large building.
+ *
+ * The terminal is worth keeping: it is where the driver goes, which is why
+ * `expandKnownPlace` deliberately leaves "JFK Terminal 4" alone. The door is
+ * not ours to name. So the contradicting word is dropped and the terminal
+ * stays — "Terminal 4, Jamaica, NY 11430" — rather than being swapped for a
+ * door we have not looked up and cannot point a car at.
+ *
+ * Only ever removes. A door that agrees with the direction, or an address with
+ * no door in it, comes back untouched.
+ */
+export function withoutTheWrongDoor(
+  formatted: string,
+  flightDirection: "ARRIVAL" | "DEPARTURE" | null | undefined
+): string {
+  if (!flightDirection) return formatted;
+  const contradicts = flightDirection === "ARRIVAL" ? /^departures?$/i : /^arrivals?$/i;
+
+  return formatted
+    .split(",")
+    .map((part) => {
+      const trimmed = part.trim();
+      const door = trimmed.match(/\s+(departures?|arrivals?)\.?$/i);
+      if (!door || !contradicts.test(door[1])) return trimmed;
+
+      // "Departures" with nothing in front of it is the whole of what we have,
+      // and half an address is worse than a wrong door.
+      const rest = trimmed.slice(0, door.index).trim();
+      return rest || trimmed;
+    })
+    .join(", ");
+}
+
 export function tidyAddress(formatted: string): string {
   const withoutCountry = formatted.replace(/,\s*(?:USA|United States)\s*$/i, "").trim();
   const parts = withoutCountry.split(",").map((p) => p.trim()).filter(Boolean);
