@@ -139,6 +139,93 @@ itself is done; the numbering below is what survived.
 
 ---
 
+## The 24 August review — findings, not yet fixed
+
+Two independent reviews of that night's work (dispatch, candidates, the ticket
+timeline, trip coordinates), then verified by hand against the running code
+before being written down. All of these are defects in work done that night.
+Nothing here is fixed yet; the numbering is by seriousness.
+
+**1. A ticket adopts a booking reference that may belong to somebody else.**
+`tripsThisTicketIsAbout` resolves every reference in the customer's email with
+`findTripByReference`, which matches on the reference alone. Nothing checks
+that the booking is the sender's. Our references start at T-10000 — exactly
+the five-digit space airline and hotel confirmation numbers occupy — and the
+extractor accepts a third party's label: verified live, `Booking reference
+10432 — Delta DL2801` yields `T-10432`, and `Your reservation 10005 at
+Marriott` yields `T-10005`. The ticket then shows that trip's dispatch
+messages in full, and an offer body carries another customer's pickup address,
+drop-off, passenger name and flight. The fix is an ownership check —
+`bookerEmail` against `requesterEmail`, which `findTripsForEmail` already does
+elsewhere — before any private traffic is attached.
+
+**2. Two drivers can both accept the same job, and the first is never told.**
+`respondToOffer` checks only that *this* offer has no answer yet. It does not
+look at who currently holds the trip. Offer a job to two drivers, both accept:
+the second assignment silently overwrites the first, and the first driver's
+thread still reads "Yes, I can take that." Two cars at one kerb, which is the
+failure the module header says acceptance goes through `updateTrip` to avoid.
+The same gap lets a driver accept a job cancelled since the offer went out.
+
+**3. A driver's own reply marks them as told about a change they never saw.**
+`lastSpokeTo` filters on trip and contact but not direction, while its comment
+says "when we last said anything to this contact". An ACCEPT, a DECLINE or an
+inbound text all satisfy it. Concretely: the pickup moves at 09:00, the driver
+taps Accept on the offer already on their phone at 09:05, and `toldOfLatest`
+goes true — the warning disappears, and the only thing that driver has ever
+been shown says the old time. Filtering to `direction = "OUT"` alone will not
+do it: accepting writes its own trip event afterwards, so the settled case
+would then never look settled. The two questions need separating.
+
+**4. Availability looks for clashes inside a UTC calendar day.**
+`findAvailableDrivers` bounds its clash query to the pickup's UTC date, but the
+window it is checking runs past midnight UTC for any New York pickup from
+about 8pm. A driver with a genuinely overlapping later job reads as free, the
+desk offers it, and `updateTrip` only refuses at the moment of acceptance —
+that guard deliberately scans two days either side, so the screen and the rule
+disagree. `driverStillFits` inherits the same hole, and `tripsThatDay` counts
+an 8pm-to-8pm day.
+
+**5. `leavesTheArea` reads only the drop-off, and re-decides a settled rule.**
+Its own comment says the in-area answer is read from stored state rather than
+decided again — and then it declares its own `HOME_STATES` and applies it to
+`dropoffState` alone. A Philadelphia pickup returning to Manhattan is EXTERNAL
+to the classifier and ordinary work to this, which offers our own drivers a
+95-mile run into Pennsylvania. Stops are ignored on the same basis.
+
+**6. The timeline blends several bookings with nothing saying which is which.**
+Once a ticket is about more than one trip, `TicketDispatchEntry` carries no
+reference and `BookingChange` prints none. "Job offered — Accepted" from last
+month's booking sits above this one's "Reservation created", and reads as
+though the new job is covered.
+
+**7. The backfill overwrites real coordinates.** Its header promises it only
+fills nulls; the predicate became "coordinate or state missing" while the
+write still sets all three columns, so a real Google geocode is replaced by
+the seed's rounded constants whenever the state alone is absent. The schema
+comment gives reproducibility as the reason to store coordinates at all.
+
+**8. A job nearer than a partner's first band is reported as too far.** With a
+card whose lowest band starts at 40 miles, a 12-mile job gets "falls outside
+every band — beyond the distance they have said they will travel", which is
+the opposite of true. Bands may legitimately start above zero and may have
+gaps; `assertBandFits` refuses overlaps but permits both.
+
+**Smaller, same review:** a re-accepted job comes back with a driver and no
+car, because decline clears the vehicle and accept never sets one;
+`listDispatchForTrip` orders by timestamp with no id tiebreak, the exact
+problem `trip-events.ts` documents and solves; `sendChangeNotice` ships a
+stray blank line when there is no note; `round(miles)` before the band lookup
+can push 14.96 into a dearer band; `coverageNote` compares state codes
+case-sensitively while `suggestAffiliates` uppercases both sides.
+
+**Unbounded work per request:** every reference in an email becomes its own
+join query, then its own dispatch and events queries, on a 20-second poll. A
+forwarded corporate travel digest listing 200 confirmation numbers would issue
+~200 joins every 20 seconds per open tab.
+
+---
+
 ## What the audit found
 
 All fourteen closed. Kept as a record of what was wrong and what was done,
