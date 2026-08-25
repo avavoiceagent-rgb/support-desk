@@ -203,6 +203,9 @@ export interface Trip {
   passengerCount: number | null;
   luggageCount: number | null;
   flightNumber: string | null;
+  /** The flight this pickup was worked back from. Null on older bookings. */
+  flightAt: string | null;
+  flightKind: "DOMESTIC" | "INTERNATIONAL" | null;
   status: TripStatus;
   assignedKind: string;
   driverId: string | null;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildBrief, cleanBody } from "../compose";
+import { buildBrief, cleanBody, unexpectedEmails } from "../compose";
 import { parseRateEstimate, describeRate } from "../rates";
 import { planPickup } from "../pickup-time";
 import type { BookingReview } from "../questions";
@@ -178,5 +178,36 @@ describe("cleanBody", () => {
     expect(cleanBody("")).toBeNull();
     expect(cleanBody("<p>ok</p>")).toBeNull();
     expect(cleanBody(null)).toBeNull();
+  });
+});
+
+describe("unexpectedEmails", () => {
+  it("catches an address the draft invented", () => {
+    // Ticket #73: "is amarpant30@gmail.com the best way to reach you on the
+    // day" — from a brief that contained no address at all.
+    const brief = "CONFIRMED:\n- Pickup: 1 Kalisa Way\n\nSTILL NEEDED:\n- a mobile number";
+    const body = "<p>Is amarpant30@gmail.com the best way to reach you?</p>";
+    expect(unexpectedEmails(body, brief)).toEqual(["amarpant30@gmail.com"]);
+  });
+
+  it("says nothing about an address that was in the brief", () => {
+    const brief = "CONFIRMED:\n- Booker email: ana@customer.example";
+    const body = "<p>We will send updates to ana@customer.example.</p>";
+    expect(unexpectedEmails(body, brief)).toEqual([]);
+  });
+
+  it("ignores case, since a model may retype it differently", () => {
+    const brief = "- Booker email: Ana@Customer.example";
+    expect(unexpectedEmails("<p>ana@customer.example</p>", brief)).toEqual([]);
+  });
+
+  it("says nothing about an ordinary draft", () => {
+    const body = "<p>Thank you for getting in touch. Your pickup is at 2:55 PM.</p>";
+    expect(unexpectedEmails(body, "CONFIRMED:\n- Pickup: 1 Kalisa Way")).toEqual([]);
+  });
+
+  it("reports each address once", () => {
+    const body = "<p>a@b.example and again a@b.example and c@d.example</p>";
+    expect(unexpectedEmails(body, "")).toEqual(["a@b.example", "c@d.example"]);
   });
 });

@@ -182,7 +182,18 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
         bodyHtml: composed.bodyHtml,
         confirmations: review.confirmations,
         questions: review.questions,
-        internalNotes: review.internalNotes,
+        internalNotes: [
+          ...review.internalNotes,
+          // The draft named an address nobody gave it. Three drafts have now
+          // asked a customer whether their email is a phone number, and two
+          // fixes aimed at the model did not stop it — so the output is
+          // checked and a person is told, rather than hoped at again.
+          ...(composed.strayEmails?.length
+            ? [
+                `Adam wrote ${composed.strayEmails.join(", ")} into the reply, and that address was not in anything he was given. Read that line before sending.`,
+              ]
+            : []),
+        ],
         rate: rate ?? null,
         // Kept so an agreed booking can become a reservation without anybody
         // reading the English back or asking the model a second time. The

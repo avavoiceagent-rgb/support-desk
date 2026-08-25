@@ -194,6 +194,16 @@ function TripEditor({
             {trip.luggageCount != null && ` · ${trip.luggageCount} bags`}
             {trip.flightNumber && ` · flight ${trip.flightNumber}`}
           </p>
+          {/* The flight the pickup was worked back from. Without it a
+              dispatcher sees 1:55 PM and has no way to tell whether that is
+              right for the flight it exists to catch. */}
+          {trip.flightAt && (
+            <p className="mt-1">
+              Flight {when(trip.flightAt)}
+              {trip.flightKind ? ` · ${trip.flightKind.toLowerCase()}` : ""}
+            </p>
+          )}
+          {trip.passengerPhone && <p className="mt-1">Passenger phone: {trip.passengerPhone}</p>}
           {trip.bookerEmail && <p className="mt-1">Booked by {trip.bookerName ?? trip.bookerEmail}</p>}
         </div>
 

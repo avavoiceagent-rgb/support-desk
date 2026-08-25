@@ -251,6 +251,17 @@ export function ReservationPanel({
         <p className="text-xs text-gray-600">
           {when(trip.pickupAt)} · {trip.bookedHours}h · {CLASS_LABEL[trip.vehicleClass]}
         </p>
+        {/* What the pickup was worked back from, and how to reach them —
+            both arrive in a reply rather than the first email, so this is
+            where you can see whether they landed. */}
+        {trip.flightAt && (
+          <p className="text-xs text-gray-600">
+            Flight {when(trip.flightAt)}
+            {trip.flightKind ? ` · ${trip.flightKind.toLowerCase()}` : ""}
+            {trip.flightNumber ? ` · ${trip.flightNumber}` : ""}
+          </p>
+        )}
+        {trip.passengerPhone && <p className="text-xs text-gray-600">{trip.passengerPhone}</p>}
         <p className="mt-0.5 text-xs text-gray-500">
           {trip.driver?.name ?? trip.affiliate?.company ?? "Nobody assigned yet"}
         </p>

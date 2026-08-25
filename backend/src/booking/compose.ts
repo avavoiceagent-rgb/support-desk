@@ -30,6 +30,11 @@ export interface ComposeInput {
 }
 
 export interface ComposedReply {
+  /**
+   * Addresses the draft mentioned that were not in its input — see
+   * `unexpectedEmails`. Empty on every well-behaved draft.
+   */
+  strayEmails?: string[];
   subject: string | null;
   bodyHtml: string;
 }
@@ -58,7 +63,8 @@ HOW IT SHOULD READ
 - Greet the customer by the name you are given, exactly as given. Do NOT add Mr, Ms, Mrs, Dr or any other title — a name says nothing about someone's gender or how they wish to be addressed, and getting it wrong is worse than not trying.
 - Open by thanking them and saying you are getting the booking set up.
 - Confirm the details as a short list they can scan and correct.
-- Then ask what is still needed — as few, and as plainly, as possible. Group related questions into one sentence where it reads better. Never ask for something that is already in the confirmed list. Group only questions of the same kind: an email address is not a phone number and a phone number is not an address, so never fold them into one clause ("is this email also the best number to reach you" is nonsense, and it was written by a previous draft).
+- Then ask what is still needed — as few, and as plainly, as possible. Group related questions into one sentence where it reads better. Never ask for something that is already in the confirmed list.
+- NEVER write an email address. Not to confirm one, not to ask about one, not as an example. If a phone number is needed, ask for it on its own, as a phone number.
 - If a suggested pickup time is given, explain WHY in one clause — the airport wants them there a set time before the flight, and the drive takes what it takes. If the time they asked for would be too late, say so plainly and kindly; do not bury it.
 - If a market rate is given, present it as a rough guide with our own price to follow. Never as a quote.
 - Close by saying you'll confirm everything once they come back.
@@ -131,6 +137,29 @@ export function buildBrief(input: ComposeInput): string {
   return lines.join("\n");
 }
 
+/**
+ * Email addresses the draft mentions that were never in its input.
+ *
+ * Three separate drafts have now asked a customer whether their email address
+ * is a phone number. The first fix was an instruction forbidding it by name;
+ * the second removed the email from the facts entirely — and the third draft
+ * still produced an address that appears nowhere in what the model was given.
+ *
+ * At that point another instruction is not a fix. This checks the output
+ * instead of trusting it: anything shaped like an address, that is not in the
+ * brief, gets named for a person to look at before the reply goes anywhere.
+ */
+// The domain is spelled out label by label so a sentence-ending full stop
+// cannot be swallowed into the address: "…at ana@customer.example." matched
+// with the dot attached, which then looked like an address nobody had given.
+const EMAIL_SHAPED = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+
+export function unexpectedEmails(bodyHtml: string, brief: string): string[] {
+  const inBrief = new Set((brief.match(EMAIL_SHAPED) ?? []).map((e) => e.toLowerCase()));
+  const found = bodyHtml.match(EMAIL_SHAPED) ?? [];
+  return [...new Set(found.map((e) => e.toLowerCase()))].filter((e) => !inBrief.has(e));
+}
+
 /** Strip anything the model shouldn't have sent us, and check it wrote something. */
 export function cleanBody(html: unknown): string | null {
   if (typeof html !== "string") return null;
@@ -145,13 +174,14 @@ export async function composeReply(input: ComposeInput): Promise<ComposedReply |
   if (!isClassifierConfigured) return null;
 
   try {
+    const brief = buildBrief(input);
     const response = await getClient().messages.create({
       model: MODEL,
       max_tokens: 2000,
       system: SYSTEM_PROMPT,
       tools: [COMPOSE_TOOL],
       tool_choice: { type: "tool", name: COMPOSE_TOOL.name },
-      messages: [{ role: "user", content: buildBrief(input) }],
+      messages: [{ role: "user", content: brief }],
     });
 
     if (response.stop_reason === "max_tokens") {
@@ -166,7 +196,7 @@ export async function composeReply(input: ComposeInput): Promise<ComposedReply |
 
     // The reply goes out on the existing email thread, which already carries
     // the subject; leaving it null keeps the threading intact.
-    return { subject: null, bodyHtml };
+    return { subject: null, bodyHtml, strayEmails: unexpectedEmails(bodyHtml, brief) };
   } catch (err) {
     console.error("[compose] failed:", err);
     return null;
