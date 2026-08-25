@@ -723,19 +723,12 @@ function WhoCanTakeIt({
     void refresh();
   }, [refresh, version]);
 
-  async function offer(kind: ContactKind, id: string, label: string, priced?: boolean) {
+  /** Offering a job to one of our own drivers. Partners go through quoting. */
+  async function offer(kind: ContactKind, id: string, label: string) {
     setError(null);
     setSending(id);
     try {
-      // A partner with a card price gets offered AT it, which is the only
-      // path that writes the money onto the booking. A driver, or a partner
-      // with no card covering the job, gets the plain offer — there is no
-      // agreed number to record, and inventing one would be worse.
-      if (kind === "AFFILIATE" && priced) {
-        await opsApi.offerAtCardRate(tripId, id);
-      } else {
-        await dispatchApi.sendOffer(kind, id, tripId);
-      }
+      await dispatchApi.sendOffer(kind, id, tripId);
       setOfferedTo((sent) => [...sent, label]);
       await refresh();
       // The offer is now a line in the timeline. Say so to the parent, which
@@ -818,13 +811,28 @@ function WhoCanTakeIt({
         {lost && (drivers.length > 0 || partners.length > 0) && (
           <div>
             <p className="text-xs font-medium text-gray-700">Who could take it instead</p>
-            <ReplacementList
-              drivers={drivers}
-              partners={partners}
-              offeredTo={offeredTo}
-              sending={sending}
-              onOffer={offer}
-            />
+            {drivers.length > 0 ? (
+              <ReplacementList
+                drivers={drivers}
+                offeredTo={offeredTo}
+                sending={sending}
+                onOffer={offer}
+              />
+            ) : (
+              // Replacing a lost job with a partner is the same thing as
+              // farming one out in the first place, and takes the same route:
+              // ask what they charge. This used to render a driver list with
+              // no drivers in it, which said nothing at all.
+              <QuoteBoard
+                tripId={tripId}
+                partners={partners}
+                version={version}
+                onChanged={() => {
+                  void refresh();
+                  onSent?.();
+                }}
+              />
+            )}
           </div>
         )}
         {lost && drivers.length === 0 && partners.length === 0 && (
@@ -894,14 +902,13 @@ function WhoCanTakeIt({
       ) : (
         <ReplacementList
           drivers={drivers}
-          partners={partners}
           offeredTo={offeredTo}
           sending={sending}
           onOffer={offer}
         />
       )}
 
-      {offeredTo.length > 0 && fallbackReason !== "OUT_OF_AREA" && (
+      {offeredTo.length > 0 && !fallbackReason && (
         <p className="mt-1.5 text-[11px] text-gray-600">
           Offered to {offeredTo.join(", ")}. Nobody is assigned until one of them accepts — answers
           come back in Operations → Messages.
@@ -912,20 +919,24 @@ function WhoCanTakeIt({
   );
 }
 
-/** The list of people who could take a job, and the button that asks them. */
+/**
+ * The drivers who could take a job, and the button that offers it.
+ *
+ * Drivers only. A partner never appears here any more: partners are only ever
+ * suggested when no car of ours can take the job, and that always carries a
+ * fallback reason, which routes to the quote board instead. We do not open
+ * with a price to a partner — we ask what theirs is.
+ */
 function ReplacementList({
   drivers,
-  partners,
   offeredTo,
   sending,
   onOffer,
 }: {
   drivers: TripCandidates["drivers"];
-  partners: TripCandidates["partners"];
   offeredTo: string[];
   sending: string | null;
-  /** `priced` is true when a rate card covers it — see the comment below. */
-  onOffer: (kind: ContactKind, id: string, label: string, priced?: boolean) => void;
+  onOffer: (kind: ContactKind, id: string, label: string) => void;
 }) {
   return (
     <ul className="mt-1.5 space-y-1">
@@ -949,38 +960,6 @@ function ReplacementList({
         </li>
       ))}
 
-      {/* An overflow partner has a rate card, so the price is already agreed
-          and there is nothing to ask. What the plain "Send offer" did was
-          record none of it — the job could be covered, accepted and confirmed
-          to the customer with no trace of what it cost or what we charged.
-          Offering AT the card price writes both down. */}
-      {partners.map((p) => (
-        <li key={p.affiliateId} className="flex items-center justify-between gap-2 text-xs">
-          <span className="text-gray-800">
-            {p.company}
-            <span className="text-gray-500">
-              {" · "}
-              {p.quote.priced
-                ? `${money(p.quote.quote.totalCents)} for ${p.quote.quote.billableHours}h · ${money(
-                    p.quote.customerCents
-                  )} to charge`
-                : "no card price — ask them"}
-            </span>
-          </span>
-          <OfferButton
-            label={
-              offeredTo.includes(p.company)
-                ? "Offered"
-                : p.quote.priced
-                  ? `Offer at ${money(p.quote.quote.totalCents)}`
-                  : "Ask for a price"
-            }
-            disabled={offeredTo.includes(p.company) || sending !== null}
-            busy={sending === p.affiliateId}
-            onClick={() => onOffer("AFFILIATE", p.affiliateId, p.company, p.quote.priced)}
-          />
-        </li>
-      ))}
     </ul>
   );
 }
@@ -1202,11 +1181,14 @@ function QuoteBoard({
                 />
                 <label htmlFor={`ask-${p.affiliateId}`} className="truncate text-gray-800">
                   {p.company}
-                  {/* Their rate card, where we hold one. A reference point for
-                      reading the price they come back with — not a price. */}
+                  {/* Their card, where we hold one — what they charged when it
+                      was last negotiated, and both halves of it, because
+                      deciding whether a quote suits means knowing what it
+                      would leave you charging. A reference for reading the
+                      price they come back with. Never sent to them. */}
                   {p.quote.priced && (
                     <span className="text-gray-500">
-                      {` · card says $${(p.quote.quote.totalCents / 100).toLocaleString("en-US")}`}
+                      {` · card ${money(p.quote.quote.totalCents)} → ${money(p.quote.customerCents)}`}
                     </span>
                   )}
                 </label>
