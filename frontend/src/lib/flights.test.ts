@@ -89,3 +89,28 @@ describe("when it has nothing honest to say", () => {
     expect(lateChangeWarning(booking, "")).toBeNull();
   });
 });
+
+describe("the create form, before any booking exists", () => {
+  // The third place a pickup time can be set, and the one that had no check.
+  // There is no saved booking to read a drive time off, so the baseline is
+  // the time Adam calculated — which already has the drive and the cushion
+  // in it, and is exactly what the check needs.
+  const asDrafted: FlightBooking = {
+    flightAt: fromDateTimeInput("2026-09-03T17:45"),
+    flightKind: "INTERNATIONAL",
+    pickupAt: fromDateTimeInput("2026-09-03T13:55"),
+  };
+
+  it("accepts the time Adam worked out", () => {
+    expect(lateChangeWarning(asDrafted, "2026-09-03T13:55")).toBeNull();
+  });
+
+  it("accepts a person choosing to leave earlier", () => {
+    expect(lateChangeWarning(asDrafted, "2026-09-03T13:00")).toBeNull();
+  });
+
+  it("catches a person typing over it with a later one", () => {
+    // The whole gap: pre-filled, editable, and until now unexamined.
+    expect(lateChangeWarning(asDrafted, "2026-09-03T15:00")).toContain("65 minutes too late");
+  });
+});

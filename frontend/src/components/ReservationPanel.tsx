@@ -20,10 +20,10 @@ import type { Trip, VehicleClass } from "../api/ops";
 import { VEHICLE_CLASSES, OPERATING_ZONE_LABEL, dispatchApi, opsApi } from "../api/ops";
 import type { ContactKind, PartnerQuote, TripCandidates } from "../api/ops";
 import { money, parseMoney } from "../lib/money";
-import { when, toDateTimeInput, instantFromInput } from "../lib/time";
+import { when, toDateTimeInput, instantFromInput, fromDateTimeInput } from "../lib/time";
 import { useAuth } from "../hooks/useAuth";
 import { pastBookingWarning } from "../lib/bookings";
-import { lateChangeWarning } from "../lib/flights";
+import { lateChangeWarning, type FlightBooking } from "../lib/flights";
 
 /** A booking this email names by reference. */
 interface QuotedTrip {
@@ -279,6 +279,24 @@ export function ReservationPanel({
     setOpen(true);
   }
 
+  /**
+   * The draft's own answer, in the shape the flight check reads.
+   *
+   * There is no booking yet, so the drive time is recovered from the time
+   * Adam calculated rather than from a saved pickup: that time already has
+   * the drive and its cushion in it, which is exactly what the check needs.
+   * Null whenever the draft had no flight to work from, in which case there
+   * is nothing to be late for.
+   */
+  const suggestedFlight: FlightBooking | null =
+    suggested?.flightTimeLocal && suggested?.pickupAtLocal
+      ? {
+          flightAt: fromDateTimeInput(suggested.flightTimeLocal),
+          flightKind: suggested.flightKind ?? null,
+          pickupAt: fromDateTimeInput(suggested.pickupAtLocal),
+        }
+      : null;
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -422,19 +440,6 @@ export function ReservationPanel({
                       {pastBookingWarning(q, q.reference)}
                     </p>
                   )}
-                  {/* The rule was enforced when the booking was made and never
-                      again. A change request is a person typing a time, and
-                      nothing measured it against the flight it was worked back
-                      from — so the desk would save a pickup that misses
-                      check-in, tell the driver, and email the customer a
-                      confirmation of it. Red rather than amber: the past-booking
-                      note above is a "did you mean this", this is a missed
-                      flight. */}
-                  {lateChangeWarning(q, change.pickupAtLocal) && (
-                    <p className="rounded-lg border border-red-300 bg-red-50 px-2.5 py-1.5 text-[11px] text-red-900">
-                      {lateChangeWarning(q, change.pickupAtLocal)}
-                    </p>
-                  )}
                   <label className="block">
                     <Label hint={`(${OPERATING_ZONE_LABEL})`}>New pickup</Label>
                     <input
@@ -445,6 +450,10 @@ export function ReservationPanel({
                       required
                     />
                   </label>
+                  {/* Under the box, not above it. The consequence of a time
+                      belongs where the eye already is — a reader typing into
+                      the field has no reason to look back up the form. */}
+                  <MissedFlightWarning warning={lateChangeWarning(q, change.pickupAtLocal)} />
                   <label className="block">
                     <Label>Hours</Label>
                     <input
@@ -587,6 +596,17 @@ export function ReservationPanel({
           />
         </label>
       </div>
+
+      {/* The gap between the two places the rule was already enforced. Adam
+          works the time out, and a change to a saved booking gets checked
+          against the flight — but this box sits between them, pre-filled and
+          editable, and a time typed over it went to a car unexamined.
+
+          Outside the label rather than in it: a screen reader would otherwise
+          read the whole warning out as the name of the field. */}
+      <MissedFlightWarning
+        warning={suggestedFlight && lateChangeWarning(suggestedFlight, form.pickupAtLocal)}
+      />
 
       <label className="block">
         <Label>Car</Label>
@@ -1185,5 +1205,22 @@ function QuoteBoard({
       {note && <p className="text-[11px] text-gray-600">{note}</p>}
       {error && <p className="text-[11px] text-red-700">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * The one warning on this panel that is about somebody missing a plane.
+ *
+ * Red rather than the amber used for "did you mean this booking" — those ask
+ * a question, this one states a consequence. It never disables anything: the
+ * clash check in ops/trips.ts settles the principle, and a flight can be
+ * missed on purpose by a customer who has rebooked or is already checked in.
+ */
+function MissedFlightWarning({ warning }: { warning: string | null }) {
+  if (!warning) return null;
+  return (
+    <p className="mt-1 rounded-lg border border-red-300 bg-red-50 px-2.5 py-1.5 text-[11px] text-red-900">
+      {warning}
+    </p>
   );
 }
