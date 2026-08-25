@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 
 type Mode = "reply" | "note";
@@ -27,12 +27,22 @@ export function Composer({
   const [mode, setMode] = useState<Mode>("reply");
   const [body, setBody] = useState("");
 
+  const box = useRef<HTMLTextAreaElement>(null);
+
   // Only ever fires when someone clicks "Use this draft" — it must not clobber
   // something an agent is halfway through typing.
+  //
+  // And it scrolls itself into view. The confirmation email is loaded from a
+  // link in the reservation panel, which sits in the right-hand column a long
+  // way from this box; the text arrived, the page did not move, and the only
+  // honest description of that from where the reader is sitting is "I clicked
+  // the link and nothing happened".
   useEffect(() => {
     if (seedKey > 0) {
       setMode("reply");
       setBody(seedBody);
+      box.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      box.current?.focus({ preventScroll: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
@@ -103,6 +113,7 @@ export function Composer({
       </div>
       <div className="p-4">
         <textarea
+          ref={box}
           className={`w-full resize-y rounded-lg border p-3 text-sm focus:outline-none focus:ring-2 ${
             isNote
               ? "border-amber-300/70 bg-white placeholder:text-amber-700/40 focus:border-amber-500 focus:ring-amber-500/20"

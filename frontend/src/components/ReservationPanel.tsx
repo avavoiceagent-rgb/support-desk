@@ -110,6 +110,7 @@ export function ReservationPanel({
   const [suggested, setSuggested] = useState<DraftFacts | null>(null);
   const [quoted, setQuoted] = useState<QuotedTrip[]>([]);
   const [unresolved, setUnresolved] = useState<string[]>([]);
+  const [confirmed, setConfirmed] = useState<string | null>(null);
   const [changing, setChanging] = useState<QuotedTrip | null>(null);
   const [change, setChange] = useState({ pickupAtLocal: "", bookedHours: "" });
   const [changed, setChanged] = useState<string | null>(null);
@@ -229,6 +230,8 @@ export function ReservationPanel({
     quiet = form === undefined
   ) {
     if (!onDraftReply) return;
+    setError(null);
+    setConfirmed(null);
     try {
       const confirmation = await opsApi.confirmation(tripId, ticketId, form);
       // A change nobody outside the office would notice — a driver assigned,
@@ -242,6 +245,11 @@ export function ReservationPanel({
       // The composer is a plain-text box, so it gets the same treatment
       // Adam's own draft gets on its way in.
       onDraftReply(draftToPlainText(confirmation.bodyHtml));
+      setConfirmed(
+        confirmation.kind === "CHANGE"
+          ? "The change confirmation is in the reply box below — read it and press Send."
+          : "The confirmation is in the reply box below — read it and press Send."
+      );
     } catch (err) {
       if (quiet) return;
       setError(
@@ -360,6 +368,12 @@ export function ReservationPanel({
             </button>
           )}
         </div>
+        {/* This branch had nowhere to say anything. A press that failed set an
+            error nobody rendered, and a press that worked put text in a box
+            off the bottom of the screen — both of which read as the link
+            doing nothing at all. */}
+        {confirmed && <p className="mt-1.5 text-[11px] text-emerald-800">{confirmed}</p>}
+        {error && <p className="mt-1.5 text-[11px] text-red-700">{error}</p>}
         <WhoCanTakeIt tripId={trip.id} version={version} onSent={onTicketChanged} />
       </div>
     );

@@ -243,7 +243,17 @@ export function TicketPane({
               where the work actually happens, and a button that only exists on
               a page nobody opens is not a feature. */}
           <div className="border-b border-gray-100 px-4 pb-3">
-            <ReservationPanel ticketId={ticketId} onTicketChanged={load} />
+            <ReservationPanel
+              ticketId={ticketId}
+              onTicketChanged={load}
+              // The same door as the detail page. Without it this view has no
+              // Confirmation email link at all, which is a second way for the
+              // same feature to look like it does not exist.
+              onDraftReply={(bodyHtml) => {
+                setSeedBody(bodyHtml);
+                setSeedKey((k) => k + 1);
+              }}
+            />
           </div>
 
           <OpsContextPanel context={opsContext} />
