@@ -8,7 +8,7 @@ import { db } from "../db/client";
 import { tickets, messages, attachments, emailAccounts } from "../db/schema";
 import type { NormalizedEmail } from "./provider.interface";
 import { resolveParentMessageId } from "./threading";
-import { CLOSED_STATUSES } from "../types";
+import { AWAITING_CUSTOMER_STATUSES, CLOSED_STATUSES } from "../types";
 
 const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
@@ -110,11 +110,30 @@ export async function ingestEmail(
       // bulk flag: a human has written in, so this is a real conversation now
       // (and it recovers gracefully if detection ever misfires).
       const [ticket] = await tx.select({ status: tickets.status }).from(tickets).where(eq(tickets.id, ticketId)).limit(1);
-      if (ticket && CLOSED_STATUSES.includes(ticket.status)) {
-        await tx.update(tickets).set({ status: "OPEN", isBulk: false, updatedAt: new Date() }).where(eq(tickets.id, ticketId));
-      } else {
-        await tx.update(tickets).set({ isBulk: false, updatedAt: new Date() }).where(eq(tickets.id, ticketId));
-      }
+
+      // The wait is over the moment they write back.
+      //
+      // Somebody sets "Awaiting customer" when they send a question, and then
+      // has to remember to set it back when the answer lands — which means a
+      // ticket that has been answered sits in a queue labelled as waiting.
+      // The reply is the event that ends the wait, so the desk moves it
+      // rather than the person. Only the statuses that mean "waiting on
+      // them": an escalation is still escalated when the customer writes.
+      const nextStatus =
+        ticket && CLOSED_STATUSES.includes(ticket.status)
+          ? "OPEN"
+          : ticket && AWAITING_CUSTOMER_STATUSES.includes(ticket.status)
+            ? "IN_PROGRESS"
+            : null;
+
+      await tx
+        .update(tickets)
+        .set({
+          ...(nextStatus ? { status: nextStatus } : {}),
+          isBulk: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(tickets.id, ticketId));
     }
 
     const [message] = await tx

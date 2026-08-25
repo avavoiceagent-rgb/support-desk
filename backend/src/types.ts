@@ -28,6 +28,21 @@ export const ALL_STATUSES: TicketStatus[] = [
 /** Statuses that mean the ticket is finished. */
 export const CLOSED_STATUSES: TicketStatus[] = ["RESOLVED_CLOSED", "UNRESOLVED_CLOSED"];
 
+/**
+ * Statuses that mean "the ball is in somebody else's court".
+ *
+ * A reply from the customer is exactly the event that ends that wait, so
+ * these move back to IN_PROGRESS on their own when one arrives. Anything not
+ * on this list is a state somebody chose for a reason a new email does not
+ * settle: ESCALATED is still escalated, FEEDBACK is still awaiting feedback,
+ * and AWAITING_DISPATCH is waiting on a driver rather than on the customer.
+ */
+export const AWAITING_CUSTOMER_STATUSES: TicketStatus[] = [
+  "AWAITING_CUSTOMER",
+  "NO_RESPONSE",
+  "FOLLOW_UP",
+];
+
 export type TicketQueue = "RESERVATION" | "DISPATCH" | "ACCOUNTING";
 export const ALL_QUEUES: TicketQueue[] = ["RESERVATION", "DISPATCH", "ACCOUNTING"];
 

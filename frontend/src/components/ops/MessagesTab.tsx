@@ -119,6 +119,10 @@ export function MessagesTab({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [pending, setPending] = useState<{
+    drivers: Record<string, number>;
+    affiliates: Record<string, number>;
+  }>({ drivers: {}, affiliates: {} });
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -162,6 +166,15 @@ export function MessagesTab({
       .catch(() => setTrips([]));
   }, [messages.length]);
 
+  // Who is waiting on an answer. Re-read whenever the thread changes, since
+  // sending an offer or recording a reply is exactly what moves these counts.
+  useEffect(() => {
+    dispatchApi
+      .pending()
+      .then(setPending)
+      .catch(() => setPending({ drivers: {}, affiliates: {} }));
+  }, [messages.length]);
+
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "nearest" });
   }, [messages]);
@@ -191,16 +204,37 @@ export function MessagesTab({
         <div className="max-h-[32rem] overflow-y-auto">
           {contacts.map((c) => {
             const key = `${c.kind}:${c.id}`;
+            const waiting =
+              (c.kind === "DRIVER" ? pending.drivers[c.id] : pending.affiliates[c.id]) ?? 0;
             return (
               <button
                 key={key}
                 onClick={() => setSelected(key)}
                 className={`block w-full rounded-lg px-2 py-1.5 text-left transition-colors ${
-                  key === selected ? "bg-indigo-50 text-indigo-900" : "hover:bg-gray-50"
+                  key === selected
+                    ? "bg-indigo-50 text-indigo-900"
+                    : waiting
+                      ? // Somebody owes us an answer. Marked on the list itself
+                        // because the alternative is clicking through fourteen
+                        // drivers to find the one holding a job up.
+                        "bg-amber-50/70 hover:bg-amber-50"
+                      : "hover:bg-gray-50"
                 }`}
               >
-                <span className="block truncate text-sm font-medium">{c.label}</span>
-                <span className="block truncate text-[11px] text-gray-500">{c.detail}</span>
+                <span className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-medium">{c.label}</span>
+                  {waiting > 0 && (
+                    <span
+                      className="shrink-0 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"
+                      title={`${waiting} ${waiting === 1 ? "offer" : "offers"} sent, no answer yet`}
+                    >
+                      {waiting}
+                    </span>
+                  )}
+                </span>
+                <span className="block truncate text-[11px] text-gray-500">
+                  {waiting > 0 ? `Waiting on their answer · ${c.detail}` : c.detail}
+                </span>
               </button>
             );
           })}

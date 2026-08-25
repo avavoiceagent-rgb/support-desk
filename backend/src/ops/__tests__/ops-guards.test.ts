@@ -163,6 +163,9 @@ describe("dispatch route permissions", () => {
       .sort();
     expect(open).toEqual([
       "GET /:kind/:id/messages",
+      // A count of who is waiting on an answer. A read, and the whole point
+      // is that anyone working the desk can see it.
+      "GET /pending",
       // Telling somebody their job has changed is a message, not a change to
       // the trip — the change itself already needed an admin. Requiring one
       // again here is how a car ends up at the old time while the person who

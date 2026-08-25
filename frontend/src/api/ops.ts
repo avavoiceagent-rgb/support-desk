@@ -336,6 +336,16 @@ export const dispatchApi = {
   sendOffer: (kind: ContactKind, id: string, tripId: string, note?: string | null) =>
     api.post<{ message: DispatchMessage }>(`/dispatch/${kind}/${id}/offers`, { tripId, note }),
 
+  /**
+   * How many offers each contact has been sent and not yet answered.
+   *
+   * Keyed by contact id. An absent id means nothing outstanding.
+   */
+  pending: () =>
+    api.get<{ drivers: Record<string, number>; affiliates: Record<string, number> }>(
+      "/dispatch/pending"
+    ),
+
   /** Tell whoever holds a job that it has changed. Not a new offer — see the server. */
   sendChangeNotice: (kind: ContactKind, id: string, tripId: string, note?: string | null) =>
     api.post<{ message: DispatchMessage }>(`/dispatch/${kind}/${id}/change-notice`, {

@@ -11,7 +11,7 @@
 // records it. Two paths to the same change with two sets of rules is how a
 // system starts contradicting itself.
 
-import { and, asc, desc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "../db/client";
 import { affiliates, dispatchMessages, drivers, trips } from "../db/schema";
@@ -446,4 +446,51 @@ export async function sendChangeNotice(params: {
     })
     .returning();
   return row;
+}
+
+/**
+ * How many offers each contact has been sent and not yet answered.
+ *
+ * The Messages list gives no sign of who is waiting on you: a dispatcher has
+ * to click through fourteen drivers to find the one with a job outstanding.
+ * An unanswered offer is the one piece of state on that screen that is
+ * genuinely urgent — a car is not yet booked and somebody is expected to say
+ * yes or no.
+ *
+ * "Unanswered" is the absence of a reply pointing back at the offer, which is
+ * the same definition `answerTo` uses; asking the database rather than
+ * counting in memory keeps the two from drifting apart.
+ */
+export interface PendingOffers {
+  drivers: Record<string, number>;
+  affiliates: Record<string, number>;
+}
+
+export async function pendingOfferCounts(): Promise<PendingOffers> {
+  const answers = db
+    .select({ id: dispatchMessages.respondsToId })
+    .from(dispatchMessages)
+    .where(isNotNull(dispatchMessages.respondsToId));
+
+  const rows = await db
+    .select({
+      driverId: dispatchMessages.driverId,
+      affiliateId: dispatchMessages.affiliateId,
+      waiting: sql<number>`count(*)::int`,
+    })
+    .from(dispatchMessages)
+    .where(
+      and(
+        eq(dispatchMessages.kind, "OFFER"),
+        notInArray(dispatchMessages.id, answers)
+      )
+    )
+    .groupBy(dispatchMessages.driverId, dispatchMessages.affiliateId);
+
+  const pending: PendingOffers = { drivers: {}, affiliates: {} };
+  for (const row of rows) {
+    if (row.driverId) pending.drivers[row.driverId] = row.waiting;
+    else if (row.affiliateId) pending.affiliates[row.affiliateId] = row.waiting;
+  }
+  return pending;
 }

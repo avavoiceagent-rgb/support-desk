@@ -85,7 +85,22 @@ export function reviewBooking(input: ReviewInput): BookingReview {
   }
 
   // --- Contact numbers ----------------------------------------------------
-  confirmations.push(`Email for updates: ${input.senderEmail}`);
+  //
+  // The sender's own email is deliberately NOT confirmed back to them.
+  //
+  // It was, and it is the line that keeps producing nonsense: sitting next to
+  // the contact-number question, a composer merges the two and asks whether an
+  // email address is a phone number. That has now happened on two separate
+  // live tickets. Two fixes were tried and both failed — first an instruction
+  // in the compose prompt naming the exact sentence as forbidden, then
+  // rewording the question to name a mobile and a driver. The model wrote it
+  // anyway, both times.
+  //
+  // So the material goes instead of the instruction. Confirming somebody's
+  // own address back to them, in an email they are reading at that address,
+  // was the least useful line in the draft and the only one that has ever
+  // been dangerous. If it is ever wanted again, it should be written by code
+  // rather than handed to a model beside a question it can absorb.
 
   const bookerPhone = booking.bookerPhone;
   if (bookerPhone) {
@@ -151,6 +166,27 @@ export function reviewBooking(input: ReviewInput): BookingReview {
     );
   }
 
+  // The flight itself, read back so a misread time is caught by the one
+  // person who knows it. "545pm" is how a customer writes it and how it has
+  // to be understood; showing "5:45 PM" back is the cheapest possible check
+  // on that reading, and it is the fact every other time on the booking is
+  // derived from.
+  if (booking.flightTimeLocal) {
+    const flight = describeLocal(booking.flightTimeLocal);
+    const number = booking.flightNumber ? ` (${booking.flightNumber})` : "";
+    const kind =
+      booking.flightKind === "INTERNATIONAL"
+        ? ", international"
+        : booking.flightKind === "DOMESTIC"
+          ? ", domestic"
+          : "";
+    confirmations.push(
+      booking.flightDirection === "ARRIVAL"
+        ? `Flight${number} lands: ${flight}${kind}`
+        : `Flight${number} departs: ${flight}${kind}`
+    );
+  }
+
   const goingToAirport = booking.flightDirection === "DEPARTURE" || Boolean(input.dropoff?.isAirport);
   if (goingToAirport) {
     if (!booking.flightTimeLocal) questions.push("your flight departure time");
@@ -208,8 +244,27 @@ export function reviewBooking(input: ReviewInput): BookingReview {
       `Flight kind not stated. Pickup is set to ${describeLocal(plan.ifInternationalLocal)} — the international time, which is the earlier of the two. If it turns out to be domestic, it moves to ${describeTimeLocal(plan.ifDomesticLocal)}.`
     );
   }
-  if (input.pickup?.partialMatch || input.dropoff?.partialMatch) {
-    internalNotes.push("Google wasn't confident about one of the addresses — the draft asks the customer to confirm it.");
+  // Which address, and whether the draft actually asked about it.
+  //
+  // This said "one of the addresses — the draft asks the customer to confirm
+  // it" no matter which end was unsure. On tickets #67 and #72 the unsure
+  // address was LaGuardia, where the draft says nothing at all: an airport is
+  // its own address and needs no postcode confirmed. So the note warned about
+  // an ask that had not been made, and did not say which place it meant —
+  // leaving a reviewer hunting through a draft for a question that was not
+  // there.
+  const unsure = [
+    input.pickup?.partialMatch ? { label: "pickup", place: input.pickup } : null,
+    input.dropoff?.partialMatch ? { label: "drop-off", place: input.dropoff } : null,
+  ].filter((x): x is { label: string; place: VerifiedAddress } => x !== null);
+
+  for (const { label, place } of unsure) {
+    const where = tidyAddress(place.formattedAddress);
+    internalNotes.push(
+      place.isAirport
+        ? `Google wasn't certain the ${label} is "${where}" — but it is an airport, so the draft states it without asking. Worth a glance.`
+        : `Google wasn't certain the ${label} is "${where}" — the draft asks the customer to confirm it.`
+    );
   }
   if (!input.pickup && booking.pickupAddressText) {
     internalNotes.push(`Could not verify the pickup address "${booking.pickupAddressText}" on the map.`);

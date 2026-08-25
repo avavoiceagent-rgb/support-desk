@@ -29,6 +29,7 @@ import { OpsError } from "../ops/errors";
 import { actorFor } from "../ops/trip-events";
 import {
   listMessages,
+  pendingOfferCounts,
   respondToOffer,
   sendChangeNotice,
   sendOffer,
@@ -65,6 +66,16 @@ const contactSchema = z.object({
 function contactFrom(req: { params: Record<string, string> }): Contact {
   return { kind: req.params.kind === "AFFILIATE" ? "AFFILIATE" : "DRIVER", id: req.params.id };
 }
+
+/**
+ * Who is waiting on an answer, for the contact list to mark.
+ *
+ * Declared before the "/:kind/:id/..." routes: Express matches in order, and
+ * "pending" would otherwise be read as a contact kind.
+ */
+dispatchRouter.get("/pending", async (_req, res) => {
+  await handle(res, async () => res.json(await pendingOfferCounts()));
+});
 
 dispatchRouter.get("/:kind/:id/messages", async (req, res) => {
   const parsed = contactSchema.safeParse({ kind: req.params.kind, id: req.params.id });

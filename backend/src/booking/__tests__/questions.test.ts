@@ -88,8 +88,11 @@ describe("who is travelling", () => {
 });
 
 describe("contact numbers", () => {
-  it("always confirms the sender's email as the contact address", () => {
-    expect(confirms(review({}), "booker@customer.example")).toBe(true);
+  it("does not confirm the sender's own address back to them", () => {
+    // It used to. Beside the contact-number question it produced "is this
+    // email also the best number to reach you" on two live tickets, and two
+    // attempts to make a model stop writing that failed. See questions.ts.
+    expect(confirms(review({}), "booker@customer.example")).toBe(false);
   });
 
   it("asks for a number when the email has none", () => {
@@ -307,12 +310,78 @@ describe("the contact question cannot be mistaken for the email line", () => {
     const question = r.questions.find((q) => q.includes("mobile number for the day"));
     expect(question).toBeDefined();
     expect(question).toContain("driver");
-    expect(confirms(r, "email for updates")).toBe(true);
+    // And the line it kept being welded to is gone: the sender's own address,
+    // confirmed back to them in an email they are reading at that address.
+    expect(confirms(r, "email for updates")).toBe(false);
+    expect(r.confirmations.some((c) => c.includes("@"))).toBe(false);
   });
 
   it("does not ask at all when a number was given", () => {
     const r = review({ bookerPhone: "201-693-4150" });
     expect(asks(r, "mobile number for the day")).toBe(false);
     expect(confirms(r, "201-693-4150")).toBe(true);
+  });
+});
+
+describe("the unsure-address note", () => {
+  const unsureJfk = verified({ ...jfk, partialMatch: true });
+
+  it("names the place, not 'one of the addresses'", () => {
+    const r = review({}, { pickup: verified({ partialMatch: true }) });
+    const note = r.internalNotes.find((n) => n.includes("wasn't certain"));
+    expect(note).toContain("pickup");
+    expect(note).toContain("245 Park Ave");
+  });
+
+  it("does not claim an ask the draft never makes for an airport", () => {
+    // Tickets #67 and #72: LaGuardia was the unsure address, the draft
+    // correctly said nothing, and the note announced a question that was not
+    // in the email.
+    const r = review({}, { dropoff: unsureJfk });
+    const note = r.internalNotes.find((n) => n.includes("wasn't certain"));
+    expect(note).toContain("it is an airport");
+    expect(note).not.toContain("asks the customer to confirm");
+    // And the draft really does leave the airport line alone.
+    expect(r.confirmations.some((c) => c.includes("Kennedy") && c.includes("confirm"))).toBe(false);
+  });
+
+  it("warns about both ends when both are unsure", () => {
+    const r = review({}, { pickup: verified({ partialMatch: true }), dropoff: unsureJfk });
+    expect(r.internalNotes.filter((n) => n.includes("wasn't certain"))).toHaveLength(2);
+  });
+
+  it("says nothing when Google was sure", () => {
+    const r = review({});
+    expect(r.internalNotes.some((n) => n.includes("wasn't certain"))).toBe(false);
+  });
+});
+
+describe("the flight is read back to the customer", () => {
+  it("confirms the departure time it understood", () => {
+    // Apurva wrote "545pm". Everything else on the booking is derived from
+    // how that was read, so it is worth one line to let him catch it.
+    const r = review({ flightTimeLocal: "2026-09-03T17:45", flightDirection: "DEPARTURE" });
+    expect(confirms(r, "flight departs")).toBe(true);
+    expect(confirms(r, "5:45 PM")).toBe(true);
+  });
+
+  it("includes the number and the kind once they are known", () => {
+    const r = review({
+      flightTimeLocal: "2026-09-03T17:45",
+      flightDirection: "DEPARTURE",
+      flightNumber: "BA112",
+      flightKind: "INTERNATIONAL",
+    });
+    expect(confirms(r, "BA112")).toBe(true);
+    expect(confirms(r, "international")).toBe(true);
+  });
+
+  it("says lands, not departs, for an arrival", () => {
+    const r = review({ flightTimeLocal: "2026-09-03T09:20", flightDirection: "ARRIVAL" });
+    expect(confirms(r, "flight lands")).toBe(true);
+  });
+
+  it("says nothing when no flight time was given", () => {
+    expect(confirms(review({}), "flight departs")).toBe(false);
   });
 });

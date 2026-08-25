@@ -149,6 +149,58 @@ describe("ingestEmail", () => {
     expect(ticket.status).toBe("OPEN");
   });
 
+  it("takes a ticket off Awaiting customer when the customer writes back", async () => {
+    // Somebody sets "Awaiting customer" when they send a question and then
+    // has to remember to set it back. A ticket that has been answered should
+    // not sit in a queue labelled as waiting.
+    const { ticketId } = await ingestEmail(accountId, makeEmail({ providerThreadId: "thread-wait" }));
+    await db.update(tickets).set({ status: "AWAITING_CUSTOMER" }).where(eq(tickets.id, ticketId));
+
+    await ingestEmail(accountId, makeEmail({ providerThreadId: "thread-wait" }));
+    const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+    expect(ticket.status).toBe("IN_PROGRESS");
+  });
+
+  it("does the same for a chased or scheduled follow-up", async () => {
+    for (const waiting of ["NO_RESPONSE", "FOLLOW_UP"] as const) {
+      const { ticketId } = await ingestEmail(
+        accountId,
+        makeEmail({ providerThreadId: `thread-${waiting}` })
+      );
+      await db.update(tickets).set({ status: waiting }).where(eq(tickets.id, ticketId));
+      await ingestEmail(accountId, makeEmail({ providerThreadId: `thread-${waiting}` }));
+      const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+      expect(ticket.status, waiting).toBe("IN_PROGRESS");
+    }
+  });
+
+  it("leaves a status somebody chose for another reason alone", async () => {
+    // An escalation is still escalated when the customer writes, and
+    // "awaiting dispatch" is waiting on a driver, not on them.
+    for (const kept of ["ESCALATED", "AWAITING_DISPATCH", "FEEDBACK"] as const) {
+      const { ticketId } = await ingestEmail(
+        accountId,
+        makeEmail({ providerThreadId: `thread-${kept}` })
+      );
+      await db.update(tickets).set({ status: kept }).where(eq(tickets.id, ticketId));
+      await ingestEmail(accountId, makeEmail({ providerThreadId: `thread-${kept}` }));
+      const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+      expect(ticket.status, kept).toBe(kept);
+    }
+  });
+
+  it("does not move a waiting ticket on an auto-reply", async () => {
+    // An out-of-office is not the customer answering.
+    const { ticketId } = await ingestEmail(accountId, makeEmail({ providerThreadId: "thread-ooo" }));
+    await db.update(tickets).set({ status: "AWAITING_CUSTOMER" }).where(eq(tickets.id, ticketId));
+    await ingestEmail(
+      accountId,
+      makeEmail({ providerThreadId: "thread-ooo", isAutoReply: true })
+    );
+    const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
+    expect(ticket.status).toBe("AWAITING_CUSTOMER");
+  });
+
   it("keeps ordinary customer mail out of the bulk bucket", async () => {
     const { ticketId } = await ingestEmail(accountId, makeEmail({ providerThreadId: "thread-real" }));
     const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId));
