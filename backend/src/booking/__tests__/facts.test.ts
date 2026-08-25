@@ -89,3 +89,52 @@ describe("describeFactChanges", () => {
     expect(describeFactChanges(first, mergeFacts(first, {}))).toEqual([]);
   });
 });
+
+describe("the time a customer names in their answer", () => {
+  // Adam asks when they would like to be collected, they say — and until this
+  // the answer went into the conversation and nowhere else, so the
+  // reservation form still opened with an empty date box. That blank is the
+  // one that once let a browser fill it with the current time.
+  const empty = {
+    passengerName: null,
+    passengerPhone: null,
+    bookerName: null,
+    bookerEmail: null,
+    pickupAddress: null,
+    dropoffAddress: null,
+    stops: [],
+    pickupAtLocal: null,
+    vehicleClass: null,
+    passengerCount: null,
+    luggageCount: null,
+    flightNumber: null,
+  };
+
+  it("lands on the facts the form is filled from", () => {
+    const after = mergeFacts(empty, { pickupAtLocal: "2026-11-14T18:05" });
+    expect(after.pickupAtLocal).toBe("2026-11-14T18:05");
+  });
+
+  it("corrects one already there", () => {
+    const after = mergeFacts(
+      { ...empty, pickupAtLocal: "2026-11-14T18:05" },
+      { pickupAtLocal: "2026-11-14T19:30" }
+    );
+    expect(after.pickupAtLocal).toBe("2026-11-14T19:30");
+  });
+
+  it("is not erased by a reply that says nothing about it", () => {
+    // The rule the whole file exists for: silence never wipes.
+    const after = mergeFacts(
+      { ...empty, pickupAtLocal: "2026-11-14T18:05" },
+      { passengerPhone: "201-555-0134" }
+    );
+    expect(after.pickupAtLocal).toBe("2026-11-14T18:05");
+  });
+
+  it("shows up in what changed, so it does not appear from nowhere", () => {
+    const before = { ...empty };
+    const after = mergeFacts(before, { pickupAtLocal: "2026-11-14T18:05" });
+    expect(describeFactChanges(before, after).join(" ")).toContain("Pickup time");
+  });
+});

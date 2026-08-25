@@ -33,7 +33,10 @@ function review(booking: Partial<ExtractedBooking>, over: Partial<ReviewInput> =
     stops: [],
     plan: planPickup({
       requestedPickupLocal: full.requestedPickupLocal,
-      flightDepartsLocal: full.flightTimeLocal,
+      // The same split draft.service makes: a departure is worked back from
+      // check-in, an arrival is the landing time itself.
+      flightDepartsLocal: full.flightDirection === "ARRIVAL" ? null : full.flightTimeLocal,
+      flightArrivesLocal: full.flightDirection === "ARRIVAL" ? full.flightTimeLocal : null,
       flightKind: full.flightKind,
       driveMinutes: 50,
     }),
@@ -384,5 +387,38 @@ describe("the flight is read back to the customer", () => {
 
   it("says nothing when no flight time was given", () => {
     expect(confirms(review({}), "flight departs")).toBe(false);
+  });
+});
+
+describe("collecting somebody off a plane", () => {
+  // Ticket #82, in the shape the desk received it: a colleague landing at JFK
+  // at 6:05 PM, and the desk asking what time they would like to be
+  // collected — of a customer who had just said.
+  const arriving = {
+    flightDirection: "ARRIVAL" as const,
+    flightTimeLocal: "2026-11-14T18:05",
+    flightNumber: "BA117",
+  };
+
+  it("does not ask for a pickup time it was already given", () => {
+    const r = review(arriving, { pickup: jfk, dropoff: verified() });
+    expect(asks(r, "collected")).toBe(false);
+    expect(asks(r, "date and time")).toBe(false);
+  });
+
+  it("reads the landing time back rather than a departure", () => {
+    const r = review(arriving, { pickup: jfk, dropoff: verified() });
+    expect(confirms(r, "lands")).toBe(true);
+    expect(confirms(r, "departs")).toBe(false);
+  });
+
+  it("still asks for the flight number when it does not have one", () => {
+    // On an arrival this is the one that matters most: it is how the driver
+    // knows when the plane actually got in.
+    const r = review(
+      { ...arriving, flightNumber: null },
+      { pickup: jfk, dropoff: verified() }
+    );
+    expect(asks(r, "flight number")).toBe(true);
   });
 });

@@ -354,3 +354,62 @@ describe("the traffic cushion", () => {
     expect(plan.shortfallMinutes).toBe(15);
   });
 });
+
+describe("an arrival", () => {
+  // Ticket #82. Priya wrote "lands at JFK on 14 November on BA117, arriving
+  // 6:05 PM", and the desk — which only knew how to work backwards from a
+  // departure — computed no pickup at all and then asked her what time her
+  // colleague would like to be collected.
+  const lands = {
+    requestedPickupLocal: null,
+    flightDepartsLocal: null,
+    flightArrivesLocal: "2026-11-14T18:05",
+    flightKind: null,
+    driveMinutes: 55,
+  };
+
+  it("collects them when the plane lands", () => {
+    expect(planPickup(lands).recommendedPickupLocal).toBe("2026-11-14T18:05");
+  });
+
+  it("has nothing left to ask about", () => {
+    // Every question the departure path raises is about getting somewhere on
+    // time. An arrival has no deadline: the plane decides, and the driver
+    // waits. Asking anything here is asking a customer to repeat themselves.
+    expect(planPickup(lands).missing).toEqual([]);
+  });
+
+  it("does not apply the airport rules to it", () => {
+    // Two hours before a flight is a rule about check-in. There is no
+    // check-in on the way out of an airport, so a lead time here would move
+    // the car for no reason.
+    const plan = planPickup(lands);
+    expect(plan.leadMinutes).toBeNull();
+    expect(plan.mustArriveAtLocal).toBeNull();
+    expect(plan.ifDomesticLocal).toBeNull();
+    expect(plan.ifInternationalLocal).toBeNull();
+  });
+
+  it("cannot be late for itself", () => {
+    const plan = planPickup({ ...lands, requestedPickupLocal: "2026-11-14T19:00" });
+    expect(plan.requestedIsTooLate).toBe(false);
+    expect(plan.recommendedPickupLocal).toBe("2026-11-14T18:05");
+  });
+
+  it("leaves a departure alone", () => {
+    // Same booking without a landing time still works back from check-in.
+    const plan = planPickup({
+      requestedPickupLocal: null,
+      flightDepartsLocal: "2026-09-03T17:45",
+      flightKind: "INTERNATIONAL",
+      driveMinutes: 40,
+      bufferMinutes: 0,
+    });
+    expect(plan.recommendedPickupLocal).toBe("2026-09-03T14:05");
+  });
+
+  it("stays out of the way when the landing time is unreadable", () => {
+    const plan = planPickup({ ...lands, flightArrivesLocal: "sometime tuesday" });
+    expect(plan.recommendedPickupLocal).toBeNull();
+  });
+});

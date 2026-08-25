@@ -47,6 +47,20 @@ export interface PickupPlanInput {
   requestedPickupLocal: string | null;
   /** Local wall-clock of the flight, when the drop-off is a departure. */
   flightDepartsLocal: string | null;
+  /**
+   * Local wall-clock the flight lands, when the pickup is at an airport.
+   *
+   * An arrival is the mirror of a departure and needs none of the arithmetic:
+   * there is no deadline to work back from, because the deadline is the plane
+   * and the plane decides. The car is booked for the landing time and the
+   * driver waits — which is why the flight number matters more on an arrival
+   * than anywhere else, since that is what tells them when to actually walk in.
+   *
+   * Without this the desk computed no pickup for an arrival at all, and then
+   * asked a customer who had just written "arriving 6:05 PM" what time they
+   * would like to be collected.
+   */
+  flightArrivesLocal?: string | null;
   flightKind: FlightKind | null;
   /** Driving time for the whole journey from Google, excluding stop dwell time. */
   driveMinutes: number | null;
@@ -145,6 +159,30 @@ export function planPickup(input: PickupPlanInput): PickupPlan {
   const stops = input.stopDurationsMinutes ?? [];
   const stopAllowanceMinutes = stopAllowance(stops);
   const buffer = input.bufferMinutes ?? TRAFFIC_CUSHION_MINUTES;
+
+  // An arrival settles itself. The pickup is the landing time, and none of
+  // the departure arithmetic — lead times, the drive, the cushion — applies,
+  // because none of it is measuring towards a deadline any more.
+  const lands = parseLocal(input.flightArrivesLocal ?? null);
+  if (lands) {
+    return {
+      recommendedPickupLocal: formatLocal(lands),
+      mustArriveAtLocal: null,
+      leadMinutes: null,
+      stopAllowanceMinutes,
+      driveMinutes:
+        typeof input.driveMinutes === "number" && Number.isFinite(input.driveMinutes)
+          ? input.driveMinutes
+          : null,
+      bufferMinutes: buffer,
+      // Nothing about a landing time can be too late for itself.
+      requestedIsTooLate: false,
+      shortfallMinutes: null,
+      missing: [],
+      ifDomesticLocal: null,
+      ifInternationalLocal: null,
+    };
+  }
 
   const requested = parseLocal(input.requestedPickupLocal);
   const departs = parseLocal(input.flightDepartsLocal);

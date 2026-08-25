@@ -119,9 +119,15 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
 
     // --- 4. Timing, in code ----------------------------------------------
     const goingToAirport = booking.flightDirection === "DEPARTURE" || Boolean(dropoff?.isAirport);
+    // The mirror of it: they are being collected off a plane rather than put
+    // on one, and the pickup is the landing time rather than something worked
+    // back from a deadline.
+    const comingFromAirport =
+      booking.flightDirection === "ARRIVAL" || (!goingToAirport && Boolean(pickup?.isAirport));
     const plan = planPickup({
       requestedPickupLocal: booking.requestedPickupLocal,
       flightDepartsLocal: goingToAirport ? booking.flightTimeLocal : null,
+      flightArrivesLocal: comingFromAirport ? booking.flightTimeLocal : null,
       flightKind: goingToAirport ? booking.flightKind : null,
       driveMinutes,
       stopDurationsMinutes: booking.stops.map((s) => s.durationMinutes),
@@ -436,6 +442,14 @@ export async function refreshFactsFromReply(ticketId: string): Promise<string[]>
       flightNumber: booking.flightNumber,
       flightTimeLocal: booking.flightTimeLocal,
       flightKind: booking.flightKind,
+      // The time the customer names when they answer.
+      //
+      // Left out, and it was the one thing a reply most often carries: Adam
+      // asks when they would like to be collected, they say, and the answer
+      // went into the conversation and nowhere else — so the reservation form
+      // still opened with an empty date box, which is exactly the blank that
+      // once let a browser fill it with the current time.
+      pickupAtLocal: booking.requestedPickupLocal,
     });
 
     const changes = describeFactChanges(before, after);
