@@ -21,6 +21,7 @@ import {
   recordQuote,
   requestQuotes,
   respondToOffer,
+  sendOffer,
 } from "../dispatch";
 import { selectTrips, toTripRecord } from "../lookup";
 
@@ -260,5 +261,59 @@ describe("awarding the job", () => {
       .from(dispatchMessages)
       .where(eq(dispatchMessages.tripId, trip.id));
     await expect(awardQuote({ quoteId: request.id, actor: DESK })).rejects.toThrow(/not a quote/i);
+  });
+});
+
+describe("a partner we have already spoken to about this job", () => {
+  // T-10315. Metro Overflow Group had been sent two offers before anybody
+  // asked them for a price. The board read "has this partner an offer on this
+  // trip" as "has this quote been awarded", so the moment they quoted $300 it
+  // decided the quote was already taken: no button to accept it, the other
+  // partners told the job was gone, and the customer confirmed at the older
+  // price because the award that writes $300 onto the trip never ran.
+  async function alreadyOffered() {
+    const trip = await makeExternalTrip();
+    const partner = await makePartner("Metro Overflow Group");
+    await sendOffer({
+      contact: { kind: "AFFILIATE", id: partner.id },
+      tripId: trip.id,
+      actor: DESK,
+    });
+    const { sent } = await requestQuotes({
+      tripId: trip.id,
+      affiliateIds: [partner.id],
+      actor: DESK,
+    });
+    const quote = await recordQuote({ requestId: sent[0].id, amountCents: 30_000, actor: DESK });
+    return { trip, partner, quote };
+  }
+
+  it("does not call a quote awarded because an older offer exists", async () => {
+    const { trip } = await alreadyOffered();
+
+    const [q] = await quotesForTrip(trip.id);
+    expect(q.amountCents).toBe(30_000);
+    expect(q.customerCents).toBe(37_500);
+    expect(q.awarded).toBe(false);
+  });
+
+  it("marks it awarded only once the award actually runs", async () => {
+    const { trip, quote } = await alreadyOffered();
+
+    await awardQuote({ quoteId: quote.id, actor: DESK });
+
+    const [q] = await quotesForTrip(trip.id);
+    expect(q.awarded).toBe(true);
+    // And the money the customer is quoted follows the quote we took, not
+    // whatever the trip happened to be carrying before.
+    const after = await record(trip.id);
+    expect(after.partnerQuoteCents).toBe(30_000);
+    expect(after.customerPriceCents).toBe(37_500);
+  });
+
+  it("points the offer at the quote it is honouring", async () => {
+    const { quote } = await alreadyOffered();
+    const { offer } = await awardQuote({ quoteId: quote.id, actor: DESK });
+    expect(offer.respondsToId).toBe(quote.id);
   });
 });

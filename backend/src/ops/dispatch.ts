@@ -695,11 +695,23 @@ export async function quotesForTrip(tripId: string): Promise<PartnerQuote[]> {
   const quotes = new Map<string, (typeof rows)[number]>();
   for (const r of rows) if (r.kind === "QUOTE" && r.respondsToId) quotes.set(r.respondsToId, r);
 
-  // An awarded quote is one whose partner has since been sent an offer. Read
-  // off the messages rather than kept as a flag, so it cannot drift from what
-  // actually happened.
-  const offered = new Set(
-    rows.filter((r) => r.kind === "OFFER" && r.affiliateId).map((r) => r.affiliateId as string)
+  // An awarded quote is one the award step pointed an offer at.
+  //
+  // This used to read "this partner has an offer on this trip", which is a
+  // different claim and, on T-10315, a wrong one: Metro Overflow Group had
+  // been sent two offers before anybody asked them to quote. So the moment
+  // they quoted $300 the board decided that quote was already awarded, hid
+  // the button for accepting it, and told the other partners the job was
+  // taken. The customer was then confirmed at the older price, because the
+  // award that would have written $300 onto the trip never ran.
+  //
+  // Now the link is explicit: awarding writes the quote's id onto the offer
+  // it creates, so "awarded" means what it says and no offer from any other
+  // errand can be mistaken for one.
+  const awardedQuoteIds = new Set(
+    rows
+      .filter((r) => r.kind === "OFFER" && r.respondsToId)
+      .map((r) => r.respondsToId as string)
   );
 
   return rows
@@ -716,7 +728,7 @@ export async function quotesForTrip(tripId: string): Promise<PartnerQuote[]> {
         amountCents: quote?.amountCents ?? null,
         customerCents:
           typeof quote?.amountCents === "number" ? customerPriceCents(quote.amountCents) : null,
-        awarded: Boolean(quote) && offered.has(request.affiliateId as string),
+        awarded: Boolean(quote) && awardedQuoteIds.has(quote!.id),
       };
     });
 }
@@ -770,6 +782,7 @@ export async function awardQuote(params: {
     affiliateId: quote.affiliateId,
     amountCents: quote.amountCents,
     opening: `Confirming ${trip.reference} to you at ${money(quote.amountCents)}, as quoted.`,
+    awardsQuoteId: quote.id,
     actor: params.actor,
     note: params.note,
   });
@@ -792,6 +805,13 @@ async function commitPrice(params: {
   amountCents: number;
   /** The first line, which says where the price came from. */
   opening: string;
+  /**
+   * The quote this offer is honouring, so the board can tell that it was.
+   *
+   * Inferring it from "does this partner have an offer" was wrong on any
+   * trip where they had been contacted about it before — see quotesForTrip.
+   */
+  awardsQuoteId?: string;
   actor: Actor;
   note?: string | null;
 }): Promise<{ offer: DispatchMessage; trip: TripRecord }> {
@@ -817,6 +837,7 @@ async function commitPrice(params: {
         kind: "OFFER",
         body,
         amountCents: params.amountCents,
+        respondsToId: params.awardsQuoteId ?? null,
         authorUserId: params.actor.userId,
         authorName: params.actor.name,
       })
