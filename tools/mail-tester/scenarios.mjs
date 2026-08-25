@@ -190,6 +190,33 @@ Daniel Weiss
     }),
   },
   {
+    id: "kind-unknown",
+    title: "Departure with the flight time given but not the kind",
+    subject: "Request for airport transfer",
+    // Ticket #67, almost verbatim — including "545pm" with no colon, which
+    // is how a real customer wrote it. This one email produced four
+    // separate defects: a question asking for a date already given, a
+    // sentence asking whether an email address was a phone number, an empty
+    // date on the reservation form, and a car booked for 7:48am against an
+    // evening flight. It earns a permanent place here.
+    body: `Hello,
+
+Can you please arrange an airport transfer for ${NEAR.split(" ").slice(1).join(" ")}. Pickup is at 1 Kalisa Way, Paramus going to LGA Airport. My flight departs at 545pm. There will be 1 passenger and 2 bags.
+
+Thanks
+Apurva`,
+    check: [
+      "Queue: Reservation / New reservation / INTERNAL",
+      'Does NOT ask for the date — the flight time already carries it',
+      "Asks whether the flight is domestic or international, AND gives the pickup time for each",
+      "The two times are exactly an hour apart (2h rule vs 3h rule)",
+      "Asks for a mobile number in words that mention the driver — never folded into the email line",
+      "INTERNAL NOTE says which of the two the booking has been set to, and what the other would be",
+      "Create reservation opens with the pickup already filled in — the earlier of the two",
+      "The LGA line carries no request to confirm a postcode",
+    ],
+  },
+  {
     id: "accounting",
     title: "An invoice question",
     subject: "Query on invoice 10432",
