@@ -64,6 +64,20 @@ export interface PickupPlan {
    * These become the questions Adam asks.
    */
   missing: string[];
+  /**
+   * Both answers, for when the only thing missing is which rule applies.
+   *
+   * Domestic and international differ by exactly one hour of lead time. When
+   * we know the flight time and the drive but not which kind of flight it is,
+   * every ingredient of both answers is already in hand — so the customer can
+   * be told what each would mean instead of being asked an open question and
+   * left to work out the consequence themselves.
+   *
+   * Null whenever the choice is not open: either the kind is known, or
+   * something else is missing and there is nothing to offer.
+   */
+  ifDomesticLocal: string | null;
+  ifInternationalLocal: string | null;
 }
 
 function parseLocal(value: string | null | undefined): DateTime | null {
@@ -116,8 +130,21 @@ export function planPickup(input: PickupPlanInput): PickupPlan {
   if (departs && !input.flightKind) missing.push("whether the flight is domestic or international");
   if (driveMinutes === null) missing.push("a verified pickup and drop-off address to measure the drive");
 
+  /** The pickup that satisfies one rule, given everything else. */
+  const pickupUnder = (kind: FlightKind, at: DateTime, drive: number): DateTime =>
+    roundDown(
+      at.minus({ minutes: leadMinutesFor(kind) }).minus({
+        minutes: drive + stopAllowanceMinutes + buffer,
+      })
+    );
+
   // Not an airport departure, or not enough to work with: nothing to recommend.
   if (!departs || !input.flightKind || driveMinutes === null) {
+    // One exception, and it is the common one: the flight time and the drive
+    // are known and only the kind of flight is not. Both answers exist, so
+    // both are offered rather than neither.
+    const choiceIsOpen = Boolean(departs) && !input.flightKind && driveMinutes !== null;
+
     return {
       recommendedPickupLocal: null,
       mustArriveAtLocal: formatLocal(departs && input.flightKind ? departs.minus({ minutes: leadMinutesFor(input.flightKind) }) : null),
@@ -127,14 +154,16 @@ export function planPickup(input: PickupPlanInput): PickupPlan {
       requestedIsTooLate: false,
       shortfallMinutes: null,
       missing,
+      ifDomesticLocal: choiceIsOpen ? formatLocal(pickupUnder("DOMESTIC", departs!, driveMinutes!)) : null,
+      ifInternationalLocal: choiceIsOpen
+        ? formatLocal(pickupUnder("INTERNATIONAL", departs!, driveMinutes!))
+        : null,
     };
   }
 
   const leadMinutes = leadMinutesFor(input.flightKind);
   const mustArriveAt = departs.minus({ minutes: leadMinutes });
-  const recommended = roundDown(
-    mustArriveAt.minus({ minutes: driveMinutes + stopAllowanceMinutes + buffer })
-  );
+  const recommended = pickupUnder(input.flightKind, departs, driveMinutes);
 
   // A requested time LATER than the recommended one means they'd be late.
   const shortfallMinutes = requested
@@ -150,6 +179,9 @@ export function planPickup(input: PickupPlanInput): PickupPlan {
     requestedIsTooLate: shortfallMinutes !== null && shortfallMinutes > 0,
     shortfallMinutes,
     missing,
+    // The choice is settled, so there is nothing to offer.
+    ifDomesticLocal: null,
+    ifInternationalLocal: null,
   };
 }
 
@@ -157,4 +189,15 @@ export function planPickup(input: PickupPlanInput): PickupPlan {
 export function describeLocal(value: string | null): string | null {
   const dt = parseLocal(value);
   return dt ? dt.toFormat("cccc d LLLL, h:mm a") : null;
+}
+
+/**
+ * Just the clock time: "3:05 PM".
+ *
+ * For the second of two times on the same day, where repeating the date reads
+ * as though it might be a different one.
+ */
+export function describeTimeLocal(value: string | null): string | null {
+  const dt = parseLocal(value);
+  return dt ? dt.toFormat("h:mm a") : null;
 }

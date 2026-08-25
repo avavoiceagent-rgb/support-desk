@@ -7,7 +7,7 @@
 import type { ExtractedBooking } from "./extract";
 import { tidyAddress } from "./maps";
 import type { VerifiedAddress } from "./maps";
-import { describeLocal } from "./pickup-time";
+import { describeLocal, describeTimeLocal } from "./pickup-time";
 import type { PickupPlan } from "./pickup-time";
 import { CAPACITY } from "./vehicles";
 
@@ -91,7 +91,15 @@ export function reviewBooking(input: ReviewInput): BookingReview {
   if (bookerPhone) {
     confirmations.push(`Contact number: ${bookerPhone} — is this the best number on the day?`);
   } else {
-    questions.push("a contact number for the day of travel");
+    // "A contact number" is abstract enough for a composer to weld onto the
+    // email line above it — on ticket #67 it produced "we have your email;
+    // could you confirm whether this is also the best contact number", which
+    // asks whether an address is a phone. The compose prompt has forbidden
+    // exactly that since 22 August, by name, and the model did it anyway two
+    // days later. So the fix is the material rather than another instruction:
+    // a question that names a mobile and a driver cannot be folded into a
+    // sentence about an email address without reading as obvious nonsense.
+    questions.push("a mobile number for the day of travel, so the driver can reach you");
   }
 
   if (booking.bookerIsPassenger === false) {
@@ -125,14 +133,36 @@ export function reviewBooking(input: ReviewInput): BookingReview {
   else questions.push("the drop-off address");
 
   // --- When --------------------------------------------------------------
-  if (!booking.requestedPickupLocal && !plan.recommendedPickupLocal) {
-    questions.push("the date and time you'd like to be collected");
+  //
+  // Both candidate pickups exist when the only open question is which airport
+  // rule applies. In that case there is nothing to ask about the time: it is
+  // settled the moment they say which kind of flight it is, and asking anyway
+  // is asking a customer to do arithmetic we have already done.
+  const bothPickups = Boolean(plan.ifDomesticLocal && plan.ifInternationalLocal);
+
+  if (!booking.requestedPickupLocal && !plan.recommendedPickupLocal && !bothPickups) {
+    // Only the part we are actually missing. The flight time carries the
+    // date, so a customer who gave one has already told us the day — asking
+    // for it again reads as though nobody had read their email.
+    questions.push(
+      booking.flightTimeLocal
+        ? "the time you'd like to be collected"
+        : "the date and time you'd like to be collected"
+    );
   }
 
   const goingToAirport = booking.flightDirection === "DEPARTURE" || Boolean(input.dropoff?.isAirport);
   if (goingToAirport) {
     if (!booking.flightTimeLocal) questions.push("your flight departure time");
-    if (!booking.flightKind) questions.push("whether the flight is domestic or international");
+    if (!booking.flightKind) {
+      // The same question either way — but where both answers are computable,
+      // it is asked with the consequence of each attached.
+      questions.push(
+        bothPickups
+          ? `whether the flight is domestic or international — if it is domestic we would collect you at ${describeLocal(plan.ifDomesticLocal)}, and if international at ${describeTimeLocal(plan.ifInternationalLocal)}`
+          : "whether the flight is domestic or international"
+      );
+    }
     if (!booking.flightNumber) questions.push("your flight number, so we can watch for changes");
   }
   if (booking.flightDirection === "ARRIVAL" && !booking.flightNumber) {
@@ -171,6 +201,11 @@ export function reviewBooking(input: ReviewInput): BookingReview {
     const suggested = describeLocal(plan.recommendedPickupLocal) ?? plan.recommendedPickupLocal;
     internalNotes.push(
       `The requested pickup is ${plan.shortfallMinutes} minutes too late for the ${plan.leadMinutes}-minute airport rule. The draft suggests ${suggested} instead.`
+    );
+  }
+  if (plan.ifDomesticLocal && plan.ifInternationalLocal) {
+    internalNotes.push(
+      `Flight kind not stated. Pickup is set to ${describeLocal(plan.ifInternationalLocal)} — the international time, which is the earlier of the two. If it turns out to be domestic, it moves to ${describeTimeLocal(plan.ifDomesticLocal)}.`
     );
   }
   if (input.pickup?.partialMatch || input.dropoff?.partialMatch) {

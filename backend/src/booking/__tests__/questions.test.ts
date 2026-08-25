@@ -93,7 +93,9 @@ describe("contact numbers", () => {
   });
 
   it("asks for a number when the email has none", () => {
-    expect(asks(review({ bookerIsPassenger: true }), "contact number")).toBe(true);
+    // Worded as a mobile the driver needs, not an abstract "contact number" —
+    // see the ticket #67 note in questions.ts.
+    expect(asks(review({ bookerIsPassenger: true }), "mobile number for the day")).toBe(true);
   });
 
   it("asks the customer to confirm a number found in the signature", () => {
@@ -232,5 +234,85 @@ describe("notes for the person reviewing", () => {
   it("says when an address could not be checked on the map", () => {
     const r = review({ pickupAddressText: "the blue house" }, { pickup: null });
     expect(r.internalNotes.join(" ")).toContain("Could not verify the pickup address");
+  });
+});
+
+describe("a departure with the flight kind still open", () => {
+  // Ticket #67, in the shape the desk actually received it: date and flight
+  // time given, domestic-or-international not.
+  const apurva = { flightTimeLocal: "2026-08-28T17:45", flightDirection: "DEPARTURE" as const };
+
+  it("does not ask for a time it can already work out", () => {
+    // The old draft asked "the date and time you'd like to be collected" of a
+    // customer who had given the date and the flight time. Both answers were
+    // computable; only the choice between them was not.
+    const r = review(apurva);
+    expect(asks(r, "date and time you'd like to be collected")).toBe(false);
+    expect(asks(r, "time you'd like to be collected")).toBe(false);
+  });
+
+  it("asks the one open question, with what each answer would mean", () => {
+    const r = review(apurva);
+    const question = r.questions.find((q) => q.includes("domestic or international"));
+    expect(question).toBeDefined();
+    // 5:45pm − 2h − 50 min drive, and an hour earlier for international.
+    expect(question).toContain("2:55 PM");
+    expect(question).toContain("1:55 PM");
+  });
+
+  it("tells the desk which of the two the booking has been set to", () => {
+    const r = review(apurva);
+    const note = r.internalNotes.find((n) => n.includes("Flight kind not stated"));
+    expect(note).toBeDefined();
+    // The earlier one, so an unanswered email cannot make somebody late.
+    expect(note).toContain("1:55 PM");
+    expect(note).toContain("2:55 PM");
+  });
+
+  it("still asks for the date when there is no flight time either", () => {
+    const r = review({ flightDirection: "DEPARTURE" });
+    expect(asks(r, "date and time you'd like to be collected")).toBe(true);
+  });
+
+  it("asks only for the time when the flight time gives the date", () => {
+    // No drive measured, so neither answer is computable — but the day is
+    // still settled by the flight, and asking for it again reads as though
+    // nobody had opened the email.
+    const r = review(apurva, {
+      plan: planPickup({
+        requestedPickupLocal: null,
+        flightDepartsLocal: "2026-08-28T17:45",
+        flightKind: null,
+        driveMinutes: null,
+      }),
+    });
+    expect(asks(r, "the time you'd like to be collected")).toBe(true);
+    expect(asks(r, "date and time")).toBe(false);
+  });
+
+  it("goes back to the plain question once the kind is known", () => {
+    const r = review({ ...apurva, flightKind: "DOMESTIC" });
+    expect(asks(r, "domestic or international")).toBe(false);
+    expect(r.internalNotes.some((n) => n.includes("Flight kind not stated"))).toBe(false);
+  });
+});
+
+describe("the contact question cannot be mistaken for the email line", () => {
+  it("asks for a mobile in words that name a phone and a driver", () => {
+    // Ticket #67: the composer merged the email confirmation and the contact
+    // question into "is this also the best contact number to reach you",
+    // about an email address. The prompt already banned that sentence; this
+    // makes the two items too different in kind to glue together.
+    const r = review({});
+    const question = r.questions.find((q) => q.includes("mobile number for the day"));
+    expect(question).toBeDefined();
+    expect(question).toContain("driver");
+    expect(confirms(r, "email for updates")).toBe(true);
+  });
+
+  it("does not ask at all when a number was given", () => {
+    const r = review({ bookerPhone: "201-693-4150" });
+    expect(asks(r, "mobile number for the day")).toBe(false);
+    expect(confirms(r, "201-693-4150")).toBe(true);
   });
 });

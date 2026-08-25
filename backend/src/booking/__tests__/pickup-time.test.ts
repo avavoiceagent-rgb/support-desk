@@ -217,3 +217,71 @@ describe("describeLocal", () => {
     expect(describeLocal("not a time")).toBeNull();
   });
 });
+
+describe("when only domestic-or-international is missing", () => {
+  // Ticket #67: 1 Kalisa Way, Paramus to LGA, flight departs 5:45pm, and the
+  // customer never said which kind of flight. Everything else was known, and
+  // the plan answered with nothing — which left the reservation form blank
+  // and a car booked for 7:48am against an evening flight.
+  const departure = {
+    requestedPickupLocal: null,
+    flightDepartsLocal: "2026-08-28T17:45",
+    flightKind: null,
+    driveMinutes: 40,
+  };
+
+  it("offers both answers instead of neither", () => {
+    const plan = planPickup(departure);
+    // 5:45pm − 2h at the airport − 40 min drive = 3:05pm.
+    expect(plan.ifDomesticLocal).toBe("2026-08-28T15:05");
+    // An hour earlier for the three-hour rule.
+    expect(plan.ifInternationalLocal).toBe("2026-08-28T14:05");
+  });
+
+  it("still recommends nothing, because we still do not know", () => {
+    // The two are an offer to the customer, not a decision. Filling
+    // `recommendedPickupLocal` would state one of them as fact.
+    const plan = planPickup(departure);
+    expect(plan.recommendedPickupLocal).toBeNull();
+    expect(plan.missing).toContain("whether the flight is domestic or international");
+  });
+
+  it("offers nothing when the drive is unknown", () => {
+    // Two answers need the drive as much as one does. Guessing it here would
+    // be the invented fact this file exists to avoid.
+    const plan = planPickup({ ...departure, driveMinutes: null });
+    expect(plan.ifDomesticLocal).toBeNull();
+    expect(plan.ifInternationalLocal).toBeNull();
+  });
+
+  it("offers nothing when the flight time is unknown", () => {
+    const plan = planPickup({ ...departure, flightDepartsLocal: null });
+    expect(plan.ifDomesticLocal).toBeNull();
+    expect(plan.ifInternationalLocal).toBeNull();
+  });
+
+  it("says nothing once the choice is settled", () => {
+    const plan = planPickup({ ...departure, flightKind: "DOMESTIC" });
+    expect(plan.recommendedPickupLocal).toBe("2026-08-28T15:05");
+    expect(plan.ifDomesticLocal).toBeNull();
+    expect(plan.ifInternationalLocal).toBeNull();
+  });
+
+  it("counts stops in both, the same way it counts them in one", () => {
+    const plan = planPickup({ ...departure, stopDurationsMinutes: [null] });
+    // The unstated stop costs 15 minutes off each.
+    expect(plan.ifDomesticLocal).toBe("2026-08-28T14:50");
+    expect(plan.ifInternationalLocal).toBe("2026-08-28T13:50");
+  });
+
+  it("agrees with the one-rule answer it would give if told", () => {
+    // The two paths compute the same thing; a divergence would mean the
+    // customer was quoted one time and the booking made at another.
+    const both = planPickup(departure);
+    for (const kind of ["DOMESTIC", "INTERNATIONAL"] as const) {
+      const settled = planPickup({ ...departure, flightKind: kind });
+      const offered = kind === "DOMESTIC" ? both.ifDomesticLocal : both.ifInternationalLocal;
+      expect(offered).toBe(settled.recommendedPickupLocal);
+    }
+  });
+});

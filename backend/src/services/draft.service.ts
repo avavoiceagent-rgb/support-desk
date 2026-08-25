@@ -213,7 +213,18 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
           stops: stops
             .map((stop, i) => stop?.formattedAddress ?? booking.stops[i]?.addressText ?? null)
             .filter((a): a is string => Boolean(a)),
-          pickupAtLocal: plan.recommendedPickupLocal ?? booking.requestedPickupLocal,
+          // The earlier of the two when the flight kind is still open.
+          //
+          // A blank here is what left a reservation form empty and let the
+          // browser fill it with the current time — a car booked for 7:48am
+          // against a 5:45pm flight, offered to a driver, and accepted. The
+          // international time is the earlier one, so taking it is the same
+          // instinct as rounding a pickup down: early costs a wait, late
+          // costs the flight. The internal note says both.
+          pickupAtLocal:
+            plan.recommendedPickupLocal ??
+            booking.requestedPickupLocal ??
+            plan.ifInternationalLocal,
           // From the counts, with what they asked for as a floor. Reading the
           // class out of the model's own sentence made "an SUV or a van" a VAN
           // by regex ordering, and asked a model for something already
