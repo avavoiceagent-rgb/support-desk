@@ -129,6 +129,8 @@ export interface TripCandidates {
     quote: TripQuote;
   }[];
   fallbackReason: "OUT_OF_AREA" | "NO_CAR_FREE" | null;
+  /** Why the list is as short as it is. Null when it explains itself. */
+  coverageNote: string | null;
   /** The message that will actually be sent, written by the code that sends it. */
   offerText: string;
   /** Who holds the job now, and whether that still stands. */
@@ -344,6 +346,8 @@ export interface DispatchMessage {
   kind: DispatchKind;
   body: string;
   respondsToId: string | null;
+  /** Money, in whole cents, on a QUOTE or on the OFFER that awarded the job. */
+  amountCents: number | null;
   /** Who at the desk sent it, on an outbound message. */
   authorName: string | null;
   /** Who was standing in for the contact, on an inbound one. */

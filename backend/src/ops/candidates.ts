@@ -16,6 +16,9 @@ import { describeOffer, lastSpokeTo } from "./dispatch";
 import { listTripEvents } from "./trip-events";
 import { quoteTripForAffiliate, type TripQuote } from "./pricing";
 import type { TripRecord } from "./lookup";
+import { eq, sql } from "drizzle-orm";
+import { db } from "../db/client";
+import { affiliates } from "../db/schema";
 
 export interface PartnerCandidate {
   affiliateId: string;
@@ -64,6 +67,16 @@ export interface TripCandidates {
   assignment: AssignmentState | null;
   /** Why the partner list is what it is, for the screen to say out loud. */
   fallbackReason: "OUT_OF_AREA" | "NO_CAR_FREE" | null;
+  /**
+   * Why the list is as short as it is, when it is short.
+   *
+   * The desk asks several partners for a price at once, and the first job put
+   * through that offered exactly one tick box — because one partner on the
+   * roster covers Pennsylvania. Nothing said so, and a feature that works
+   * perfectly while looking broken is the same as a broken one to the person
+   * using it. Null when the list is long enough to explain itself.
+   */
+  coverageNote: string | null;
   /**
    * The message a driver or partner would receive, exactly as it will be sent.
    *
@@ -160,7 +173,14 @@ export async function candidatesForTrip(trip: TripRecord): Promise<TripCandidate
   const offerText = describeOffer(trip);
 
   if (drivers.length > 0) {
-    return { drivers, partners: [], fallbackReason: null, offerText, assignment };
+    return {
+      drivers,
+      partners: [],
+      fallbackReason: null,
+      coverageNote: null,
+      offerText,
+      assignment,
+    };
   }
 
   const suggestions = await suggestAffiliates(
@@ -188,7 +208,36 @@ export async function candidatesForTrip(trip: TripRecord): Promise<TripCandidate
     drivers: [],
     partners,
     fallbackReason: outOfArea ? "OUT_OF_AREA" : "NO_CAR_FREE",
+    coverageNote: outOfArea ? await coverageNoteFor(trip, partners.length) : null,
     offerText,
     assignment,
   };
+}
+
+/**
+ * "Only 1 of your 11 partners covers PA."
+ *
+ * Said because the alternative is a screen that shows one tick box under a
+ * heading promising a choice, and leaves the reader to guess whether that is
+ * the roster or a bug. Null once there are enough to choose between, where the
+ * list speaks for itself.
+ */
+async function coverageNoteFor(trip: TripRecord, found: number): Promise<string | null> {
+  if (found > 2) return null;
+  const where = trip.dropoffState;
+  if (!where) return null;
+
+  const [row] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(affiliates)
+    .where(eq(affiliates.active, true));
+  const total = row?.total ?? 0;
+
+  // "None of your 1 partner cover PA" is what counting into every sentence
+  // gets you. The count earns its place only where it is the point.
+  if (found === 0) {
+    return `No partner of yours covers ${where}. Add one, or widen a partner's coverage in Operations → Partners.`;
+  }
+  const roster = `${total} ${total === 1 ? "partner" : "partners"}`;
+  return `Only ${found} of your ${roster} ${found === 1 ? "covers" : "cover"} ${where}, so that is all there is to ask. Widen a partner's coverage in Operations → Partners if you want a choice of price.`;
 }

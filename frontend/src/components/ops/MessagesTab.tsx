@@ -22,6 +22,7 @@ import {
   type Trip,
 } from "../../api/ops";
 import { Button, ErrorNote, Field, apiMessage, inputClass, when } from "./shared";
+import { money, parseMoney } from "../../lib/money";
 
 interface ContactOption {
   kind: ContactKind;
@@ -35,6 +36,8 @@ function Bubble({ message }: { message: DispatchMessage }) {
   const isOffer = message.kind === "OFFER";
   const isAccept = message.kind === "ACCEPT";
   const isDecline = message.kind === "DECLINE";
+  const isAsk = message.kind === "QUOTE_REQUEST";
+  const isQuote = message.kind === "QUOTE";
 
   const tone = isOffer
     ? "border-indigo-200 bg-indigo-50"
@@ -42,9 +45,11 @@ function Bubble({ message }: { message: DispatchMessage }) {
       ? "border-emerald-200 bg-emerald-50"
       : isDecline
         ? "border-amber-200 bg-amber-50"
-        : outbound
-          ? "border-gray-200 bg-white"
-          : "border-gray-200 bg-gray-50";
+        : isAsk || isQuote
+          ? "border-sky-200 bg-sky-50"
+          : outbound
+            ? "border-gray-200 bg-white"
+            : "border-gray-200 bg-gray-50";
 
   return (
     <div className={`flex ${outbound ? "justify-start" : "justify-end"}`}>
@@ -66,6 +71,16 @@ function Bubble({ message }: { message: DispatchMessage }) {
           {isDecline && (
             <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
               Declined
+            </span>
+          )}
+          {isAsk && (
+            <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800">
+              Asked for a price
+            </span>
+          )}
+          {isQuote && (
+            <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800">
+              Quoted {message.amountCents === null ? "" : money(message.amountCents)}
             </span>
           )}
           <span className="text-[10px] text-gray-400">{when(message.createdAt)}</span>
@@ -295,6 +310,23 @@ export function MessagesTab({
           {messages.map((m) => (
             <div key={m.id}>
               <Bubble message={m} />
+              {/* A price belongs in the conversation that asked for it.
+                  It was only on the reservation panel, so the first person
+                  to use this came here — which is where a partner's answer
+                  obviously goes — typed 300 into the message box, and sent
+                  the partner the number 300 from the desk. */}
+              {m.kind === "QUOTE_REQUEST" && !answered.has(m.id) && (
+                <QuoteReply
+                  requestId={m.id}
+                  busy={busy}
+                  onQuoted={(cents) =>
+                    void run(async () => {
+                      await opsApi.recordQuote(m.id, cents);
+                      setNote(`Recorded ${money(cents)} from ${contact?.label ?? "them"}.`);
+                    })
+                  }
+                />
+              )}
               {m.kind === "OFFER" && !answered.has(m.id) && (
                 <div className="mt-1 flex justify-end gap-2">
                   <Button
@@ -416,6 +448,65 @@ export function MessagesTab({
           </label>
         </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * The price, answered where it was asked.
+ *
+ * This is the box that was missing. The desk sent Liberty Bell a request for
+ * a price, Liberty Bell's thread is where their answer belongs, and the only
+ * place to record one was a panel on the ticket. So the first person to use
+ * the feature did the obvious thing — opened the thread, typed 300 into the
+ * message box — and sent a partner the number 300 from the desk.
+ *
+ * A price typed here is refused unless it is one. A number that reaches a
+ * customer must not have been guessed at on the way.
+ */
+function QuoteReply({
+  requestId,
+  busy,
+  onQuoted,
+}: {
+  requestId: string;
+  busy: boolean;
+  onQuoted: (amountCents: number) => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const cents = parseMoney(typed);
+  const unreadable = typed.trim().length > 0 && cents === null;
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
+      <label className="text-[11px] text-gray-500" htmlFor={`quote-${requestId}`}>
+        Their price
+      </label>
+      <input
+        id={`quote-${requestId}`}
+        value={typed}
+        onChange={(e) => setTyped(e.target.value)}
+        placeholder="e.g. 300"
+        className={`w-28 rounded-lg border px-2 py-1 text-sm shadow-sm focus:outline-none ${
+          unreadable ? "border-red-300 bg-red-50" : "border-gray-300"
+        }`}
+      />
+      <Button
+        kind="primary"
+        disabled={busy || cents === null}
+        onClick={() => {
+          if (cents === null) return;
+          onQuoted(cents);
+          setTyped("");
+        }}
+      >
+        Record their quote
+      </Button>
+      {unreadable && (
+        <p className="w-full text-right text-[11px] text-red-700">
+          That is not a price. Type it like 300 or 300.50.
+        </p>
+      )}
     </div>
   );
 }

@@ -672,7 +672,7 @@ function WhoCanTakeIt({
   if (loading) return <p className="mt-2 text-xs text-gray-400">Checking who is free…</p>;
   if (!candidates) return null;
 
-  const { drivers, partners, fallbackReason, offerText, assignment } = candidates;
+  const { drivers, partners, fallbackReason, coverageNote, offerText, assignment } = candidates;
 
   // Somebody already has this job. The only questions worth asking are
   // whether they know what it says now, and whether they can still do it.
@@ -781,6 +781,10 @@ function WhoCanTakeIt({
           before it offers. Inside the service area a partner is overflow for
           our own cars at a rate we already hold, and the straight offer below
           is still the right move. */}
+      {/* Why there is one tick box, or none. Without it the reader has to
+          guess whether the roster is short or the screen is broken. */}
+      {coverageNote && <p className="mt-1.5 text-[11px] text-amber-800">{coverageNote}</p>}
+
       {fallbackReason === "OUT_OF_AREA" ? (
         <QuoteBoard
           tripId={tripId}

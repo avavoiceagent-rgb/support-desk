@@ -458,3 +458,64 @@ describe("answering a change that was re-offered", () => {
     expect(result.offerText).toContain("Child seat required");
   });
 });
+
+describe("saying why the partner list is short", () => {
+  // Ticket #76, Paramus to Philadelphia. The panel offered exactly one tick
+  // box under a heading that promises a choice, and said nothing about why.
+  // A feature that works perfectly while looking broken is, to the person
+  // using it, broken.
+  async function partnerCovering(company: string, states: string[]) {
+    const [a] = await db
+      .insert(affiliates)
+      .values({
+        company,
+        phone: "+1 215 555 0100",
+        email: `${company.replace(/\W/g, "")}@example.test`,
+        coverageStates: states,
+        preference: 1,
+      })
+      .returning();
+    return a;
+  }
+
+  const toPhilly = () =>
+    makeTrip({ dropoffAddress: "1650 Market St, Philadelphia, PA 19103", dropoffState: "PA" });
+
+  it("counts how many of the roster reach that state", async () => {
+    await partnerCovering("Liberty Bell Executive", ["PA", "DE"]);
+    await partnerCovering("Hudson Valley Cars", ["NY"]);
+    await partnerCovering("Garden State Chauffeur", ["NJ"]);
+
+    const out = await candidatesForTrip(await toPhilly());
+
+    expect(out.partners).toHaveLength(1);
+    expect(out.coverageNote).toContain("Only 1 of your 3 partners covers PA");
+    expect(out.coverageNote).toContain("Operations → Partners");
+  });
+
+  it("says plainly when nobody covers it at all", async () => {
+    await partnerCovering("Hudson Valley Cars", ["NY"]);
+
+    const out = await candidatesForTrip(await toPhilly());
+
+    expect(out.partners).toEqual([]);
+    expect(out.coverageNote).toContain("No partner of yours covers PA");
+  });
+
+  it("stays quiet once the list explains itself", async () => {
+    for (const c of ["Liberty Bell Executive", "Keystone Cars", "Delaware Valley Livery"]) {
+      await partnerCovering(c, ["PA"]);
+    }
+
+    const out = await candidatesForTrip(await toPhilly());
+
+    expect(out.partners.length).toBeGreaterThan(2);
+    expect(out.coverageNote).toBeNull();
+  });
+
+  it("says nothing on a job our own drivers can take", async () => {
+    await makeDriverFree("Marco Rinaldi");
+    const out = await candidatesForTrip(await makeTrip());
+    expect(out.coverageNote).toBeNull();
+  });
+});
