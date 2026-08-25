@@ -46,7 +46,7 @@ export function TicketPane({
   const [seedBody, setSeedBody] = useState("");
   const [seedKey, setSeedKey] = useState(0);
   const { draft, markUsed, markDismissed } = useDraft(ticketId);
-  const { context: opsContext } = useOpsContext(ticketId);
+  const { context: opsContext, reload: reloadOpsContext } = useOpsContext(ticketId);
   const [error, setError] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -245,7 +245,12 @@ export function TicketPane({
           <div className="border-b border-gray-100 px-4 pb-3">
             <ReservationPanel
               ticketId={ticketId}
-              onTicketChanged={load}
+              // Both, or the list below this panel keeps showing the time the
+              // booking had before the change.
+              onTicketChanged={() => {
+                load();
+                reloadOpsContext();
+              }}
               // The same door as the detail page. Without it this view has no
               // Confirmation email link at all, which is a second way for the
               // same feature to look like it does not exist.

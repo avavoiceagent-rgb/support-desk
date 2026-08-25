@@ -23,11 +23,15 @@ import { money, parseMoney } from "../lib/money";
 import { when, toDateTimeInput, instantFromInput } from "../lib/time";
 import { useAuth } from "../hooks/useAuth";
 import { pastBookingWarning } from "../lib/bookings";
+import { lateChangeWarning } from "../lib/flights";
 
 /** A booking this email names by reference. */
 interface QuotedTrip {
   id: string;
   reference: string;
+  /** The flight the pickup was worked back from, so a change can be checked. */
+  flightAt: string | null;
+  flightKind: string | null;
   pickupAt: string;
   bookedHours: number;
   vehicleClass: VehicleClass;
@@ -416,6 +420,19 @@ export function ReservationPanel({
                   {pastBookingWarning(q, q.reference) && (
                     <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
                       {pastBookingWarning(q, q.reference)}
+                    </p>
+                  )}
+                  {/* The rule was enforced when the booking was made and never
+                      again. A change request is a person typing a time, and
+                      nothing measured it against the flight it was worked back
+                      from — so the desk would save a pickup that misses
+                      check-in, tell the driver, and email the customer a
+                      confirmation of it. Red rather than amber: the past-booking
+                      note above is a "did you mean this", this is a missed
+                      flight. */}
+                  {lateChangeWarning(q, change.pickupAtLocal) && (
+                    <p className="rounded-lg border border-red-300 bg-red-50 px-2.5 py-1.5 text-[11px] text-red-900">
+                      {lateChangeWarning(q, change.pickupAtLocal)}
                     </p>
                   )}
                   <label className="block">

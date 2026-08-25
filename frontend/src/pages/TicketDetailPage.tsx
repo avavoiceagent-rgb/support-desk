@@ -33,7 +33,7 @@ export function TicketDetailPage() {
   const [seedBody, setSeedBody] = useState("");
   const [seedKey, setSeedKey] = useState(0);
   const { draft, markUsed, markDismissed } = useDraft(id ?? "");
-  const { context: opsContext } = useOpsContext(id ?? "");
+  const { context: opsContext, reload: reloadOpsContext } = useOpsContext(id ?? "");
 
   const load = useCallback(() => {
     if (!id) return;
@@ -42,6 +42,19 @@ export function TicketDetailPage() {
       .then((r) => setTicket(r.ticket))
       .catch(() => setNotFound(true));
   }, [id]);
+
+  /**
+   * Everything on the page that a change to a booking can move.
+   *
+   * The ticket reloaded and the ops context did not, so after moving T-10310
+   * to 12:30 PM the panel said 12:30 and the "On file for this sender" list
+   * under it still said 2:00 — two times for one booking on one screen, which
+   * is how a car ends up in the wrong place.
+   */
+  const reloadEverything = useCallback(() => {
+    load();
+    reloadOpsContext();
+  }, [load, reloadOpsContext]);
 
   useEffect(() => {
     api.get<{ users: PublicUser[] }>("/users").then((r) => setUsers(r.users));
@@ -229,7 +242,7 @@ export function TicketDetailPage() {
 
             <ReservationPanel
               ticketId={ticket.id}
-              onTicketChanged={load}
+              onTicketChanged={reloadEverything}
               onDraftReply={(bodyHtml) => {
                 // Same door the suggested reply uses: into the composer, where
                 // it waits for a person. Nothing on this page sends anything.

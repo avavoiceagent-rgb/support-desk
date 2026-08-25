@@ -168,6 +168,16 @@ export interface QuotedTrip {
   dropoffAddress: string;
   driverName: string | null;
   affiliateCompany: string | null;
+  /**
+   * The flight this pickup was worked back from, so a screen changing the
+   * time can check the new one still makes it.
+   *
+   * A change request is a person typing a time, and nothing was measuring it
+   * against anything. The rule was enforced on the way in and then never
+   * again.
+   */
+  flightAt: Date | null;
+  flightKind: string | null;
 }
 
 /**
@@ -199,6 +209,8 @@ export function quotedTripsFrom(context: {
       dropoffAddress: trip.dropoffAddress,
       driverName: trip.driver?.name ?? null,
       affiliateCompany: trip.affiliate?.company ?? null,
+      flightAt: trip.flightAt,
+      flightKind: trip.flightKind,
     }));
 }
 
