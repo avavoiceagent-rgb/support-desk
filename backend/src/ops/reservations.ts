@@ -86,6 +86,16 @@ export interface ReservationInput {
   passengerCount?: number | null;
   luggageCount?: number | null;
   flightNumber?: string | null;
+  /**
+   * The flight the pickup was worked back from.
+   *
+   * Carried onto the trip so the booking holds what it is timed around: a
+   * dispatcher looking at a 2:00 PM pickup can see it came from a 5:45 PM
+   * international departure without opening the ticket, and if anything
+   * moves the time can be re-derived rather than guessed at.
+   */
+  flightAtLocal?: string | null;
+  flightKind?: "DOMESTIC" | "INTERNATIONAL" | null;
   notes?: string | null;
 }
 
@@ -249,6 +259,13 @@ export async function createReservationFromTicket(
     throw new OpsError("That pickup time is not a time. Use the date and time boxes.");
   }
 
+  // Same zone as everything else here. An unparseable flight time is stored
+  // as nothing rather than refused: the pickup is what the car runs on, and
+  // losing a booking over a malformed flight time would be the wrong trade.
+  const flightAt = input.flightAtLocal
+    ? DateTime.fromISO(input.flightAtLocal, { zone: OPERATING_TIME_ZONE })
+    : null;
+
   // Reuse the geocode the draft already paid for, rather than asking Google
   // the same question twice.
   const facts = await suggestedReservation(ticketId);
@@ -278,6 +295,8 @@ export async function createReservationFromTicket(
     passengerCount: input.passengerCount ?? null,
     luggageCount: input.luggageCount ?? null,
     flightNumber: input.flightNumber ?? null,
+    flightAt: flightAt?.isValid ? flightAt.toJSDate() : null,
+    flightKind: input.flightKind ?? null,
     pickupLat: from.lat,
     pickupLng: from.lng,
     pickupState: from.state,

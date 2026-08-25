@@ -293,6 +293,8 @@ const reservationSchema = z.object({
   passengerCount: z.coerce.number().int().min(1).nullable().optional(),
   luggageCount: z.coerce.number().int().min(0).nullable().optional(),
   flightNumber: z.string().nullable().optional(),
+  flightAtLocal: z.string().nullable().optional(),
+  flightKind: z.enum(["DOMESTIC", "INTERNATIONAL"]).nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 

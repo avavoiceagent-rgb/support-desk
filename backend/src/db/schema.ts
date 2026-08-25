@@ -174,6 +174,15 @@ export interface DraftFacts {
   passengerCount: number | null;
   luggageCount: number | null;
   flightNumber: string | null;
+  /**
+   * The flight itself, so the booking carries what the trip is timed around.
+   *
+   * Optional for the same reason the coordinates are: drafts written before
+   * these existed have facts without the fields, and typing absent data as
+   * present-and-null would hide that difference.
+   */
+  flightTimeLocal?: string | null;
+  flightKind?: "DOMESTIC" | "INTERNATIONAL" | null;
 }
 
 export const ticketDrafts = pgTable("ticket_drafts", {
@@ -443,6 +452,17 @@ export const trips = pgTable(
     passengerCount: integer("passenger_count"),
     luggageCount: integer("luggage_count"),
     flightNumber: text("flight_number"),
+    /**
+     * The flight this trip is timed around.
+     *
+     * The pickup is derived from it — two hours before a domestic departure,
+     * three before an international one, plus the drive — so a booking that
+     * holds the pickup but not the flight cannot be re-derived when anything
+     * moves. A dispatcher looking at 2:00 PM has no way to see it came from a
+     * 5:45 PM international departure without opening the ticket.
+     */
+    flightAt: timestamp("flight_at", { withTimezone: true }),
+    flightKind: text("flight_kind"),
 
     /**
      * Where this job starts and ends.

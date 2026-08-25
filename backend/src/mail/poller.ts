@@ -6,7 +6,7 @@ import { decryptToken } from "../crypto/token-encryption";
 import { getProvider } from "./registry";
 import { ingestEmail, markAccountError, clearAccountError } from "./ingest";
 import { classifyNewTicket } from "../services/classification.service";
-import { draftReplyForTicket } from "../services/draft.service";
+import { draftReplyForTicket, refreshFactsFromReply } from "../services/draft.service";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let polling = false;
@@ -27,6 +27,9 @@ export async function pollAllAccounts(): Promise<PollSummary> {
   let newMessages = 0;
   let failedAccounts = 0;
   const newTicketIds: string[] = [];
+  // Tickets that got a reply rather than a first email. Their stored booking
+  // facts may now be out of date — see refreshFactsFromReply.
+  const repliedTicketIds: string[] = [];
   try {
     let accounts;
     try {
@@ -49,9 +52,10 @@ export async function pollAllAccounts(): Promise<PollSummary> {
         const { messages, nextCursor } = await provider.listNewMessages(refreshToken, cursor);
 
         for (const email of messages) {
-          const { created, newTicketId } = await ingestEmail(account.id, email);
+          const { created, ticketId, newTicketId } = await ingestEmail(account.id, email);
           if (created) newMessages++;
           if (newTicketId) newTicketIds.push(newTicketId);
+          else if (created && !repliedTicketIds.includes(ticketId)) repliedTicketIds.push(ticketId);
         }
 
         await db
@@ -76,6 +80,7 @@ export async function pollAllAccounts(): Promise<PollSummary> {
     // must not hold up the next poll or keep the "Check for new email"
     // request waiting. Each ticket is independent and failures are swallowed.
     void triageInBackground(newTicketIds);
+    void catchUpOnReplies(repliedTicketIds);
   }
 }
 
@@ -88,6 +93,26 @@ async function triageInBackground(ticketIds: string[]): Promise<void> {
       await draftReplyForTicket(ticketId);
     } catch (err) {
       console.error(`[mail-poller] triage failed for ticket ${ticketId}:`, err);
+    }
+  }
+}
+
+/**
+ * Keep a booking's facts current when the customer answers.
+ *
+ * Same shape as triage: after the mail is stored, after the lock is
+ * released, one ticket at a time, failures swallowed. A reply that adds a
+ * phone number should not be able to hold up the next poll.
+ */
+async function catchUpOnReplies(ticketIds: string[]): Promise<void> {
+  for (const ticketId of ticketIds) {
+    try {
+      const changes = await refreshFactsFromReply(ticketId);
+      if (changes.length) {
+        console.log(`[mail-poller] ticket ${ticketId} reply updated: ${changes.join("; ")}`);
+      }
+    } catch (err) {
+      console.error(`[mail-poller] could not re-read reply for ticket ${ticketId}:`, err);
     }
   }
 }

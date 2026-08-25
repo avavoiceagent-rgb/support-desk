@@ -24,6 +24,8 @@ import { SERVICE_AREA_STATES } from "../types";
 import { DateTime } from "luxon";
 import { OPERATING_TIME_ZONE } from "../booking/pickup-time";
 import { emailFromHeader } from "../mail/address";
+import { stripQuotedReply } from "../mail/quoted";
+import { mergeFacts, describeFactChanges } from "../booking/facts";
 
 /** Filled in with the name of whoever opens the draft. */
 export const AGENT_NAME_PLACEHOLDER = "{{AGENT_NAME}}";
@@ -237,6 +239,8 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
           passengerCount: booking.passengerCount,
           luggageCount: booking.luggageCount,
           flightNumber: booking.flightNumber,
+          flightTimeLocal: booking.flightTimeLocal,
+          flightKind: booking.flightKind,
         },
         status: "READY",
       })
@@ -293,5 +297,91 @@ export function warnIfMapsMissing(): void {
     console.warn(
       "[draft] GOOGLE_MAPS_API_KEY is not set: drafts will quote addresses back unverified and cannot suggest a pickup time."
     );
+  }
+}
+
+/**
+ * Re-read a conversation after the customer answers, and keep what is new.
+ *
+ * The facts behind a booking used to come from the first email and stop
+ * there. On ticket #72 the customer replied with a phone number and "the
+ * flight is international" — both on the screen, neither on the booking, and
+ * the reservation form still opened without them.
+ *
+ * Deliberately narrow. It reads the customer's own words with our quoted
+ * draft stripped out, merges rather than replaces so silence erases nothing,
+ * and touches only the stored facts. It does NOT rewrite the drafted reply:
+ * that has been read, edited and often already sent, and rewriting it under
+ * somebody would be worse than the problem.
+ *
+ * Never throws at the call site — mail must keep flowing.
+ */
+export async function refreshFactsFromReply(ticketId: string): Promise<string[]> {
+  if (!isClassificationEnabled()) return [];
+
+  try {
+    const ticket = await db.query.tickets.findFirst({ where: eq(tickets.id, ticketId) });
+    if (!ticket || ticket.queue !== "RESERVATION") return [];
+
+    const draft = await db.query.ticketDrafts.findFirst({
+      where: eq(ticketDrafts.ticketId, ticketId),
+    });
+    // No facts yet means no draft was ever made for this ticket; there is
+    // nothing to keep current, and building some here would be a new draft by
+    // the back door.
+    if (!draft?.facts) return [];
+
+    const inbound = await db
+      .select({
+        subject: messages.subject,
+        bodyHtml: messages.bodyHtml,
+        bodyText: messages.bodyText,
+        fromAddress: messages.fromAddress,
+        sentAt: messages.sentAt,
+      })
+      .from(messages)
+      .where(and(eq(messages.ticketId, ticketId), eq(messages.direction, "INBOUND")))
+      .orderBy(asc(messages.sentAt));
+
+    const latest = inbound[inbound.length - 1];
+    // Only worth doing once a reply exists: the first email is what the
+    // stored facts already came from.
+    if (!latest || inbound.length < 2) return [];
+
+    const said = stripQuotedReply(toPlainText(latest.bodyHtml, latest.bodyText));
+    if (!said) return [];
+
+    const booking = await extractBooking({
+      subject: latest.subject,
+      body: said,
+      fromAddress: latest.fromAddress,
+      receivedAt: latest.sentAt,
+    });
+    if (!booking) return [];
+
+    const before = draft.facts;
+    const after = mergeFacts(before, {
+      passengerName: booking.passengerName,
+      passengerPhone: booking.passengerPhone ?? booking.bookerPhone,
+      bookerName: booking.bookerName,
+      passengerCount: booking.passengerCount,
+      luggageCount: booking.luggageCount,
+      flightNumber: booking.flightNumber,
+      flightTimeLocal: booking.flightTimeLocal,
+      flightKind: booking.flightKind,
+    });
+
+    const changes = describeFactChanges(before, after);
+    if (changes.length === 0) return [];
+
+    await db
+      .update(ticketDrafts)
+      .set({ facts: after, updatedAt: new Date() })
+      .where(eq(ticketDrafts.ticketId, ticketId));
+
+    return changes;
+  } catch (err) {
+    console.error("[draft] could not re-read the reply:", err);
+    return [];
   }
 }

@@ -50,6 +50,9 @@ interface DraftFacts {
   passengerCount: number | null;
   luggageCount: number | null;
   flightNumber: string | null;
+  /** The flight the pickup was worked back from. Absent on older drafts. */
+  flightTimeLocal?: string | null;
+  flightKind?: "DOMESTIC" | "INTERNATIONAL" | null;
 }
 
 const CLASS_LABEL: Record<VehicleClass, string> = {
@@ -221,6 +224,11 @@ export function ReservationPanel({
         bookerEmail: suggested?.bookerEmail ?? null,
         passengerPhone: suggested?.passengerPhone ?? null,
         stops: suggested?.stops ?? [],
+        // Carried straight from the facts: the flight is what the pickup was
+        // worked back from, and the booking should hold it rather than only
+        // the answer it produced.
+        flightAtLocal: suggested?.flightTimeLocal ?? null,
+        flightKind: suggested?.flightKind ?? null,
       });
       setTrip(made);
       setOpen(false);

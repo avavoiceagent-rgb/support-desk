@@ -206,6 +206,49 @@ describe("what the form opens with", () => {
   });
 });
 
+describe("the flight the pickup was worked back from", () => {
+  beforeEach(reset);
+
+  it("is stored on the booking, not just used to compute it", async () => {
+    // Ticket #72: a 2:00 PM pickup that came from a 5:45 PM international
+    // departure. Without this the booking holds the answer and not the
+    // question, so nothing can be re-derived when the flight moves.
+    const ticket = await makeTicket();
+    const trip = await createReservationFromTicket(
+      ticket.id,
+      { ...INPUT, flightAtLocal: "2026-09-03T17:45", flightKind: "INTERNATIONAL" },
+      await actorFor(undefined)
+    );
+
+    const [row] = await db.select().from(trips).where(eq(trips.id, trip.id));
+    // 5:45pm in New York in September is 21:45 UTC.
+    expect(row.flightAt?.toISOString()).toBe("2026-09-03T21:45:00.000Z");
+    expect(row.flightKind).toBe("INTERNATIONAL");
+  });
+
+  it("stores nothing rather than refusing when the flight time is malformed", async () => {
+    // The pickup is what the car runs on. Losing a booking over a bad flight
+    // time would be the wrong trade.
+    const ticket = await makeTicket();
+    const trip = await createReservationFromTicket(
+      ticket.id,
+      { ...INPUT, flightAtLocal: "not a time" },
+      await actorFor(undefined)
+    );
+    const [row] = await db.select().from(trips).where(eq(trips.id, trip.id));
+    expect(row.flightAt).toBeNull();
+    expect(row.pickupAt.toISOString()).toBe("2026-09-24T13:00:00.000Z");
+  });
+
+  it("leaves both empty when no flight was ever mentioned", async () => {
+    const ticket = await makeTicket();
+    const trip = await createReservationFromTicket(ticket.id, INPUT, await actorFor(undefined));
+    const [row] = await db.select().from(trips).where(eq(trips.id, trip.id));
+    expect(row.flightAt).toBeNull();
+    expect(row.flightKind).toBeNull();
+  });
+});
+
 describe("coordinates from the draft", () => {
   beforeEach(reset);
 
