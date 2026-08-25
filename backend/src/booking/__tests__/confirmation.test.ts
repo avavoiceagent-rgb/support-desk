@@ -120,3 +120,23 @@ describe("the price on a confirmation", () => {
     expect(lines.join(" ")).not.toContain("Price");
   });
 });
+
+describe("which form a caller gets", () => {
+  // T-10313. The booking was created before any partner had quoted, so by the
+  // time $300 was agreed and Liberty Bell had accepted, the last thing in the
+  // trip's history was an assignment. Left to infer, the desk would have
+  // written "we have updated your booking" — listing nothing — to a customer
+  // who had never been sent a confirmation at all.
+  it("restates the whole booking when asked for the full one", () => {
+    const body = confirmationEmail(trip({ customerPriceCents: 37_500 }));
+    expect(body).toContain("Your booking is confirmed");
+    expect(body).toContain("Price: $375.00");
+    expect(body).not.toContain("updated your booking");
+  });
+
+  it("has nothing to tell a customer about who is driving", () => {
+    expect(
+      changesWorthTelling([{ field: "Partner", from: "None", to: "Liberty Bell Executive" }])
+    ).toEqual([]);
+  });
+});

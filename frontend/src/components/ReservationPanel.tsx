@@ -214,20 +214,39 @@ export function ReservationPanel({
    * the thing that mattered and it is done. A confirmation that could not be
    * fetched is a person writing an email by hand, not a booking half made.
    */
-  async function offerConfirmation(tripId: string) {
+  /**
+   * Put the confirmation in the reply box.
+   *
+   * `quiet` is the difference between this happening on its own and somebody
+   * asking for it. After a Create it is a courtesy, and a failure should not
+   * push a booking that did save off the screen. Pressing a button and getting
+   * nothing at all is a different thing entirely — that is the complaint that
+   * started this — so a deliberate press says what went wrong.
+   */
+  async function offerConfirmation(
+    tripId: string,
+    form?: "NEW" | "CHANGE",
+    quiet = form === undefined
+  ) {
     if (!onDraftReply) return;
     try {
-      const confirmation = await opsApi.confirmation(tripId, ticketId);
+      const confirmation = await opsApi.confirmation(tripId, ticketId, form);
       // A change nobody outside the office would notice — a driver assigned,
       // a note edited — has nothing to tell the customer, and an email saying
       // "we have updated your booking" followed by nothing that moved reads
       // as though we had lost track of it.
-      if (!confirmation.tellsThemAnything) return;
+      if (!confirmation.tellsThemAnything) {
+        if (!quiet) setError("Nothing has changed that the customer was ever told about.");
+        return;
+      }
       // The composer is a plain-text box, so it gets the same treatment
       // Adam's own draft gets on its way in.
       onDraftReply(draftToPlainText(confirmation.bodyHtml));
-    } catch {
-      // Nothing to say here that is worth pushing the booking off the screen.
+    } catch (err) {
+      if (quiet) return;
+      setError(
+        err instanceof ApiError ? err.message : "Could not write that confirmation email."
+      );
     }
   }
 
@@ -317,12 +336,30 @@ export function ReservationPanel({
         <p className="mt-0.5 text-xs text-gray-500">
           {trip.driver?.name ?? trip.affiliate?.company ?? "Nobody assigned yet"}
         </p>
-        <Link
-          to="/operations"
-          className="mt-1.5 inline-block text-xs font-medium text-indigo-600 hover:text-indigo-800"
-        >
-          Open in Operations →
-        </Link>
+        <div className="mt-1.5 flex flex-wrap items-center gap-3">
+          <Link
+            to="/operations"
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+          >
+            Open in Operations →
+          </Link>
+          {/* Available whenever, not only in the two seconds after Create.
+              A farmed-out job has no price when the booking is made — it gets
+              one when a partner quotes and we take it, which can be an hour
+              later and through a different screen. Without this there was no
+              way back to the confirmation at the moment it finally had
+              something worth confirming. */}
+          {onDraftReply && (
+            <button
+              type="button"
+              onClick={() => void offerConfirmation(trip.id, "NEW")}
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+            >
+              Confirmation email
+              {typeof trip.customerPriceCents === "number" ? " (with the price)" : ""}
+            </button>
+          )}
+        </div>
         <WhoCanTakeIt tripId={trip.id} version={version} onSent={onTicketChanged} />
       </div>
     );

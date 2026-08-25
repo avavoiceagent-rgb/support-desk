@@ -503,11 +503,14 @@ export const opsApi = {
   awardQuote: (quoteId: string) =>
     api.post<{ trip: Trip }>(`/dispatch/quotes/${quoteId}/award`, {}),
 
-  confirmation: (tripId: string, ticketId: string) =>
+  confirmation: (tripId: string, ticketId: string, form?: "NEW" | "CHANGE") =>
     api.get<{
       kind: "NEW" | "CHANGE";
       reference: string;
       bodyHtml: string;
       tellsThemAnything: boolean;
-    }>(`/ops/trips/${tripId}/confirmation?ticketId=${encodeURIComponent(ticketId)}`),
+    }>(
+      `/ops/trips/${tripId}/confirmation?ticketId=${encodeURIComponent(ticketId)}` +
+        (form ? `&form=${form}` : "")
+    ),
 };

@@ -443,7 +443,23 @@ opsRouter.get("/trips/:id/confirmation", async (req, res) => {
 
   const events = await listTripEvents(trip.id);
   const latest = events[events.length - 1];
-  const isChange = Boolean(latest) && latest.kind !== "CREATED";
+
+  // Which of the two, and who decides.
+  //
+  // Left to itself it reads the trip's own history: just created means a
+  // confirmation, anything since means a change. That is right on the two
+  // paths that fire it automatically, and wrong the moment somebody asks for
+  // the email themselves. On T-10313 the booking was created before a partner
+  // had quoted, so by the time the price was agreed the last event was an
+  // assignment — "we have updated your booking", listing nothing, to a
+  // customer who had never been sent a confirmation in the first place.
+  //
+  // So a caller can say. `form=NEW` restates the whole booking, which is
+  // never wrong to send and is what a person pressing a button marked
+  // "Confirmation email" means.
+  const asked = req.query.form;
+  const isChange =
+    asked === "NEW" ? false : asked === "CHANGE" ? true : Boolean(latest) && latest.kind !== "CREATED";
 
   const confirmable = {
     ...trip,
