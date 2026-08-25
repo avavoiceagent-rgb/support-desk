@@ -89,7 +89,8 @@ export interface TicketDispatchEntry {
   id: string;
   at: string;
   direction: "OUT" | "IN";
-  kind: "OFFER" | "ACCEPT" | "DECLINE" | "TEXT";
+  kind: "OFFER" | "ACCEPT" | "DECLINE" | "TEXT" | "QUOTE_REQUEST" | "QUOTE";
+  amountCents: number | null;
   body: string;
   contactKind: "DRIVER" | "AFFILIATE";
   contactName: string;

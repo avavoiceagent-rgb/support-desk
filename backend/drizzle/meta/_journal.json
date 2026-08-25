@@ -134,6 +134,13 @@
       "when": 1787840000000,
       "tag": "0018_desk_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787845000000,
+      "tag": "0019_partner_quotes",
+      "breakpoints": true
     }
   ]
 }

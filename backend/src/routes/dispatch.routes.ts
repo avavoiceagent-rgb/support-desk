@@ -28,8 +28,12 @@ import { param } from "../utils/params";
 import { OpsError } from "../ops/errors";
 import { actorFor } from "../ops/trip-events";
 import {
+  awardQuote,
   listMessages,
   pendingOfferCounts,
+  quotesForTrip,
+  recordQuote,
+  requestQuotes,
   respondToOffer,
   sendChangeNotice,
   sendOffer,
@@ -63,6 +67,18 @@ const contactSchema = z.object({
   id: z.string().min(1),
 });
 
+const noteOnlySchema = z.object({ note: z.string().max(2000).optional().nullable() });
+
+const quoteRequestSchema = noteOnlySchema.extend({
+  affiliateIds: z.array(z.string().min(1)).min(1, "Choose at least one partner to ask."),
+});
+
+const quoteSchema = noteOnlySchema.extend({
+  // Whole cents. A price that reaches a customer must not have travelled
+  // through a float on the way.
+  amountCents: z.number().int().positive("A quote needs a price."),
+});
+
 function contactFrom(req: { params: Record<string, string> }): Contact {
   return { kind: req.params.kind === "AFFILIATE" ? "AFFILIATE" : "DRIVER", id: req.params.id };
 }
@@ -75,6 +91,57 @@ function contactFrom(req: { params: Record<string, string> }): Contact {
  */
 dispatchRouter.get("/pending", async (_req, res) => {
   await handle(res, async () => res.json(await pendingOfferCounts()));
+});
+
+/**
+ * Farming a job out. Declared before "/:kind/:id/..." for the same reason
+ * "/pending" is: Express matches in order and would read "quotes" as a
+ * contact kind.
+ *
+ * Asking for prices is dispatch work and open to anyone signed in — it commits
+ * us to nothing, and a quote request that needed an admin would stall an
+ * out-of-area job whenever the one admin was out.
+ *
+ * Awarding one is not. It writes money onto the trip and offers the job at
+ * that price, which is the same class of change `PATCH /ops/trips/:id`
+ * refuses without an admin. The rule at the top of this file — changing a
+ * trip needs an admin, whichever screen you do it from — applies here.
+ */
+dispatchRouter.get("/quotes/:tripId", async (req, res) => {
+  await handle(res, async () =>
+    res.json({ quotes: await quotesForTrip(param(req, "tripId")) })
+  );
+});
+
+dispatchRouter.post("/quotes/:tripId/requests", async (req, res) => {
+  const parsed = quoteRequestSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed);
+  const actor = await actorFor(req.session?.userId);
+  await handle(res, async () =>
+    res.status(201).json(
+      await requestQuotes({ tripId: param(req, "tripId"), actor, ...parsed.data })
+    )
+  );
+});
+
+dispatchRouter.post("/quote-requests/:id/quote", async (req, res) => {
+  const parsed = quoteSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed);
+  const actor = await actorFor(req.session?.userId);
+  await handle(res, async () =>
+    res.status(201).json({
+      message: await recordQuote({ requestId: param(req, "id"), actor, ...parsed.data }),
+    })
+  );
+});
+
+dispatchRouter.post("/quotes/:id/award", requireAdmin, async (req, res) => {
+  const parsed = noteOnlySchema.safeParse(req.body ?? {});
+  if (!parsed.success) return badRequest(res, parsed);
+  const actor = await actorFor(req.session?.userId);
+  await handle(res, async () =>
+    res.status(201).json(await awardQuote({ quoteId: param(req, "id"), actor, ...parsed.data }))
+  );
 });
 
 dispatchRouter.get("/:kind/:id/messages", async (req, res) => {

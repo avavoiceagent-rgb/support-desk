@@ -14,6 +14,7 @@
 import { DateTime } from "luxon";
 import { OPERATING_TIME_ZONE } from "./pickup-time";
 import type { FieldChange } from "../ops/trip-events";
+import { money } from "../ops/margin";
 
 /** Only what the email says. Keeps this testable without a database. */
 export interface ConfirmableTrip {
@@ -33,6 +34,14 @@ export interface ConfirmableTrip {
   flightKind: string | null;
   /** Set when the job is going to a partner: we must not promise our own car. */
   affiliateCompany?: string | null;
+  /**
+   * What the customer is charged, in whole cents, once it is settled.
+   *
+   * Null until it is. A farmed-out job has no price until a partner quotes
+   * and the desk takes that quote, which is exactly why the first reply says
+   * we are checking availability rather than naming a figure.
+   */
+  customerPriceCents?: number | null;
 }
 
 const CLASS_WORD: Record<string, string> = {
@@ -94,6 +103,11 @@ export function detailLines(trip: ConfirmableTrip): string[] {
   if (party.length) lines.push(`Party: ${party.join(", ")}`);
 
   lines.push(`Booked for: ${trip.bookedHours} ${trip.bookedHours === 1 ? "hour" : "hours"}`);
+  // Only once it is settled. A price on a confirmation is the line a customer
+  // reads hardest, and a placeholder there is worse than no line at all.
+  if (typeof trip.customerPriceCents === "number" && trip.customerPriceCents > 0) {
+    lines.push(`Price: ${money(trip.customerPriceCents)}`);
+  }
   if (trip.passengerPhone) lines.push(`Contact on the day: ${trip.passengerPhone}`);
 
   return lines;

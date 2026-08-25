@@ -176,6 +176,8 @@ const DISPATCH_LABEL: Record<TicketDispatchEntry["kind"], string> = {
   ACCEPT: "Accepted",
   DECLINE: "Declined",
   TEXT: "Message",
+  QUOTE_REQUEST: "Asked for a price",
+  QUOTE: "Partner quoted",
 };
 
 /**

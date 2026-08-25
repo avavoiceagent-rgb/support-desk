@@ -212,6 +212,10 @@ export interface Trip {
   vehicleId: string | null;
   affiliateId: string | null;
   farmOutReason: string | null;
+  /** What the partner charges us on a farmed-out job, in whole cents. */
+  partnerQuoteCents: number | null;
+  /** What the customer is charged for it, margin included. */
+  customerPriceCents: number | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -307,7 +311,29 @@ function query(params: Record<string, string | number | undefined>): string {
 }
 
 export type DispatchDirection = "OUT" | "IN";
-export type DispatchKind = "OFFER" | "ACCEPT" | "DECLINE" | "TEXT";
+export interface PartnerQuote {
+  requestId: string;
+  quoteId: string | null;
+  affiliateId: string;
+  company: string;
+  askedAt: string;
+  quotedAt: string | null;
+  /** What the partner charges us, in whole cents. Null until they answer. */
+  amountCents: number | null;
+  /** What we charge the customer, margin included. */
+  customerCents: number | null;
+  awarded: boolean;
+}
+
+export type DispatchKind =
+  | "OFFER"
+  | "ACCEPT"
+  | "DECLINE"
+  | "TEXT"
+  /** The reservation sent to a partner with no price, asking what they charge. */
+  | "QUOTE_REQUEST"
+  /** A partner's price back. Carries amountCents. */
+  | "QUOTE";
 
 export interface DispatchMessage {
   id: string;
@@ -449,6 +475,30 @@ export const opsApi = {
    * Fetched, not sent. It goes into the reply box and waits for somebody to
    * read it — the server has no path that puts it in front of a customer.
    */
+  /**
+   * Farming a job out: ask several partners what they charge, take one price.
+   *
+   * The customer's figure comes back from the server rather than being worked
+   * out here. One margin, computed in one place, so a screen cannot disagree
+   * with what actually gets stored on the trip.
+   */
+  quotes: (tripId: string) =>
+    api.get<{ quotes: PartnerQuote[] }>(`/dispatch/quotes/${tripId}`).then((r) => r.quotes),
+
+  requestQuotes: (tripId: string, affiliateIds: string[], note?: string) =>
+    api.post<{ sent: unknown[]; refused: { affiliateId: string; reason: string }[] }>(
+      `/dispatch/quotes/${tripId}/requests`,
+      { affiliateIds, note: note ?? null }
+    ),
+
+  recordQuote: (requestId: string, amountCents: number) =>
+    api.post<{ message: DispatchMessage }>(`/dispatch/quote-requests/${requestId}/quote`, {
+      amountCents,
+    }),
+
+  awardQuote: (quoteId: string) =>
+    api.post<{ trip: Trip }>(`/dispatch/quotes/${quoteId}/award`, {}),
+
   confirmation: (tripId: string, ticketId: string) =>
     api.get<{
       kind: "NEW" | "CHANGE";

@@ -503,6 +503,22 @@ export const trips = pgTable(
     /** Why it went to a partner: OUT_OF_AREA or NO_VEHICLE. */
     farmOutReason: text("farm_out_reason"),
 
+    /**
+     * The money on a farmed-out job, both sides of it, in whole cents.
+     *
+     * `partnerQuoteCents` is what the partner asked and we agreed — copied off
+     * the quote at the moment it was accepted, not read back from the message
+     * later, because a partner can quote the same job twice and the invoice
+     * has to say which one we actually took.
+     *
+     * `customerPriceCents` is what we charge, derived from that quote and the
+     * margin. Stored rather than recomputed: the margin is a setting and
+     * settings change, and a price a customer was told must not move because
+     * somebody edited a percentage six weeks later.
+     */
+    partnerQuoteCents: integer("partner_quote_cents"),
+    customerPriceCents: integer("customer_price_cents"),
+
     notes: text("notes"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -530,7 +546,26 @@ export const trips = pgTable(
 );
 
 export const dispatchDirectionEnum = pgEnum("dispatch_direction", ["OUT", "IN"]);
-export const dispatchKindEnum = pgEnum("dispatch_kind", ["OFFER", "ACCEPT", "DECLINE", "TEXT"]);
+/**
+ * What a dispatch message is.
+ *
+ * A partner-covered job runs through all of these in order. We do not know
+ * what an out-of-area trip costs until somebody who can cover it tells us, so
+ * the desk sends a QUOTE_REQUEST — the reservation, no price — to two or three
+ * partners at once, each answers with a QUOTE, and the desk picks one. Picking
+ * turns into an ordinary OFFER naming the agreed money, which the partner
+ * ACCEPTs or DECLINEs exactly as a driver does. That reuse is deliberate:
+ * accepting is what assigns the job, and there should be one path that does
+ * that, not two.
+ */
+export const dispatchKindEnum = pgEnum("dispatch_kind", [
+  "OFFER",
+  "ACCEPT",
+  "DECLINE",
+  "TEXT",
+  "QUOTE_REQUEST",
+  "QUOTE",
+]);
 
 /**
  * Messages between the desk and a driver or a partner.
@@ -556,8 +591,16 @@ export const dispatchMessages = pgTable(
     direction: dispatchDirectionEnum("direction").notNull(),
     kind: dispatchKindEnum("kind").notNull().default("TEXT"),
     body: text("body").notNull(),
-    /** The offer an ACCEPT or DECLINE is answering. */
+    /** The offer an ACCEPT or DECLINE is answering, or the request a QUOTE answers. */
     respondsToId: text("responds_to_id"),
+    /**
+     * Money, in whole cents, on a QUOTE or on the OFFER that awards the job.
+     *
+     * Cents because a price a partner gave us becomes a price a customer is
+     * charged, and money kept in floating point turns $262.50 into
+     * $262.49999999999997 somewhere between here and an invoice.
+     */
+    amountCents: integer("amount_cents"),
     /** Staff member who sent it, for an outbound message. */
     authorUserId: text("author_user_id").references(() => users.id, { onDelete: "set null" }),
     authorName: text("author_name"),

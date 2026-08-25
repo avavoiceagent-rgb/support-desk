@@ -20,6 +20,7 @@ import { OpsError } from "./errors";
 import { selectTrips, toTripRecord, type TripRecord } from "./lookup";
 import { updateTrip } from "./trips";
 import type { Actor } from "./trip-events";
+import { customerPriceCents, money } from "./margin";
 
 export type DispatchMessage = typeof dispatchMessages.$inferSelect;
 
@@ -327,7 +328,9 @@ export interface TicketDispatchEntry {
   id: string;
   at: Date;
   direction: "OUT" | "IN";
-  kind: "OFFER" | "ACCEPT" | "DECLINE" | "TEXT";
+  kind: "OFFER" | "ACCEPT" | "DECLINE" | "TEXT" | "QUOTE_REQUEST" | "QUOTE";
+  /** Money on a QUOTE, or on the OFFER that awarded the job. */
+  amountCents: number | null;
   body: string;
   contactKind: "DRIVER" | "AFFILIATE";
   contactName: string;
@@ -351,6 +354,7 @@ export async function listDispatchForTrip(tripId: string): Promise<TicketDispatc
       affiliateCompany: affiliates.company,
       authorName: dispatchMessages.authorName,
       actedByName: dispatchMessages.actedByName,
+      amountCents: dispatchMessages.amountCents,
     })
     .from(dispatchMessages)
     .leftJoin(drivers, eq(drivers.id, dispatchMessages.driverId))
@@ -370,6 +374,7 @@ export async function listDispatchForTrip(tripId: string): Promise<TicketDispatc
     contactName: r.driverName ?? r.affiliateCompany ?? "a contact no longer on file",
     authorName: r.authorName,
     actedByName: r.actedByName,
+    amountCents: r.amountCents,
   }));
 }
 
@@ -493,4 +498,310 @@ export async function pendingOfferCounts(): Promise<PendingOffers> {
     else if (row.affiliateId) pending.affiliates[row.affiliateId] = row.waiting;
   }
   return pending;
+}
+
+// ---------------------------------------------------------------------------
+// Farming a job out: ask, quote, award, confirm.
+//
+// A trip that leaves NY/NJ has to be covered by somebody else, and until they
+// tell us what they charge we do not know what it costs. That is why the first
+// reply to the customer carries no price — see draft.service — and why this
+// exists.
+//
+// Four steps, and the last two are the ordinary offer machinery rather than
+// anything new. Asking is a QUOTE_REQUEST to several partners at once, each
+// answers with a QUOTE, and accepting one turns into an OFFER naming the money
+// agreed. That partner then ACCEPTs, which assigns them the job through
+// exactly the same path a driver goes through. There is one way to assign a
+// trip, and adding a second would be how two cars turn up.
+// ---------------------------------------------------------------------------
+
+/** The reservation as a partner needs to see it, with no price attached. */
+export function describeQuoteRequest(trip: TripRecord): string {
+  return [
+    describeOffer(trip),
+    "",
+    "We do not need you to hold anything yet — please reply with your price for this job.",
+  ].join("\n");
+}
+
+/**
+ * Send the same job to several partners at once and ask what they charge.
+ *
+ * Several, because a single partner asked in turn costs a round trip of
+ * waiting each time, and an out-of-area job often needs answering the same
+ * day. The ones not chosen have to be told afterwards, which is the price of
+ * asking in parallel and is a person's job, not this function's.
+ *
+ * Partly-failed rather than all-or-nothing: a partner who has been
+ * deactivated since the panel was drawn should not stop the request reaching
+ * the other two. Who it reached comes back, so a screen can say so.
+ */
+export async function requestQuotes(params: {
+  tripId: string;
+  affiliateIds: string[];
+  actor: Actor;
+  note?: string | null;
+}): Promise<{ sent: DispatchMessage[]; refused: { affiliateId: string; reason: string }[] }> {
+  const rows = await selectTrips().where(eq(trips.id, params.tripId)).limit(1);
+  if (!rows.length) throw new OpsError(`No trip with id ${params.tripId}.`, 404);
+  const trip = toTripRecord(rows[0]);
+
+  if (trip.status === "CANCELLED") {
+    throw new OpsError("That trip is cancelled. There is nothing to quote for.");
+  }
+  const wanted = [...new Set(params.affiliateIds.filter(Boolean))];
+  if (wanted.length === 0) throw new OpsError("Choose at least one partner to ask.");
+
+  const note = params.note?.trim();
+  const body = note ? `${describeQuoteRequest(trip)}\n\n${note}` : describeQuoteRequest(trip);
+
+  const sent: DispatchMessage[] = [];
+  const refused: { affiliateId: string; reason: string }[] = [];
+
+  for (const affiliateId of wanted) {
+    try {
+      await requireContact({ kind: "AFFILIATE", id: affiliateId }, true);
+      const [row] = await db
+        .insert(dispatchMessages)
+        .values({
+          affiliateId,
+          tripId: trip.id,
+          direction: "OUT",
+          kind: "QUOTE_REQUEST",
+          body,
+          authorUserId: params.actor.userId,
+          authorName: params.actor.name,
+        })
+        .returning();
+      sent.push(row);
+    } catch (err) {
+      refused.push({
+        affiliateId,
+        reason: err instanceof OpsError ? err.message : "Could not send that request.",
+      });
+    }
+  }
+
+  return { sent, refused };
+}
+
+/**
+ * A partner's price, coming back.
+ *
+ * The amount is required and must be a real number of cents. A quote with no
+ * figure is a conversation, and `sendText` already exists for those — letting
+ * one in here would put a job in the "quoted" list with nothing to compare.
+ */
+export async function recordQuote(params: {
+  requestId: string;
+  amountCents: number;
+  actor: Actor;
+  note?: string | null;
+}): Promise<DispatchMessage> {
+  const [request] = await db
+    .select()
+    .from(dispatchMessages)
+    .where(eq(dispatchMessages.id, params.requestId))
+    .limit(1);
+  if (!request) throw new OpsError(`No quote request with id ${params.requestId}.`, 404);
+  if (request.kind !== "QUOTE_REQUEST") {
+    throw new OpsError("That message is not a request for a quote.");
+  }
+  if (!Number.isInteger(params.amountCents) || params.amountCents <= 0) {
+    throw new OpsError("A quote needs a price.");
+  }
+
+  // One quote per request, for the same reason there is one answer per offer:
+  // two prices against one question and nothing says which we agreed to.
+  //
+  // Deliberately not `answerTo`, which looks only for an ACCEPT or a DECLINE.
+  // Widening that would make it report an unanswered offer as answered, and
+  // `respondToOffer` refuses on exactly that. The database's one-answer index
+  // catches this either way — it did, the first time this was written — but a
+  // raw constraint violation is not something to put in front of a person.
+  const already = await quoteTo(request.id);
+  if (already) {
+    throw new OpsError(
+      `That partner has already quoted ${money(already.amountCents ?? 0)}. Ask again if the price has changed.`,
+      409
+    );
+  }
+
+  const note = params.note?.trim();
+  const [row] = await db
+    .insert(dispatchMessages)
+    .values({
+      affiliateId: request.affiliateId,
+      driverId: request.driverId,
+      tripId: request.tripId,
+      direction: "IN",
+      kind: "QUOTE",
+      body: note ? `${money(params.amountCents)} — ${note}` : money(params.amountCents),
+      amountCents: params.amountCents,
+      respondsToId: request.id,
+      // Inbound: somebody at the desk standing in for the partner until
+      // partners have links of their own. The record says who typed it.
+      actedByUserId: params.actor.userId,
+      actedByName: params.actor.name,
+    })
+    .returning();
+  return row;
+}
+
+/** The price already given against a request, or null. */
+export async function quoteTo(requestId: string): Promise<DispatchMessage | null> {
+  const [row] = await db
+    .select()
+    .from(dispatchMessages)
+    .where(
+      and(eq(dispatchMessages.respondsToId, requestId), eq(dispatchMessages.kind, "QUOTE"))
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export interface PartnerQuote {
+  requestId: string;
+  quoteId: string | null;
+  affiliateId: string;
+  company: string;
+  askedAt: Date;
+  quotedAt: Date | null;
+  amountCents: number | null;
+  /** What we would charge the customer for it, margin included. */
+  customerCents: number | null;
+  /** True once this quote has been turned into an offer. */
+  awarded: boolean;
+}
+
+/** Every partner asked about this job, and what they said. */
+export async function quotesForTrip(tripId: string): Promise<PartnerQuote[]> {
+  const rows = await db
+    .select({
+      id: dispatchMessages.id,
+      kind: dispatchMessages.kind,
+      affiliateId: dispatchMessages.affiliateId,
+      company: affiliates.company,
+      createdAt: dispatchMessages.createdAt,
+      amountCents: dispatchMessages.amountCents,
+      respondsToId: dispatchMessages.respondsToId,
+    })
+    .from(dispatchMessages)
+    .leftJoin(affiliates, eq(affiliates.id, dispatchMessages.affiliateId))
+    .where(eq(dispatchMessages.tripId, tripId))
+    .orderBy(asc(dispatchMessages.createdAt));
+
+  const quotes = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) if (r.kind === "QUOTE" && r.respondsToId) quotes.set(r.respondsToId, r);
+
+  // An awarded quote is one whose partner has since been sent an offer. Read
+  // off the messages rather than kept as a flag, so it cannot drift from what
+  // actually happened.
+  const offered = new Set(
+    rows.filter((r) => r.kind === "OFFER" && r.affiliateId).map((r) => r.affiliateId as string)
+  );
+
+  return rows
+    .filter((r) => r.kind === "QUOTE_REQUEST" && r.affiliateId)
+    .map((request) => {
+      const quote = quotes.get(request.id) ?? null;
+      return {
+        requestId: request.id,
+        quoteId: quote?.id ?? null,
+        affiliateId: request.affiliateId as string,
+        company: request.company ?? "a partner no longer on file",
+        askedAt: request.createdAt,
+        quotedAt: quote?.createdAt ?? null,
+        amountCents: quote?.amountCents ?? null,
+        customerCents:
+          typeof quote?.amountCents === "number" ? customerPriceCents(quote.amountCents) : null,
+        awarded: Boolean(quote) && offered.has(request.affiliateId as string),
+      };
+    });
+}
+
+/**
+ * Take one partner's quote, and offer them the job at that price.
+ *
+ * The money is written onto the trip here rather than left to be read back off
+ * the message. A partner can quote the same job twice — a price rises, we ask
+ * again — and an invoice six weeks later has to say which one we took.
+ *
+ * The customer's price is stored too, not recomputed. The margin is a setting,
+ * settings change, and a figure a customer has been given must not move
+ * because somebody edited a percentage afterwards.
+ *
+ * This does NOT assign the partner. They still have to accept, through the
+ * same path a driver does, because a quote given on Tuesday is not a promise
+ * that the car is still free on Thursday.
+ */
+export async function awardQuote(params: {
+  quoteId: string;
+  actor: Actor;
+  note?: string | null;
+}): Promise<{ offer: DispatchMessage; trip: TripRecord }> {
+  const [quote] = await db
+    .select()
+    .from(dispatchMessages)
+    .where(eq(dispatchMessages.id, params.quoteId))
+    .limit(1);
+  if (!quote) throw new OpsError(`No quote with id ${params.quoteId}.`, 404);
+  if (quote.kind !== "QUOTE") throw new OpsError("That message is not a quote.");
+  if (!quote.tripId || !quote.affiliateId || typeof quote.amountCents !== "number") {
+    throw new OpsError("That quote is not a priced offer for a job.");
+  }
+
+  const rows = await selectTrips().where(eq(trips.id, quote.tripId)).limit(1);
+  if (!rows.length) throw new OpsError("That job no longer exists.", 404);
+  const trip = toTripRecord(rows[0]);
+  if (trip.status === "CANCELLED") {
+    throw new OpsError("That trip is cancelled. There is nothing to award.");
+  }
+  if (trip.affiliateId && trip.affiliateId !== quote.affiliateId) {
+    throw new OpsError(
+      `${trip.reference} is already with ${trip.affiliate?.company ?? "another partner"}. Take it off them before awarding it elsewhere.`,
+      409
+    );
+  }
+
+  const customerCents = customerPriceCents(quote.amountCents);
+  const note = params.note?.trim();
+
+  const body = [
+    `Confirming ${trip.reference} to you at ${money(quote.amountCents)}, as quoted.`,
+    "",
+    describeOffer(trip),
+    "",
+    "Please accept to confirm you still have the car.",
+    ...(note ? ["", note] : []),
+  ].join("\n");
+
+  return db.transaction(async (tx) => {
+    const [offer] = await tx
+      .insert(dispatchMessages)
+      .values({
+        affiliateId: quote.affiliateId,
+        tripId: trip.id,
+        direction: "OUT",
+        kind: "OFFER",
+        body,
+        amountCents: quote.amountCents,
+        authorUserId: params.actor.userId,
+        authorName: params.actor.name,
+      })
+      .returning();
+
+    await tx
+      .update(trips)
+      .set({
+        partnerQuoteCents: quote.amountCents,
+        customerPriceCents: customerCents,
+        updatedAt: new Date(),
+      })
+      .where(eq(trips.id, trip.id));
+
+    const found = await selectTrips(tx).where(eq(trips.id, trip.id)).limit(1);
+    return { offer, trip: toTripRecord(found[0]) };
+  });
 }

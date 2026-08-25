@@ -106,3 +106,17 @@ describe("the change confirmation", () => {
     expect(told.map((c) => c.field)).toEqual(["Pickup"]);
   });
 });
+
+describe("the price on a confirmation", () => {
+  it("states it once it is settled", () => {
+    const body = confirmationEmail(trip({ customerPriceCents: 26_250 }));
+    expect(body).toContain("Price: $262.50");
+  });
+
+  it("says nothing at all until it is", () => {
+    // A farmed-out job has no price until a partner quotes and we take it.
+    // "Price: TBC" on a confirmation is worse than no line.
+    const lines = detailLines(trip({ customerPriceCents: null }));
+    expect(lines.join(" ")).not.toContain("Price");
+  });
+});

@@ -150,7 +150,13 @@ describe("dispatch route permissions", () => {
       .filter((r) => r.handlers.includes(requireAdmin))
       .map((r) => `${r.methods.join("/")} ${r.path}`)
       .sort();
-    expect(guarded).toEqual(["POST /offers/:id/response"]);
+    expect(guarded).toEqual([
+      "POST /offers/:id/response",
+      // Accepting a partner's quote writes the money onto the trip and offers
+      // them the job at that price. Same class of change as PATCH
+      // /ops/trips/:id, so the same door.
+      "POST /quotes/:id/award",
+    ]);
   });
 
   it("leaves the rest of dispatch open, deliberately and by name", () => {
@@ -166,6 +172,8 @@ describe("dispatch route permissions", () => {
       // A count of who is waiting on an answer. A read, and the whole point
       // is that anyone working the desk can see it.
       "GET /pending",
+      // What the partners we asked have said. A read.
+      "GET /quotes/:tripId",
       // Telling somebody their job has changed is a message, not a change to
       // the trip — the change itself already needed an admin. Requiring one
       // again here is how a car ends up at the old time while the person who
@@ -173,6 +181,13 @@ describe("dispatch route permissions", () => {
       "POST /:kind/:id/change-notice",
       "POST /:kind/:id/messages",
       "POST /:kind/:id/offers",
+      // A partner's price coming back. It commits us to nothing on its own —
+      // awarding it is the step that does, and that one is guarded.
+      "POST /quote-requests/:id/quote",
+      // Asking two or three partners what they charge. It holds nothing and
+      // changes no trip, and needing an admin for it would stall an
+      // out-of-area job every time the one admin was out.
+      "POST /quotes/:tripId/requests",
     ]);
   });
 });

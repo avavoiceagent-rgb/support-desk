@@ -17,7 +17,7 @@ import { verifyAddress, estimateRoute, isMapsEnabled, resolveServiceArea } from 
 import type { VerifiedAddress } from "../booking/maps";
 import { planPickup } from "../booking/pickup-time";
 import { reviewBooking } from "../booking/questions";
-import { lookupIndicativeRate } from "../booking/rates";
+import { lookupIndicativeRate, describeRate } from "../booking/rates";
 import { composeReply } from "../booking/compose";
 import { toPlainText } from "../ai/classifier";
 import { SERVICE_AREA_STATES } from "../types";
@@ -164,10 +164,19 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
         : null;
 
     // --- 8. Write it -----------------------------------------------------
+    //
+    // A partner-covered job carries no price in the first reply.
+    //
+    // We do not know what this costs yet. A partner has not been asked, let
+    // alone quoted, and a market range printed under "we're checking
+    // availability" reads to a customer as our number — they remember $125 to
+    // $185 and hear the real figure as a rise. The range is still useful, but
+    // to the desk, for judging whether a partner's quote is sane. So it goes
+    // in the internal notes and nowhere near the email.
     const composed = await composeReply({
       review,
       plan,
-      rate,
+      rate: isExternal ? null : rate,
       // The name the person SIGNED with beats the mailbox's display name:
       // bookers routinely write from a shared or company address, so the two
       // are often different people.
@@ -195,6 +204,13 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
           ...(composed.strayEmails?.length
             ? [
                 `Adam wrote ${composed.strayEmails.join(", ")} into the reply, and that address was not in anything he was given. Read that line before sending.`,
+              ]
+            : []),
+          // Held back from the customer, given to you: it is the only
+          // reference point you have when a partner quotes.
+          ...(isExternal && describeRate(rate)
+            ? [
+                `This one goes out to a partner, so the reply quotes no price. For your own use, the market range is ${describeRate(rate)}`,
               ]
             : []),
         ],

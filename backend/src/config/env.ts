@@ -29,6 +29,10 @@ const envSchema = z.object({
   RATES_MODEL: z.string().optional().default(""),
   // Shown in Adam's drafts. Left empty, the company name is simply omitted.
   COMPANY_NAME: z.string().optional().default(""),
+  // What we add to a partner's quote to get the customer's price, as a
+  // percentage. One figure for every job, which is how Amar runs it. Change
+  // it in Railway; nothing needs a deploy.
+  PARTNER_MARGIN_PERCENT: z.string().default("25").transform(Number),
 });
 
 const parsed = envSchema.safeParse(process.env);

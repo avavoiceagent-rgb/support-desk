@@ -18,7 +18,8 @@ import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { Trip, VehicleClass } from "../api/ops";
 import { VEHICLE_CLASSES, OPERATING_ZONE_LABEL, dispatchApi, opsApi } from "../api/ops";
-import type { ContactKind, TripCandidates } from "../api/ops";
+import type { ContactKind, PartnerQuote, TripCandidates } from "../api/ops";
+import { money, parseMoney } from "../lib/money";
 import { when, toDateTimeInput, instantFromInput } from "../lib/time";
 import { useAuth } from "../hooks/useAuth";
 import { pastBookingWarning } from "../lib/bookings";
@@ -294,6 +295,17 @@ export function ReservationPanel({
         {/* What the pickup was worked back from, and how to reach them —
             both arrive in a reply rather than the first email, so this is
             where you can see whether they landed. */}
+        {/* Both sides of a farmed-out job. The cost is ours to know and the
+            price is what the customer was told; showing only one of them is
+            how a desk loses track of what it makes. */}
+        {typeof trip.customerPriceCents === "number" && (
+          <p className="text-xs text-gray-600">
+            {money(trip.customerPriceCents)} to the customer
+            {typeof trip.partnerQuoteCents === "number"
+              ? ` · ${money(trip.partnerQuoteCents)} to the partner`
+              : ""}
+          </p>
+        )}
         {trip.flightAt && (
           <p className="text-xs text-gray-600">
             Flight {when(trip.flightAt)}
@@ -765,15 +777,31 @@ function WhoCanTakeIt({
         </pre>
       )}
 
-      <ReplacementList
-        drivers={drivers}
-        partners={partners}
-        offeredTo={offeredTo}
-        sending={sending}
-        onOffer={offer}
-      />
+      {/* An out-of-area job is priced by whoever covers it, so the desk asks
+          before it offers. Inside the service area a partner is overflow for
+          our own cars at a rate we already hold, and the straight offer below
+          is still the right move. */}
+      {fallbackReason === "OUT_OF_AREA" ? (
+        <QuoteBoard
+          tripId={tripId}
+          partners={partners}
+          version={version}
+          onChanged={() => {
+            void refresh();
+            onSent?.();
+          }}
+        />
+      ) : (
+        <ReplacementList
+          drivers={drivers}
+          partners={partners}
+          offeredTo={offeredTo}
+          sending={sending}
+          onOffer={offer}
+        />
+      )}
 
-      {offeredTo.length > 0 && (
+      {offeredTo.length > 0 && fallbackReason !== "OUT_OF_AREA" && (
         <p className="mt-1.5 text-[11px] text-gray-600">
           Offered to {offeredTo.join(", ")}. Nobody is assigned until one of them accepts — answers
           come back in Operations → Messages.
@@ -863,5 +891,227 @@ function OfferButton({
     >
       {busy ? "Sending…" : label}
     </button>
+  );
+}
+
+/**
+ * Farming a job out, in the order it actually happens.
+ *
+ * A trip that leaves NY/NJ is priced by whoever covers it, and until one of
+ * them says a number we do not know what it costs. That is why the customer's
+ * first reply carries no price at all. So this asks before it offers: tick two
+ * or three partners, send them the reservation, and their prices come back
+ * side by side with what each would mean for the customer.
+ *
+ * Accepting a price does not assign anybody. It offers them the job at the
+ * figure they gave, and they still have to accept — a price quoted on Tuesday
+ * is not a promise the car is free on Thursday.
+ *
+ * Until partners have links of their own, somebody at the desk types their
+ * answer in. The desk record says who did.
+ */
+function QuoteBoard({
+  tripId,
+  partners,
+  version,
+  onChanged,
+}: {
+  tripId: string;
+  partners: TripCandidates["partners"];
+  version: number;
+  onChanged: () => void;
+}) {
+  const [quotes, setQuotes] = useState<PartnerQuote[]>([]);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [typed, setTyped] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(
+    () =>
+      opsApi
+        .quotes(tripId)
+        .then(setQuotes)
+        .catch(() => setQuotes([])),
+    [tripId]
+  );
+  useEffect(() => {
+    void load();
+  }, [load, version]);
+
+  const asked = new Set(quotes.map((q) => q.affiliateId));
+  const notYetAsked = partners.filter((p) => !asked.has(p.affiliateId));
+  const awarded = quotes.find((q) => q.awarded) ?? null;
+
+  async function ask() {
+    setError(null);
+    setNote(null);
+    setBusy("ask");
+    try {
+      const out = await opsApi.requestQuotes(tripId, [...picked]);
+      setPicked(new Set());
+      await load();
+      // A partner deactivated since this panel was drawn does not stop the
+      // request reaching the others — but it must not fail silently either.
+      if (out.refused.length) {
+        setError(out.refused.map((r) => r.reason).join(" "));
+      } else {
+        setNote(`Asked ${out.sent.length} ${out.sent.length === 1 ? "partner" : "partners"}.`);
+      }
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not send those requests.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveQuote(q: PartnerQuote) {
+    const cents = parseMoney(typed[q.requestId] ?? "");
+    if (cents === null) {
+      // This figure becomes what a customer is charged. Refusing it is the
+      // only safe answer — a guess here reaches a real person as a price.
+      setError(`"${typed[q.requestId] ?? ""}" is not a price. Type it like 210 or 210.50.`);
+      return;
+    }
+    setError(null);
+    setBusy(q.requestId);
+    try {
+      await opsApi.recordQuote(q.requestId, cents);
+      setTyped((t) => ({ ...t, [q.requestId]: "" }));
+      await load();
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not record that quote.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function accept(q: PartnerQuote) {
+    if (!q.quoteId) return;
+    setError(null);
+    setBusy(q.quoteId);
+    try {
+      await opsApi.awardQuote(q.quoteId);
+      await load();
+      setNote(`${q.company} has been offered the job at ${money(q.amountCents ?? 0)}.`);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not accept that quote.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="mt-1.5 space-y-2">
+      {quotes.length > 0 && (
+        <ul className="space-y-1">
+          {quotes.map((q) => (
+            <li key={q.requestId} className="rounded border border-gray-200 bg-white px-2 py-1.5">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate font-medium text-gray-800">{q.company}</span>
+                {q.amountCents === null ? (
+                  <span className="shrink-0 text-[11px] text-gray-500">Asked, no price yet</span>
+                ) : (
+                  <span className="shrink-0 text-[11px] text-gray-700">
+                    {money(q.amountCents)} cost ·{" "}
+                    <span className="font-semibold text-gray-900">
+                      {money(q.customerCents ?? 0)}
+                    </span>{" "}
+                    to charge
+                  </span>
+                )}
+              </div>
+
+              {q.amountCents === null ? (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <input
+                    value={typed[q.requestId] ?? ""}
+                    onChange={(e) => setTyped((t) => ({ ...t, [q.requestId]: e.target.value }))}
+                    placeholder="Their price, e.g. 210"
+                    className="w-32 rounded border border-gray-300 px-1.5 py-0.5 text-[11px]"
+                  />
+                  <OfferButton
+                    label="Record it"
+                    disabled={busy !== null}
+                    busy={busy === q.requestId}
+                    onClick={() => void saveQuote(q)}
+                  />
+                </div>
+              ) : q.awarded ? (
+                <p className="mt-1 text-[11px] text-emerald-800">
+                  Accepted and offered to them. They are not on the job until they confirm — the
+                  answer comes back in Operations → Messages.
+                </p>
+              ) : awarded ? (
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Not taken — {awarded.company} has it. Let them know.
+                </p>
+              ) : (
+                <div className="mt-1">
+                  <OfferButton
+                    label="Accept this price"
+                    disabled={busy !== null}
+                    busy={busy === q.quoteId}
+                    onClick={() => void accept(q)}
+                  />
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {notYetAsked.length > 0 && !awarded && (
+        <div className="rounded border border-dashed border-gray-300 px-2 py-1.5">
+          <p className="text-[11px] font-medium text-gray-600">
+            {quotes.length ? "Ask somebody else too" : "Ask what they charge"}
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {notYetAsked.map((p) => (
+              <li key={p.affiliateId} className="flex items-center gap-1.5 text-xs">
+                <input
+                  type="checkbox"
+                  id={`ask-${p.affiliateId}`}
+                  checked={picked.has(p.affiliateId)}
+                  onChange={(e) =>
+                    setPicked((set) => {
+                      const next = new Set(set);
+                      if (e.target.checked) next.add(p.affiliateId);
+                      else next.delete(p.affiliateId);
+                      return next;
+                    })
+                  }
+                />
+                <label htmlFor={`ask-${p.affiliateId}`} className="truncate text-gray-800">
+                  {p.company}
+                  {/* Their rate card, where we hold one. A reference point for
+                      reading the price they come back with — not a price. */}
+                  {p.quote.priced && (
+                    <span className="text-gray-500">
+                      {` · card says $${(p.quote.quote.totalCents / 100).toLocaleString("en-US")}`}
+                    </span>
+                  )}
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-1.5">
+            <OfferButton
+              label={`Ask ${picked.size || ""}`.trim()}
+              disabled={picked.size === 0 || busy !== null}
+              busy={busy === "ask"}
+              onClick={() => void ask()}
+            />
+          </div>
+        </div>
+      )}
+
+      {note && <p className="text-[11px] text-gray-600">{note}</p>}
+      {error && <p className="text-[11px] text-red-700">{error}</p>}
+    </div>
   );
 }
