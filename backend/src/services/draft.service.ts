@@ -32,7 +32,7 @@ import { OPERATING_TIME_ZONE } from "../booking/pickup-time";
 import { emailFromHeader } from "../mail/address";
 import { stripQuotedReply } from "../mail/quoted";
 import { toModelText } from "../mail/body-text";
-import { mergeFacts, describeFactChanges } from "../booking/facts";
+import { mergeFacts, describeFactChanges, bookerNameFromReply } from "../booking/facts";
 import { implausible } from "../booking/plausible";
 import { bookingUpdateFrom } from "../booking/booking-update";
 import { reservationForTicket } from "../ops/reservations";
@@ -480,7 +480,8 @@ export async function refreshFactsFromReply(ticketId: string): Promise<string[]>
     const after = mergeFacts(before, {
       passengerName: booking.passengerName,
       passengerPhone: booking.passengerPhone ?? booking.bookerPhone,
-      bookerName: booking.bookerName,
+      // Fills a blank, never replaces a name. See `bookerNameFromReply`.
+      bookerName: bookerNameFromReply(before.bookerName, booking.bookerName),
       passengerCount: booking.passengerCount,
       luggageCount: booking.luggageCount,
       flightNumber: booking.flightNumber,

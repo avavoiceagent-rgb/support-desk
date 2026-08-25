@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeFacts, describeFactChanges } from "../facts";
+import { mergeFacts, describeFactChanges, bookerNameFromReply } from "../facts";
 import type { DraftFacts } from "../../db/schema";
 
 /** What the first email established on ticket #72. */
@@ -136,5 +136,50 @@ describe("the time a customer names in their answer", () => {
     const before = { ...empty };
     const after = mergeFacts(before, { pickupAtLocal: "2026-11-14T18:05" });
     expect(describeFactChanges(before, after).join(" ")).toContain("Pickup time");
+  });
+});
+
+describe("the booker name a reply is allowed to contribute", () => {
+  // Watched happen on the live desk, twice. The first draft on #86 read
+  // "Booker: Priya Raman" — correct, off the sign-off. Then a reply saying
+  // only "my number is 9978615599" arrived, the extractor did what its prompt
+  // tells it to do with an unsigned message and named the mailbox owner, and
+  // the merge wrote Amar Pant over her. Adam's own note recorded it:
+  // "Booker: Priya Raman → Amar Pant".
+
+  it("does not replace a name the customer already signed with", async () => {
+    expect(bookerNameFromReply("Priya Raman", "Amar Pant")).toBeNull();
+  });
+
+  it("does not replace it even with the same name back", async () => {
+    // Nothing to say is better than a no-op write; a fact that did not move
+    // should not appear in "what changed".
+    expect(bookerNameFromReply("Priya Raman", "Priya Raman")).toBeNull();
+  });
+
+  it("fills a blank, which is the case it is useful for", async () => {
+    expect(bookerNameFromReply(null, "Priya Raman")).toBe("Priya Raman");
+  });
+
+  it("treats whitespace as a blank on both sides", async () => {
+    expect(bookerNameFromReply("   ", "Priya Raman")).toBe("Priya Raman");
+    expect(bookerNameFromReply(null, "   ")).toBeNull();
+  });
+
+  it("has nothing to add when the reply named nobody", async () => {
+    expect(bookerNameFromReply(null, null)).toBeNull();
+  });
+});
+
+describe("mergeFacts leaves the booker alone when handed nothing", () => {
+  it("keeps the established name", async () => {
+    // The pairing that matters: the guard returns null, and null is silence.
+    const after = mergeFacts(first, {
+      passengerPhone: "9978615599",
+      bookerName: bookerNameFromReply(first.bookerName, "Amar Pant"),
+    });
+    expect(after.bookerName).toBe("Apurva");
+    expect(after.passengerPhone).toBe("9978615599");
+    expect(describeFactChanges(first, after)).toEqual(["Passenger phone: 9978615599"]);
   });
 });

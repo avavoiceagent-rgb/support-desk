@@ -31,6 +31,35 @@ function stated<T>(value: T | null | undefined): value is T {
  * is a shape, not a set of independent facts, and half of one from each of
  * two emails is a route nobody described.
  */
+/**
+ * The booker name a re-read is allowed to contribute.
+ *
+ * A re-read may fill one in. It may not replace one.
+ *
+ * The extractor is told to fall back to the mailbox display name when a
+ * message carries no sign-off. That is right for a first email and wrong for
+ * every reply after it: "my number is 9978615599" is unsigned, so the reply
+ * came back naming the mailbox owner, and the merge overwrote the name the
+ * customer had actually signed with. Priya Raman became Amar Pant on the
+ * strength of a phone number — on the live desk, twice, on tickets #84 and
+ * #86, after the first draft had got it right.
+ *
+ * Who booked is established by the first email, where the sign-off is.
+ * Somebody genuinely handing a booking to a colleague is a change a person
+ * should make rather than one a model makes quietly on a re-read — and the
+ * reply is sitting in the thread either way.
+ *
+ * A rule rather than an expression inside the caller, because it is a decision
+ * about a customer's name and it deserves to be findable.
+ */
+export function bookerNameFromReply(
+  established: string | null | undefined,
+  fromReply: string | null | undefined
+): string | null {
+  if (established?.trim()) return null;
+  return fromReply?.trim() ? fromReply : null;
+}
+
 export function mergeFacts(existing: DraftFacts, incoming: Partial<DraftFacts>): DraftFacts {
   const merged: DraftFacts = { ...existing };
 
