@@ -15,9 +15,24 @@ import { db } from "../db/client";
 import { affiliates } from "../db/schema";
 import type { TripRecord } from "./lookup";
 import { listZones, milesBetween, quote, type Quote } from "./zones";
+import { customerPriceCents } from "./margin";
 
 export type TripQuote =
-  | { priced: true; miles: number; quote: Quote; note: string | null }
+  | {
+      priced: true;
+      miles: number;
+      quote: Quote;
+      /**
+       * What the customer pays for it, margin included.
+       *
+       * Computed here rather than on the screen. The margin is an environment
+       * variable, so a copy of the arithmetic in the browser would keep saying
+       * 25% the day it was changed to 30 — and the figure beside a button is
+       * the figure somebody is about to agree to.
+       */
+      customerCents: number;
+      note: string | null;
+    }
   | { priced: false; reason: string; note: string | null };
 
 /**
@@ -134,5 +149,11 @@ export async function quoteTripForAffiliate(
     };
   }
 
-  return { priced: true, miles, quote: priced, note };
+  return {
+    priced: true,
+    miles,
+    quote: priced,
+    customerCents: customerPriceCents(priced.totalCents),
+    note,
+  };
 }

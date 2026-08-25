@@ -723,11 +723,19 @@ function WhoCanTakeIt({
     void refresh();
   }, [refresh, version]);
 
-  async function offer(kind: ContactKind, id: string, label: string) {
+  async function offer(kind: ContactKind, id: string, label: string, priced?: boolean) {
     setError(null);
     setSending(id);
     try {
-      await dispatchApi.sendOffer(kind, id, tripId);
+      // A partner with a card price gets offered AT it, which is the only
+      // path that writes the money onto the booking. A driver, or a partner
+      // with no card covering the job, gets the plain offer — there is no
+      // agreed number to record, and inventing one would be worse.
+      if (kind === "AFFILIATE" && priced) {
+        await opsApi.offerAtCardRate(tripId, id);
+      } else {
+        await dispatchApi.sendOffer(kind, id, tripId);
+      }
       setOfferedTo((sent) => [...sent, label]);
       await refresh();
       // The offer is now a line in the timeline. Say so to the parent, which
@@ -916,7 +924,8 @@ function ReplacementList({
   partners: TripCandidates["partners"];
   offeredTo: string[];
   sending: string | null;
-  onOffer: (kind: ContactKind, id: string, label: string) => void;
+  /** `priced` is true when a rate card covers it — see the comment below. */
+  onOffer: (kind: ContactKind, id: string, label: string, priced?: boolean) => void;
 }) {
   return (
     <ul className="mt-1.5 space-y-1">
@@ -940,6 +949,11 @@ function ReplacementList({
         </li>
       ))}
 
+      {/* An overflow partner has a rate card, so the price is already agreed
+          and there is nothing to ask. What the plain "Send offer" did was
+          record none of it — the job could be covered, accepted and confirmed
+          to the customer with no trace of what it cost or what we charged.
+          Offering AT the card price writes both down. */}
       {partners.map((p) => (
         <li key={p.affiliateId} className="flex items-center justify-between gap-2 text-xs">
           <span className="text-gray-800">
@@ -947,15 +961,23 @@ function ReplacementList({
             <span className="text-gray-500">
               {" · "}
               {p.quote.priced
-                ? `$${(p.quote.quote.totalCents / 100).toLocaleString("en-US")} for ${p.quote.quote.billableHours}h`
-                : "price to agree"}
+                ? `${money(p.quote.quote.totalCents)} for ${p.quote.quote.billableHours}h · ${money(
+                    p.quote.customerCents
+                  )} to charge`
+                : "no card price — ask them"}
             </span>
           </span>
           <OfferButton
-            label={offeredTo.includes(p.company) ? "Offered" : "Send offer"}
+            label={
+              offeredTo.includes(p.company)
+                ? "Offered"
+                : p.quote.priced
+                  ? `Offer at ${money(p.quote.quote.totalCents)}`
+                  : "Ask for a price"
+            }
             disabled={offeredTo.includes(p.company) || sending !== null}
             busy={sending === p.affiliateId}
-            onClick={() => onOffer("AFFILIATE", p.affiliateId, p.company)}
+            onClick={() => onOffer("AFFILIATE", p.affiliateId, p.company, p.quote.priced)}
           />
         </li>
       ))}

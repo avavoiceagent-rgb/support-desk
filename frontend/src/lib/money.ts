@@ -23,3 +23,4 @@ export function parseMoney(input: string): number | null {
   if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
   return Math.round(Number(cleaned) * 100);
 }
+

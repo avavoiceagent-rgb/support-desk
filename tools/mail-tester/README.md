@@ -24,6 +24,30 @@ This folder is not part of the app. Railway only builds `backend/` and
 
        npm install
 
+## Sending a one-off email (PowerShell)
+
+The scenarios below cover the situations that recur. `send.ps1` is for the
+other half of testing: the single email written to prove one specific fix,
+which otherwise means typing it into Gmail by hand and hoping the wording
+matches what was sent last time.
+
+    .\send.ps1 -Subject "Car to JFK on 20 October" -Body @"
+    Hi,
+
+    Please book a car for 20 October, going to JFK.
+
+    Thanks
+    Apurva
+    "@
+
+It reads the same `.env` as the Node sender, so setting one up sets up both.
+Without one it asks for the app password and takes it as a SecureString —
+never on the command line, where it would sit in your PowerShell history.
+
+It appends the same kind of run tag, for the same reason. `-NoTag` sends the
+exact subject, which threads onto an existing ticket; use it when that is
+what you want.
+
 ## Using it
 
     node send.mjs list          # what scenarios exist and what each proves

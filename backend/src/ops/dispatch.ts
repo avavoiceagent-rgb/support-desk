@@ -21,6 +21,7 @@ import { selectTrips, toTripRecord, type TripRecord } from "./lookup";
 import { updateTrip } from "./trips";
 import type { Actor } from "./trip-events";
 import { customerPriceCents, money } from "./margin";
+import { quoteTripForAffiliate } from "./pricing";
 
 export type DispatchMessage = typeof dispatchMessages.$inferSelect;
 
@@ -765,13 +766,43 @@ export async function awardQuote(params: {
     );
   }
 
-  const customerCents = customerPriceCents(quote.amountCents);
+  return commitPrice({
+    trip,
+    affiliateId: quote.affiliateId,
+    amountCents: quote.amountCents,
+    opening: `Confirming ${trip.reference} to you at ${money(quote.amountCents)}, as quoted.`,
+    actor: params.actor,
+    note: params.note,
+  });
+}
+
+/**
+ * Offer a job to a partner at an agreed price, and write both sides of the
+ * money onto it.
+ *
+ * The one place a farmed-out trip learns what it costs and what it earns.
+ * Shared because there are two ways to reach an agreed price and only one of
+ * them used to record it: a partner quoting, and a rate card we already hold.
+ * The straight offer took the second path and wrote down nothing, so a job
+ * could be covered, accepted and confirmed to a customer with no record of
+ * what it cost us or what we charged.
+ */
+async function commitPrice(params: {
+  trip: TripRecord;
+  affiliateId: string;
+  amountCents: number;
+  /** The first line, which says where the price came from. */
+  opening: string;
+  actor: Actor;
+  note?: string | null;
+}): Promise<{ offer: DispatchMessage; trip: TripRecord }> {
+  const customerCents = customerPriceCents(params.amountCents);
   const note = params.note?.trim();
 
   const body = [
-    `Confirming ${trip.reference} to you at ${money(quote.amountCents)}, as quoted.`,
+    params.opening,
     "",
-    describeOffer(trip),
+    describeOffer(params.trip),
     "",
     "Please accept to confirm you still have the car.",
     ...(note ? ["", note] : []),
@@ -781,12 +812,12 @@ export async function awardQuote(params: {
     const [offer] = await tx
       .insert(dispatchMessages)
       .values({
-        affiliateId: quote.affiliateId,
-        tripId: trip.id,
+        affiliateId: params.affiliateId,
+        tripId: params.trip.id,
         direction: "OUT",
         kind: "OFFER",
         body,
-        amountCents: quote.amountCents,
+        amountCents: params.amountCents,
         authorUserId: params.actor.userId,
         authorName: params.actor.name,
       })
@@ -795,13 +826,69 @@ export async function awardQuote(params: {
     await tx
       .update(trips)
       .set({
-        partnerQuoteCents: quote.amountCents,
+        partnerQuoteCents: params.amountCents,
         customerPriceCents: customerCents,
         updatedAt: new Date(),
       })
-      .where(eq(trips.id, trip.id));
+      .where(eq(trips.id, params.trip.id));
 
-    const found = await selectTrips(tx).where(eq(trips.id, trip.id)).limit(1);
+    const found = await selectTrips(tx).where(eq(trips.id, params.trip.id)).limit(1);
     return { offer, trip: toTripRecord(found[0]) };
+  });
+}
+
+/**
+ * Offer an in-area job to an overflow partner at the rate we already hold.
+ *
+ * A trip that leaves NY/NJ has no price until somebody quotes it, which is
+ * why those go out to several partners at once. An overflow job is not that:
+ * these are partners we have a rate card with, the card says what this trip
+ * costs, and asking them to quote a number we already agreed would be a
+ * slower way of reaching it.
+ *
+ * What it must not be is the old straight offer, which recorded no money at
+ * all. Same one press, and now the booking knows what it costs and what the
+ * customer pays.
+ *
+ * Refuses rather than guesses when the card does not cover the job — no base
+ * address, no band for the distance, no rate for the class. Those are the
+ * cases where a quote is the right answer, and the screen says so.
+ */
+export async function offerAtCardRate(params: {
+  tripId: string;
+  affiliateId: string;
+  actor: Actor;
+  note?: string | null;
+}): Promise<{ offer: DispatchMessage; trip: TripRecord }> {
+  const company = await requireContact({ kind: "AFFILIATE", id: params.affiliateId }, true);
+
+  const rows = await selectTrips().where(eq(trips.id, params.tripId)).limit(1);
+  if (!rows.length) throw new OpsError(`No trip with id ${params.tripId}.`, 404);
+  const trip = toTripRecord(rows[0]);
+
+  if (trip.status === "CANCELLED") {
+    throw new OpsError("That trip is cancelled. There is nothing to offer.");
+  }
+  if (trip.affiliateId && trip.affiliateId !== params.affiliateId) {
+    throw new OpsError(
+      `${trip.reference} is already with ${trip.affiliate?.company ?? "another partner"}. Take it off them before offering it elsewhere.`,
+      409
+    );
+  }
+
+  const card = await quoteTripForAffiliate(trip, params.affiliateId);
+  if (!card.priced) {
+    throw new OpsError(
+      `${company}'s rate card does not price this job — ${card.reason} Ask them for a price instead.`
+    );
+  }
+
+  return commitPrice({
+    trip,
+    affiliateId: params.affiliateId,
+    amountCents: card.quote.totalCents,
+    opening: `Offering you ${trip.reference} at ${money(card.quote.totalCents)}, our agreed rate for ${card.quote.billableHours}h.`,
+    actor: params.actor,
+    note: params.note,
   });
 }

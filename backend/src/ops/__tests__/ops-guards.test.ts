@@ -156,6 +156,9 @@ describe("dispatch route permissions", () => {
       // them the job at that price. Same class of change as PATCH
       // /ops/trips/:id, so the same door.
       "POST /quotes/:id/award",
+      // Offering an in-area job at the card rate does the same thing by a
+      // shorter route: it agrees a price and writes it down.
+      "POST /trips/:tripId/card-offer",
     ]);
   });
 

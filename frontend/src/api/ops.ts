@@ -104,6 +104,8 @@ export type TripQuote =
         billableHours: number;
         totalCents: number;
       };
+      /** What the customer pays, margin included. Worked out by the server. */
+      customerCents: number;
       note: string | null;
     }
   | { priced: false; reason: string; note: string | null };
@@ -502,6 +504,17 @@ export const opsApi = {
 
   awardQuote: (quoteId: string) =>
     api.post<{ trip: Trip }>(`/dispatch/quotes/${quoteId}/award`, {}),
+
+  /**
+   * Offer an in-area job at the rate card price, in one press.
+   *
+   * The out-of-area flow asks partners what they charge because nobody knows
+   * yet. An overflow partner has a card, so the price is already agreed —
+   * this offers at it and records both sides of the money, which the plain
+   * offer it replaces did not do at all.
+   */
+  offerAtCardRate: (tripId: string, affiliateId: string) =>
+    api.post<{ trip: Trip }>(`/dispatch/trips/${tripId}/card-offer`, { affiliateId }),
 
   confirmation: (tripId: string, ticketId: string, form?: "NEW" | "CHANGE") =>
     api.get<{

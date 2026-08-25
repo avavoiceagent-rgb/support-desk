@@ -29,6 +29,7 @@ import { OpsError } from "../ops/errors";
 import { actorFor } from "../ops/trip-events";
 import {
   awardQuote,
+  offerAtCardRate,
   listMessages,
   pendingOfferCounts,
   quotesForTrip,
@@ -71,6 +72,10 @@ const noteOnlySchema = z.object({ note: z.string().max(2000).optional().nullable
 
 const quoteRequestSchema = noteOnlySchema.extend({
   affiliateIds: z.array(z.string().min(1)).min(1, "Choose at least one partner to ask."),
+});
+
+const cardOfferSchema = noteOnlySchema.extend({
+  affiliateId: z.string().min(1),
 });
 
 const quoteSchema = noteOnlySchema.extend({
@@ -132,6 +137,24 @@ dispatchRouter.post("/quote-requests/:id/quote", async (req, res) => {
     res.status(201).json({
       message: await recordQuote({ requestId: param(req, "id"), actor, ...parsed.data }),
     })
+  );
+});
+
+/**
+ * Offering an in-area job to an overflow partner at the rate we hold.
+ *
+ * Guarded, like awarding a quote and for the same reason: it writes money onto
+ * the trip and offers the job at it. Asking for prices commits us to nothing
+ * and stays open; agreeing one does not.
+ */
+dispatchRouter.post("/trips/:tripId/card-offer", requireAdmin, async (req, res) => {
+  const parsed = cardOfferSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed);
+  const actor = await actorFor(req.session?.userId);
+  await handle(res, async () =>
+    res.status(201).json(
+      await offerAtCardRate({ tripId: param(req, "tripId"), actor, ...parsed.data })
+    )
   );
 });
 
