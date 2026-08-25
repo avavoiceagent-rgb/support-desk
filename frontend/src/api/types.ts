@@ -111,8 +111,9 @@ export interface TripEvent {
 export interface TicketNote {
   id: string;
   ticketId: string;
-  authorId: string;
-  author: PublicUser;
+  /** Null when the desk wrote it rather than a person — shown as Adam. */
+  authorId: string | null;
+  author: PublicUser | null;
   body: string;
   createdAt: string;
 }

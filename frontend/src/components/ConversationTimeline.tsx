@@ -77,15 +77,19 @@ export function ConversationTimeline({
 
         if (item.kind === "note") {
           const n = item.note;
+          // A note with no author is Adam's — he re-reads a customer's reply
+          // and can change a booking off the back of it, and that has to be
+          // visible here rather than only in a server log.
+          const author = n.author?.name ?? "Adam";
           return (
             <div key={`note-${n.id}`} className="flex gap-3">
-              <Avatar name={n.author.name} size={9} />
+              <Avatar name={author} size={9} />
               <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-amber-200/80 bg-amber-50/70 shadow-sm">
                 <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-amber-200/60 px-4 py-2">
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="font-semibold text-gray-900">{n.author.name}</span>
+                    <span className="font-semibold text-gray-900">{author}</span>
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                      Internal note
+                      {n.author ? "Internal note" : "Adam · internal note"}
                     </span>
                   </div>
                   <span className="text-xs text-gray-400">{formatDateTime(n.createdAt)}</span>

@@ -227,7 +227,16 @@ export function TicketDetailPage() {
             </div>
             <TriageReason ticket={ticket} className="mt-3 rounded-lg" />
 
-            <ReservationPanel ticketId={ticket.id} onTicketChanged={load} />
+            <ReservationPanel
+              ticketId={ticket.id}
+              onTicketChanged={load}
+              onDraftReply={(bodyHtml) => {
+                // Same door the suggested reply uses: into the composer, where
+                // it waits for a person. Nothing on this page sends anything.
+                setSeedBody(bodyHtml);
+                setSeedKey((k) => k + 1);
+              }}
+            />
 
             <div className="mt-3 overflow-hidden rounded-lg border border-gray-200">
               <OpsContextPanel context={opsContext} />

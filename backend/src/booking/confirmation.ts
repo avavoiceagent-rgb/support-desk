@@ -1,0 +1,175 @@
+// The email that tells a customer their car is booked.
+//
+// Written in TypeScript, not by a model, and that is the point. Every line is
+// a fact already on the reservation: the reference, the time, the two
+// addresses, the car. There is nothing here to reason about, so asking a model
+// to write it would only introduce the possibility of it being wrong — and
+// wrong in a confirmation is worse than wrong anywhere else, because the
+// customer will act on it and turn up at the time it gives them.
+//
+// It is never sent by itself. Creating a reservation drops this into the reply
+// box, where a person reads it and presses Send. That keeps the desk's one
+// unbreakable rule: nothing reaches a customer that nobody looked at.
+
+import { DateTime } from "luxon";
+import { OPERATING_TIME_ZONE } from "./pickup-time";
+import type { FieldChange } from "../ops/trip-events";
+
+/** Only what the email says. Keeps this testable without a database. */
+export interface ConfirmableTrip {
+  reference: string;
+  passengerName: string;
+  passengerPhone: string | null;
+  pickupAddress: string;
+  dropoffAddress: string;
+  stops: string[];
+  pickupAt: Date;
+  bookedHours: number;
+  vehicleClass: string;
+  passengerCount: number | null;
+  luggageCount: number | null;
+  flightNumber: string | null;
+  flightAt: Date | null;
+  flightKind: string | null;
+  /** Set when the job is going to a partner: we must not promise our own car. */
+  affiliateCompany?: string | null;
+}
+
+const CLASS_WORD: Record<string, string> = {
+  SEDAN: "Sedan",
+  SUV: "SUV",
+  VAN: "Van",
+  SPRINTER: "Sprinter",
+};
+
+const day = (at: Date) =>
+  DateTime.fromJSDate(at).setZone(OPERATING_TIME_ZONE).toFormat("cccc d LLLL yyyy");
+const clock = (at: Date) =>
+  DateTime.fromJSDate(at).setZone(OPERATING_TIME_ZONE).toFormat("h:mm a");
+const stamp = (at: Date) => `${day(at)} at ${clock(at)}`;
+
+function escape(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** The booking as a list the customer can check line by line. */
+export function detailLines(trip: ConfirmableTrip): string[] {
+  const lines = [
+    `Reference: ${trip.reference}`,
+    `Passenger: ${trip.passengerName}`,
+    `Pickup: ${stamp(trip.pickupAt)}`,
+    `From: ${trip.pickupAddress}`,
+  ];
+  for (const stop of trip.stops) lines.push(`Via: ${stop}`);
+  lines.push(`To: ${trip.dropoffAddress}`);
+
+  if (trip.flightAt) {
+    const kind = trip.flightKind ? ` (${trip.flightKind.toLowerCase()})` : "";
+    const number = trip.flightNumber ? `${trip.flightNumber}, ` : "";
+    lines.push(`Flight: ${number}${stamp(trip.flightAt)}${kind}`);
+  } else if (trip.flightNumber) {
+    lines.push(`Flight: ${trip.flightNumber}`);
+  }
+
+  lines.push(`Vehicle: ${CLASS_WORD[trip.vehicleClass] ?? trip.vehicleClass}`);
+
+  // Only when we were told. "0 passengers" on a confirmation reads as a
+  // mistake, because it is one.
+  const party: string[] = [];
+  if (typeof trip.passengerCount === "number") {
+    party.push(`${trip.passengerCount} ${trip.passengerCount === 1 ? "passenger" : "passengers"}`);
+  }
+  if (typeof trip.luggageCount === "number") {
+    party.push(`${trip.luggageCount} ${trip.luggageCount === 1 ? "bag" : "bags"}`);
+  }
+  if (party.length) lines.push(`Party: ${party.join(", ")}`);
+
+  lines.push(`Booked for: ${trip.bookedHours} ${trip.bookedHours === 1 ? "hour" : "hours"}`);
+  if (trip.passengerPhone) lines.push(`Contact on the day: ${trip.passengerPhone}`);
+
+  return lines;
+}
+
+const list = (lines: string[]) =>
+  `<ul>${lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul>`;
+
+/**
+ * The first name to open with.
+ *
+ * No title, for the reason the compose prompt gives: a name says nothing about
+ * how somebody wishes to be addressed, and guessing wrong is worse than not
+ * trying. Falls back to no name rather than to "Sir/Madam".
+ */
+function greeting(name: string): string {
+  const first = name.trim().split(/\s+/)[0];
+  return first ? `<p>Hi ${escape(first)},</p>` : "<p>Hello,</p>";
+}
+
+/**
+ * The car itself. A partner-covered job must not be confirmed as ours — the
+ * same rule the draft follows — because a customer told "your driver" and met
+ * by another company's car has been misled by us.
+ */
+function whoIsDriving(trip: ConfirmableTrip): string {
+  return trip.affiliateCompany
+    ? "<p>This journey is being covered by one of our partner operators. We will send you the driver and vehicle details before the day.</p>"
+    : "<p>We will send you your driver's name, phone number and vehicle details before the day.</p>";
+}
+
+const CHECK_IT =
+  "<p>Please have a read through and let us know straight away if anything here is not right.</p>";
+
+/** A brand-new reservation. */
+export function confirmationEmail(trip: ConfirmableTrip): string {
+  return [
+    greeting(trip.passengerName),
+    "<p>Your booking is confirmed. Here are the details:</p>",
+    list(detailLines(trip)),
+    CHECK_IT,
+    whoIsDriving(trip),
+    "<p>Thank you for booking with us.</p>",
+  ].join("");
+}
+
+/**
+ * A booking that has moved.
+ *
+ * The changes come from the trip's own history rather than being worked out
+ * again here, so the email and the audit trail cannot disagree about what
+ * happened. Fields that mean nothing to a customer — who is driving, what the
+ * dispatcher wrote in the notes — are left out of the "what changed" list;
+ * they are ours, not theirs.
+ */
+const CUSTOMER_FIELDS = new Set([
+  "Pickup",
+  "Hours booked",
+  "Car",
+  "Flight",
+  "Flight number",
+  "Contact",
+  "Status",
+]);
+
+export function changesWorthTelling(changes: FieldChange[]): FieldChange[] {
+  return changes.filter((c) => CUSTOMER_FIELDS.has(c.field));
+}
+
+export function changeConfirmationEmail(trip: ConfirmableTrip, changes: FieldChange[]): string {
+  const told = changesWorthTelling(changes);
+  const moved = told.map((c) => `${c.field}: ${c.from ?? "not set"} → ${c.to ?? "not set"}`);
+
+  return [
+    greeting(trip.passengerName),
+    `<p>We have updated your booking ${escape(trip.reference)}.</p>`,
+    moved.length ? "<p>What has changed:</p>" + list(moved) : "",
+    "<p>The booking now reads:</p>",
+    list(detailLines(trip)),
+    CHECK_IT,
+    "<p>Thank you.</p>",
+  ]
+    .filter(Boolean)
+    .join("");
+}

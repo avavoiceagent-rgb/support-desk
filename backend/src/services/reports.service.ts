@@ -141,6 +141,9 @@ export async function getReports(days: number) {
   }
   const notesByAuthor = new Map<string, number>();
   for (const n of rangeNotes) {
+    // Desk notes have no author. They are Adam's, and counting them towards
+    // whoever happened to be on the ticket would flatter somebody's numbers.
+    if (!n.authorId) continue;
     notesByAuthor.set(n.authorId, (notesByAuthor.get(n.authorId) ?? 0) + 1);
   }
 

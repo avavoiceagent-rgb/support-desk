@@ -55,6 +55,15 @@ function readable(trip: TripRecord): Record<string, string | null> {
     Driver: trip.driver?.name ?? "Unassigned",
     Car: trip.vehicle?.label ?? "None",
     Partner: trip.affiliate?.company ?? "None",
+    // The flight and the phone belong here for the same reason the notes do:
+    // a driver holding this job needs to be told when they move. They arrive
+    // in a customer's reply rather than the first email, so they change on a
+    // booking that has already been offered more often than anything else.
+    Flight: trip.flightAt
+      ? `${whenLocal(trip.flightAt)}${trip.flightKind ? ` (${trip.flightKind.toLowerCase()})` : ""}`
+      : null,
+    "Flight number": trip.flightNumber ?? null,
+    Contact: trip.passengerPhone ?? null,
     Notes: trip.notes ?? null,
   };
 }

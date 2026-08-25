@@ -1,0 +1,100 @@
+import { describe, it, expect } from "vitest";
+import { DateTime } from "luxon";
+import {
+  confirmationEmail,
+  changeConfirmationEmail,
+  changesWorthTelling,
+  detailLines,
+  type ConfirmableTrip,
+} from "../confirmation";
+import { OPERATING_TIME_ZONE } from "../pickup-time";
+
+const at = (iso: string) => DateTime.fromISO(iso, { zone: OPERATING_TIME_ZONE }).toJSDate();
+
+function trip(over: Partial<ConfirmableTrip> = {}): ConfirmableTrip {
+  return {
+    reference: "T-10311",
+    passengerName: "Apurva Patel",
+    passengerPhone: "201-555-0134",
+    pickupAddress: "1 Kalisa Way, Paramus, NJ 07652",
+    dropoffAddress: "LaGuardia Airport (LGA), East Elmhurst, NY 11371",
+    stops: [],
+    pickupAt: at("2026-09-03T13:55"),
+    bookedHours: 3,
+    vehicleClass: "SEDAN",
+    passengerCount: 1,
+    luggageCount: 2,
+    flightNumber: null,
+    flightAt: at("2026-09-03T17:45"),
+    flightKind: "INTERNATIONAL",
+    ...over,
+  };
+}
+
+describe("the confirmation email", () => {
+  it("states the booking in the customer's own time zone", () => {
+    const body = confirmationEmail(trip());
+
+    expect(body).toContain("T-10311");
+    expect(body).toContain("Thursday 3 September 2026 at 1:55 PM");
+    expect(body).toContain("1 Kalisa Way");
+    expect(body).toContain("Sedan");
+    expect(body).toContain("201-555-0134");
+  });
+
+  it("greets by first name and adds no title", () => {
+    const body = confirmationEmail(trip());
+
+    expect(body).toContain("<p>Hi Apurva,</p>");
+    expect(body).not.toMatch(/\bMr\b|\bMs\b|\bMrs\b/);
+  });
+
+  it("promises a partner's car rather than ours when the job is farmed out", () => {
+    const body = confirmationEmail(trip({ affiliateCompany: "Liberty Bell Executive" }));
+
+    expect(body).toContain("partner operator");
+    expect(body).not.toContain("your driver's name");
+  });
+
+  it("leaves out counts nobody gave us", () => {
+    const lines = detailLines(trip({ passengerCount: null, luggageCount: null }));
+
+    expect(lines.join(" ")).not.toContain("Party");
+  });
+
+  it("says nothing about a flight when there is none", () => {
+    const lines = detailLines(trip({ flightAt: null, flightNumber: null }));
+
+    expect(lines.join(" ")).not.toContain("Flight");
+  });
+
+  it("escapes an address that contains markup", () => {
+    const body = confirmationEmail(trip({ pickupAddress: "1 Kalisa Way <script>x</script>" }));
+
+    expect(body).not.toContain("<script>");
+    expect(body).toContain("&lt;script&gt;");
+  });
+});
+
+describe("the change confirmation", () => {
+  const moved = [{ field: "Pickup", from: "3 Sep 2026, 2:55 PM", to: "3 Sep 2026, 1:55 PM" }];
+
+  it("names what moved and then restates the whole booking", () => {
+    const body = changeConfirmationEmail(trip(), moved);
+
+    expect(body).toContain("updated your booking T-10311");
+    expect(body).toContain("2:55 PM → 3 Sep 2026, 1:55 PM");
+    expect(body).toContain("Thursday 3 September 2026 at 1:55 PM");
+  });
+
+  it("keeps our own business out of the customer's email", () => {
+    // Who is driving and what the dispatcher wrote in the notes are ours.
+    const told = changesWorthTelling([
+      { field: "Driver", from: "Unassigned", to: "Marco Rinaldi" },
+      { field: "Notes", from: null, to: "Meet at door 3" },
+      { field: "Pickup", from: "2:55 PM", to: "1:55 PM" },
+    ]);
+
+    expect(told.map((c) => c.field)).toEqual(["Pickup"]);
+  });
+});

@@ -9,7 +9,7 @@
 
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { tickets, messages, ticketDrafts, users } from "../db/schema";
+import { tickets, messages, ticketDrafts, users, type DraftFacts } from "../db/schema";
 import { vehicleClassFor } from "../booking/vehicles";
 import { isClassificationEnabled } from "../ai/classifier";
 import { extractBooking } from "../booking/extract";
@@ -26,6 +26,10 @@ import { OPERATING_TIME_ZONE } from "../booking/pickup-time";
 import { emailFromHeader } from "../mail/address";
 import { stripQuotedReply } from "../mail/quoted";
 import { mergeFacts, describeFactChanges } from "../booking/facts";
+import { bookingUpdateFrom } from "../booking/booking-update";
+import { reservationForTicket } from "../ops/reservations";
+import { updateTrip } from "../ops/trips";
+import { addDeskNote } from "./note.service";
 
 /** Filled in with the name of whoever opens the draft. */
 export const AGENT_NAME_PLACEHOLDER = "{{AGENT_NAME}}";
@@ -390,9 +394,102 @@ export async function refreshFactsFromReply(ticketId: string): Promise<string[]>
       .set({ facts: after, updatedAt: new Date() })
       .where(eq(ticketDrafts.ticketId, ticketId));
 
+    // Notes kept current are not the point. The booking is what a car runs
+    // on, and until this existed a reply that said "it's international"
+    // updated a set of notes and left the pickup an hour too late.
+    await carryOntoBooking(ticketId, after, changes);
+
     return changes;
   } catch (err) {
     console.error("[draft] could not re-read the reply:", err);
     return [];
+  }
+}
+
+/**
+ * Put what the reply established onto the booking, and say so on the ticket.
+ *
+ * Both halves matter. The change is what keeps the car right; the note is what
+ * lets a person see it happened, because the alternative — which is what this
+ * did for a day — was a line in a server log Amar will never read, and a
+ * pickup time that had quietly moved with nothing on the screen to say why.
+ *
+ * Never throws. The facts are already saved by the time this runs, and losing
+ * them because a trip could not be updated would be the worse trade.
+ */
+/** Exported for tests; called only from `refreshFactsFromReply`. */
+export async function carryOntoBooking(
+  ticketId: string,
+  facts: DraftFacts,
+  changes: string[]
+): Promise<void> {
+  try {
+    const trip = await reservationForTicket(ticketId);
+
+    // No booking yet is the ordinary case, and the happy one: the form is
+    // filled from these facts when somebody presses Create, so the reply has
+    // already done its work. The note still goes on the ticket.
+    if (!trip) {
+      await addDeskNote(
+        ticketId,
+        `Adam re-read the customer's reply and updated the booking details:\n` +
+          changes.map((c) => `• ${c}`).join("\n") +
+          `\n\nNo reservation has been created from this ticket yet — these are what the form will be filled with.`
+      );
+      return;
+    }
+
+    const update = bookingUpdateFrom(
+      {
+        pickupAt: trip.pickupAt,
+        flightAt: trip.flightAt,
+        flightKind: (trip.flightKind as "DOMESTIC" | "INTERNATIONAL" | null) ?? null,
+        flightNumber: trip.flightNumber,
+        passengerPhone: trip.passengerPhone,
+        passengerCount: trip.passengerCount,
+        luggageCount: trip.luggageCount,
+        status: trip.status,
+      },
+      {
+        flightTimeLocal: facts.flightTimeLocal,
+        flightKind: facts.flightKind,
+        flightNumber: facts.flightNumber,
+        passengerPhone: facts.passengerPhone,
+        passengerCount: facts.passengerCount,
+        luggageCount: facts.luggageCount,
+      }
+    );
+
+    const lines: string[] = [];
+    if (Object.keys(update.patch).length > 0) {
+      // Through the same door the screens use, so the double-booking refusal
+      // and the trip's own history apply exactly as they would to a change a
+      // person made by hand.
+      await updateTrip(trip.id, update.patch, { userId: null, name: "Adam" });
+      lines.push(`Adam re-read the customer's reply and updated ${trip.reference}:`);
+      lines.push(...update.said.map((s) => `• ${s}`));
+    } else {
+      lines.push(`Adam re-read the customer's reply. ${trip.reference} already matched:`);
+      lines.push(...changes.map((c) => `• ${c}`));
+    }
+
+    if (update.needsAPerson.length) {
+      lines.push("", "Worth a look:");
+      lines.push(...update.needsAPerson.map((s) => `• ${s}`));
+    }
+
+    // Whoever is holding the job was told the old times. The offer panel
+    // already notices a booking that has moved since the last message — this
+    // is the plain-English version of the same fact, where the reader is.
+    if (update.patch.pickupAt && (trip.driver || trip.affiliate)) {
+      lines.push(
+        "",
+        `${trip.driver?.name ?? trip.affiliate?.company} is on this job and was told the old time. Send them the change.`
+      );
+    }
+
+    await addDeskNote(ticketId, lines.join("\n"));
+  } catch (err) {
+    console.error("[draft] could not carry the reply onto the booking:", err);
   }
 }

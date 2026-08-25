@@ -246,9 +246,16 @@ export const notes = pgTable(
     ticketId: text("ticket_id")
       .notNull()
       .references(() => tickets.id, { onDelete: "cascade" }),
-    authorId: text("author_id")
-      .notNull()
-      .references(() => users.id),
+    /**
+     * Null means the desk wrote it, not a person.
+     *
+     * Notes are attributed to whoever was signed in, and that is still true of
+     * every note a person writes. But Adam now re-reads a customer's reply and
+     * can change a booking off the back of it, and that has to be visible on
+     * the ticket next to everything else that happened. Attributing it to the
+     * last human to touch the ticket would put words in their mouth.
+     */
+    authorId: text("author_id").references(() => users.id),
     body: text("body").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

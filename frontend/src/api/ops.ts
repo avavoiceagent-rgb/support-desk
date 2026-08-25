@@ -442,4 +442,18 @@ export const opsApi = {
 
   quoteTrip: (tripId: string, affiliateId: string) =>
     api.get<TripQuote>(`/ops/trips/${tripId}/quote?affiliateId=${encodeURIComponent(affiliateId)}`),
+
+  /**
+   * The words to send the customer now this booking exists, or has moved.
+   *
+   * Fetched, not sent. It goes into the reply box and waits for somebody to
+   * read it — the server has no path that puts it in front of a customer.
+   */
+  confirmation: (tripId: string, ticketId: string) =>
+    api.get<{
+      kind: "NEW" | "CHANGE";
+      reference: string;
+      bodyHtml: string;
+      tellsThemAnything: boolean;
+    }>(`/ops/trips/${tripId}/confirmation?ticketId=${encodeURIComponent(ticketId)}`),
 };

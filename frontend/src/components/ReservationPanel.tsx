@@ -13,6 +13,7 @@
 // something a tired reader clicks past.
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { draftToPlainText } from "./DraftCard";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { Trip, VehicleClass } from "../api/ops";
@@ -77,6 +78,7 @@ function Label({ children, hint }: { children: React.ReactNode; hint?: string })
 export function ReservationPanel({
   ticketId,
   onTicketChanged,
+  onDraftReply,
 }: {
   ticketId: string;
   /**
@@ -88,6 +90,17 @@ export function ReservationPanel({
    * out, the desk changed a booking and the page gave no sign it had.
    */
   onTicketChanged?: () => void;
+  /**
+   * Hand a written email to the reply box for somebody to read and send.
+   *
+   * Creating a reservation and changing one both produce something the
+   * customer needs to be told, and the desk knows every word of it — the
+   * reference, the time, the two addresses. So it writes it. What it does not
+   * do is send it: it lands in the composer, a person reads it, a person
+   * presses Send. That is the same rule Adam's first reply follows, and it is
+   * the reason this is a callback rather than a call to the mail provider.
+   */
+  onDraftReply?: (bodyHtml: string) => void;
 }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
@@ -184,10 +197,36 @@ export function ReservationPanel({
       setChanging(null);
       await load();
       onTicketChanged?.();
+      await offerConfirmation(updated.id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not change the booking.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * Put the confirmation in the reply box.
+   *
+   * Deliberately after the booking is already saved and the panel has
+   * reloaded, and deliberately swallowing its own failure: the reservation is
+   * the thing that mattered and it is done. A confirmation that could not be
+   * fetched is a person writing an email by hand, not a booking half made.
+   */
+  async function offerConfirmation(tripId: string) {
+    if (!onDraftReply) return;
+    try {
+      const confirmation = await opsApi.confirmation(tripId, ticketId);
+      // A change nobody outside the office would notice — a driver assigned,
+      // a note edited — has nothing to tell the customer, and an email saying
+      // "we have updated your booking" followed by nothing that moved reads
+      // as though we had lost track of it.
+      if (!confirmation.tellsThemAnything) return;
+      // The composer is a plain-text box, so it gets the same treatment
+      // Adam's own draft gets on its way in.
+      onDraftReply(draftToPlainText(confirmation.bodyHtml));
+    } catch {
+      // Nothing to say here that is worth pushing the booking off the screen.
     }
   }
 
@@ -233,6 +272,7 @@ export function ReservationPanel({
       setTrip(made);
       setOpen(false);
       onTicketChanged?.();
+      await offerConfirmation(made.id);
     } catch (err) {
       // The server's refusals here name the reservation that already exists.
       setError(err instanceof ApiError ? err.message : "Could not create the reservation.");

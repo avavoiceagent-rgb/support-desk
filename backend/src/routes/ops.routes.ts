@@ -8,6 +8,9 @@
 // read at speed: "Marco Rinaldi is already on T-10432 (…)" rather than "409".
 
 import { Router, type Response } from "express";
+import { eq } from "drizzle-orm";
+import { db } from "../db/client";
+import { tickets } from "../db/schema";
 import { z } from "zod";
 import { requireAuth, requireAdmin } from "../middleware/auth";
 import { param } from "../utils/params";
@@ -33,6 +36,11 @@ import {
   MAX_BAND_MINIMUM_HOURS,
 } from "../ops/zones";
 import { actorFor, listTripEvents } from "../ops/trip-events";
+import {
+  confirmationEmail,
+  changeConfirmationEmail,
+  changesWorthTelling,
+} from "../booking/confirmation";
 import {
   searchTrips,
   updateTrip,
@@ -388,6 +396,72 @@ opsRouter.patch("/trips/:id", requireAdmin, async (req, res) => {
 // the wrong way round.
 opsRouter.get("/trips/:id/events", async (req, res) => {
   res.json({ events: await listTripEvents(param(req, "id")) });
+});
+
+/**
+ * The email telling the customer this booking is confirmed, or has moved.
+ *
+ * A read, and only a read: it builds the words and hands them back. What
+ * happens next is that they land in the reply box on the ticket and a person
+ * presses Send. Nothing on this path can put an email in front of a customer
+ * on its own, which is the whole reason it is shaped this way rather than as
+ * "create the reservation and send the confirmation".
+ *
+ * Which of the two it writes is decided by the trip's own history rather than
+ * by the caller: the most recent event says whether this booking was just
+ * created or just changed, and building a "we have updated your booking" from
+ * a caller's say-so would let a mis-wired screen tell a customer their brand
+ * new reservation had moved.
+ */
+opsRouter.get("/trips/:id/confirmation", async (req, res) => {
+  const trip = await findTripById(param(req, "id"));
+  if (!trip) return res.status(404).json({ error: "No trip with that id." });
+
+  // Who this email would be about, against who it would be sent to.
+  //
+  // The reservation panel can act on a booking that was merely quoted in an
+  // email, and a quoted reference is only a number somebody typed — the
+  // review on 24 August recorded that a ticket can adopt a reference
+  // belonging to a different customer. Reading such a booking is one thing.
+  // Writing out its passenger, its addresses and its times ready to send to
+  // whoever opened this ticket is another, and it would be us handing one
+  // customer another customer's movements. So the two have to be the same
+  // person, or there is no email.
+  const askedFor = req.query.ticketId;
+  if (typeof askedFor === "string" && askedFor && askedFor !== trip.ticketId) {
+    const [ticket] = await db.select().from(tickets).where(eq(tickets.id, askedFor)).limit(1);
+    const booked = trip.bookerEmail?.toLowerCase() ?? null;
+    const asking = ticket?.requesterEmail?.toLowerCase() ?? null;
+    if (!asking || !booked || asking !== booked) {
+      return res.status(403).json({
+        error:
+          `${trip.reference} was not booked by this ticket's sender, so there is no confirmation to send from here. ` +
+          `Open the ticket that booking belongs to.`,
+      });
+    }
+  }
+
+  const events = await listTripEvents(trip.id);
+  const latest = events[events.length - 1];
+  const isChange = Boolean(latest) && latest.kind !== "CREATED";
+
+  const confirmable = {
+    ...trip,
+    stops: (trip.stops as string[]) ?? [],
+    affiliateCompany: trip.affiliate?.company ?? null,
+  };
+
+  res.json({
+    kind: isChange ? "CHANGE" : "NEW",
+    reference: trip.reference,
+    bodyHtml: isChange
+      ? changeConfirmationEmail(confirmable, latest.changes)
+      : confirmationEmail(confirmable),
+    // So a screen can stay quiet rather than offering an email that says
+    // nothing: an assignment or a note edit changes the trip without changing
+    // anything the customer was ever told.
+    tellsThemAnything: isChange ? changesWorthTelling(latest.changes).length > 0 : true,
+  });
 });
 
 /**

@@ -128,6 +128,14 @@ export interface TripPatch {
   affiliateId?: string | null;
   status?: string;
   notes?: string | null;
+  // Set by the desk when a customer's reply changes them, never by a screen —
+  // see booking/booking-update.ts. The PATCH route does not accept these.
+  flightAt?: Date | null;
+  flightKind?: string | null;
+  flightNumber?: string | null;
+  passengerPhone?: string | null;
+  passengerCount?: number | null;
+  luggageCount?: number | null;
 }
 
 export interface TripClash {

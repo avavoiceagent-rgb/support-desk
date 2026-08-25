@@ -35,8 +35,8 @@ export function NotesPanel({ ticketId, notes, onAdded }: { ticketId: string; not
         {notes.map((n) => (
           <div key={n.id} className="rounded-lg border border-amber-100 bg-white p-3 shadow-sm">
             <div className="mb-1.5 flex items-center gap-2">
-              <Avatar name={n.author.name} size={6} />
-              <span className="text-xs font-semibold text-gray-800">{n.author.name}</span>
+              <Avatar name={n.author?.name ?? "Adam"} size={6} />
+              <span className="text-xs font-semibold text-gray-800">{n.author?.name ?? "Adam"}</span>
               <span className="ml-auto text-[11px] text-gray-400">{formatDateTime(n.createdAt)}</span>
             </div>
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{n.body}</p>
