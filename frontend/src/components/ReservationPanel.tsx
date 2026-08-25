@@ -881,15 +881,26 @@ function WhoCanTakeIt({
         </pre>
       )}
 
-      {/* An out-of-area job is priced by whoever covers it, so the desk asks
-          before it offers. Inside the service area a partner is overflow for
-          our own cars at a rate we already hold, and the straight offer below
-          is still the right move. */}
       {/* Why there is one tick box, or none. Without it the reader has to
           guess whether the roster is short or the screen is broken. */}
       {coverageNote && <p className="mt-1.5 text-[11px] text-amber-800">{coverageNote}</p>}
 
-      {fallbackReason === "OUT_OF_AREA" ? (
+      {/* Every job that leaves our own cars goes to a partner the same way,
+          whether it left the service area or simply found nobody free: we ask
+          what they charge, we decide whether it suits, and only then do we
+          agree it. The desk does not open with a price.
+
+          It briefly did for overflow jobs, on the reasoning that a rate card
+          is already an agreed number. A card says what a partner charged when
+          it was last negotiated; a rate request is how you find out what they
+          charge for this job today. The card figure survives beside each name
+          as the budget to read their answer against.
+
+          The gate below is `fallbackReason` rather than one particular reason,
+          and getting that wrong is what put an empty list on this panel: a
+          partner list is only ever populated when no car of ours can take the
+          job, so any fallback at all belongs here. */}
+      {fallbackReason ? (
         <QuoteBoard
           tripId={tripId}
           partners={partners}
