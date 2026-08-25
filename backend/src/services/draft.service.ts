@@ -26,6 +26,7 @@ import { OPERATING_TIME_ZONE } from "../booking/pickup-time";
 import { emailFromHeader } from "../mail/address";
 import { stripQuotedReply } from "../mail/quoted";
 import { mergeFacts, describeFactChanges } from "../booking/facts";
+import { implausible } from "../booking/plausible";
 import { bookingUpdateFrom } from "../booking/booking-update";
 import { reservationForTicket } from "../ops/reservations";
 import { updateTrip } from "../ops/trips";
@@ -137,6 +138,41 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
         .update(tickets)
         .set({ reservationSource: geocodedSource })
         .where(and(eq(tickets.id, ticketId), eq(tickets.autoClassified, true)));
+    }
+
+    // --- 5b. Does any of this make sense? --------------------------------
+    //
+    // The one check that is about the answer rather than the question. A
+    // customer typed "JFK", Google returned John F. Kennedy in Oklahoma City
+    // and did not flag it as a guess, the drive measured 1,341 minutes, the
+    // pickup landed the day before the flight, and every word of it was
+    // emailed to them. Nothing was broken — each step did exactly what it was
+    // told with what it was given, and nowhere asked whether the result was
+    // believable.
+    //
+    // So when it is not, nothing is drafted at all. The desk cannot say
+    // anything trustworthy about this trip until somebody looks at the
+    // address, and a draft with the good parts kept would put that address in
+    // front of a customer under a covering sentence. The ticket gets a note
+    // naming what looked wrong, and waits for a person.
+    const suggestedPickupLocal =
+      plan.recommendedPickupLocal ?? booking.requestedPickupLocal ?? plan.ifInternationalLocal;
+    const doubts = implausible({
+      driveMinutes,
+      dropoffDescription: dropoff?.formattedAddress ?? booking.dropoffAddressText,
+      pickupAtLocal: suggestedPickupLocal,
+      flightAtLocal: goingToAirport ? booking.flightTimeLocal : null,
+    });
+    if (doubts.length > 0) {
+      await addDeskNote(
+        ticketId,
+        `Adam has not written a reply for this one, because the numbers do not add up:\n` +
+          doubts.map((d) => `• ${d}`).join("\n") +
+          `\n\nThe customer wrote "${booking.dropoffAddressText ?? "no drop-off"}" as the drop-off` +
+          (dropoff ? ` and the map answered "${dropoff.formattedAddress}"` : "") +
+          `. Correct it and reply by hand.`
+      );
+      return false;
     }
 
     // --- 6. What do we confirm, what do we ask? --------------------------
@@ -254,10 +290,10 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
           // international time is the earlier one, so taking it is the same
           // instinct as rounding a pickup down: early costs a wait, late
           // costs the flight. The internal note says both.
-          pickupAtLocal:
-            plan.recommendedPickupLocal ??
-            booking.requestedPickupLocal ??
-            plan.ifInternationalLocal,
+          // The same expression the plausibility check read, not a second
+          // copy of it: two places working out "the time we suggest" is two
+          // places that can come to disagree.
+          pickupAtLocal: suggestedPickupLocal,
           // From the counts, with what they asked for as a floor. Reading the
           // class out of the model's own sentence made "an SUV or a van" a VAN
           // by regex ordering, and asked a model for something already

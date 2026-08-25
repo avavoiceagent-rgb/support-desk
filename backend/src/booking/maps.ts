@@ -145,16 +145,38 @@ export function parseGeocodeResponse(raw: unknown, query: string): VerifiedAddre
  * Look up one address. Returns null when maps are switched off, when Google
  * doesn't recognise it, or when the call fails.
  */
+/**
+ * The corner of the world this company actually drives in.
+ *
+ * Roughly Trenton up to Poughkeepsie and Allentown across to Montauk — wide
+ * enough to hold every airport, every borough and the whole of New Jersey,
+ * and nowhere near wide enough to hold Oklahoma.
+ *
+ * A bias, not a restriction, and the distinction is the whole point: an
+ * ambiguous name resolves near home, and an unambiguous Philadelphia or
+ * Boston still resolves where it actually is. Restricting to the area would
+ * break every out-of-area job the partner network exists to cover.
+ */
+const SERVICE_AREA_VIEWPORT = { south: 40.0, west: -75.6, north: 41.8, east: -71.8 };
+
 export function buildGeocodeUrl(query: string, key: string): string {
   // `components=country:US` RESTRICTS the search; `region=us` only biases it.
   // Without the restriction Google answered "LaGuardia" with Laguardia in
   // Álava, Spain — which put a Spanish town in a customer's drop-off line and,
   // because Álava is not NY or NJ, flagged a Manhattan airport run as a trip
   // outside the service area. This company drives in the United States.
+  //
+  // One country was not enough. "JFK" then came back as John F. Kennedy in
+  // Oklahoma City — inside the restriction, 1,400 miles from the airport the
+  // customer meant, and it reached them in an email. `bounds` biases the
+  // search towards the viewport we work in, which is what makes a bare
+  // airport code resolve in Queens.
+  const { south, west, north, east } = SERVICE_AREA_VIEWPORT;
   const params = new URLSearchParams({
     address: query,
     components: "country:US",
     region: "us",
+    bounds: `${south},${west}|${north},${east}`,
     key,
   });
   return `${GEOCODE_URL}?${params.toString()}`;

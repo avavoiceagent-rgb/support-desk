@@ -287,6 +287,20 @@ describe("buildGeocodeUrl", () => {
   // also flagged a Manhattan airport run as leaving the service area.
   const url = buildGeocodeUrl("LaGuardia", "test-key");
 
+  it("keeps an ambiguous name near the places we drive", () => {
+    // One country was not enough. "JFK" came back as John F. Kennedy in
+    // Oklahoma City — inside the US restriction, 1,400 miles from the airport
+    // the customer meant — and it reached them in an email.
+    expect(url).toContain("bounds=40%2C-75.6%7C41.8%2C-71.8");
+  });
+
+  it("biases rather than restricts, so an out-of-area job still resolves", () => {
+    // Philadelphia and Boston are the partner network's whole reason for
+    // existing. A restriction here would break every one of them.
+    expect(url).not.toContain("components=country%3AUS%7C");
+    expect(url).not.toMatch(/locationRestriction/);
+  });
+
   it("restricts the search to the United States, not merely biases it", () => {
     expect(url).toContain("components=country%3AUS");
   });
