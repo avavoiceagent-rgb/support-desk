@@ -10,6 +10,7 @@ import {
   expandKnownPlace,
   withoutTheWrongDoor,
   serviceAreaFromStates,
+  asThisDeskSaysIt,
 } from "../maps";
 import type { VerifiedAddress } from "../maps";
 
@@ -473,5 +474,43 @@ describe("serviceAreaFromStates", () => {
   it("has nothing to say about nothing", async () => {
     expect(serviceAreaFromStates([], area)).toBeNull();
     expect(serviceAreaFromStates([null, null], area)).toBeNull();
+  });
+});
+
+describe("asThisDeskSaysIt", () => {
+  // The exact strings off T-10319, which went to Metro Overflow Group and to
+  // the customer in a confirmation email. The draft above them had already
+  // been printing the tidy version — only the stored trip kept Google's.
+
+  it("removes the repetition and the country from what the customer reads", async () => {
+    expect(asThisDeskSaysIt("245 Park Avenue, 245 Park Ave, New York, NY 10167, USA")).toBe(
+      "245 Park Ave, New York, NY 10167"
+    );
+  });
+
+  it("drops the country from an address with nothing repeated", async () => {
+    expect(asThisDeskSaysIt("201 N 17th St, Philadelphia, PA 19103, USA")).toBe(
+      "201 N 17th St, Philadelphia, PA 19103"
+    );
+  });
+
+  it("does both jobs at once on an arrival pickup", async () => {
+    expect(asThisDeskSaysIt("Terminal 4 Departures, Jamaica, NY 11430, USA", "ARRIVAL")).toBe(
+      "Terminal 4, Jamaica, NY 11430"
+    );
+  });
+
+  it("keeps a leading name that a driver would actually look for", async () => {
+    // The other half of tidyAddress's job, and the reason it is not simply
+    // "drop the first part": a hotel name is what somebody stands outside.
+    expect(asThisDeskSaysIt("The Langham, 400 5th Ave, New York, NY 10018, USA")).toBe(
+      "The Langham, 400 5th Ave, New York, NY 10018"
+    );
+  });
+
+  it("changes nothing about an address that was already right", async () => {
+    // Applied at the door and again by the draft, so it has to be safe twice.
+    const said = "201 N 17th St, Philadelphia, PA 19103";
+    expect(asThisDeskSaysIt(asThisDeskSaysIt(said))).toBe(said);
   });
 });

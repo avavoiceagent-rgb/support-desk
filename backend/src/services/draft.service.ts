@@ -18,7 +18,7 @@ import {
   estimateRoute,
   isMapsEnabled,
   resolveServiceArea,
-  withoutTheWrongDoor,
+  asThisDeskSaysIt,
 } from "../booking/maps";
 import type { VerifiedAddress } from "../booking/maps";
 import { planPickup } from "../booking/pickup-time";
@@ -101,29 +101,41 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
     if (!booking) return false;
 
     // --- 2. Check the places against a map -------------------------------
-    const [rawPickup, dropoff] = await Promise.all([
+    const [rawPickup, rawDropoff] = await Promise.all([
       booking.pickupAddressText ? verifyAddress(booking.pickupAddressText) : Promise.resolve(null),
       booking.dropoffAddressText ? verifyAddress(booking.dropoffAddressText) : Promise.resolve(null),
     ]);
 
-    // Corrected here, once, rather than wherever it happens to be printed.
-    // This address is the draft's pickup line, the reservation's pickup, and
-    // the meeting point the driver is sent — so a door that contradicts the
-    // flight has to stop being wrong before any of them read it. The
-    // coordinates are untouched: only the words change.
-    const pickup =
-      rawPickup && booking.flightDirection
-        ? {
-            ...rawPickup,
-            formattedAddress: withoutTheWrongDoor(
-              rawPickup.formattedAddress,
-              booking.flightDirection
-            ),
-          }
-        : rawPickup;
+    /**
+     * Google's string as this desk says it, corrected once at the door.
+     *
+     * Everything downstream reads the same words: the draft's pickup line, the
+     * reservation, the offer the partner is sent, the confirmation email. So
+     * this is where the raw string stops being raw, rather than each of them
+     * tidying it — or, as it turned out, only one of them doing so.
+     *
+     * `tidyAddress` was already being applied to the draft, and nowhere else.
+     * The trip kept Google's original, so the offer to Metro and the
+     * confirmation to the customer both went out reading "245 Park Avenue, 245
+     * Park Ave, New York, NY 10167, USA" — the exact repetition that function's
+     * own comment holds up as the thing it exists to remove.
+     *
+     * A door that contradicts the flight goes too: `withoutTheWrongDoor`.
+     * Coordinates are untouched — only the words change.
+     */
+    const asWeSayIt = <T extends { formattedAddress: string } | null>(
+      place: T,
+      direction: "ARRIVAL" | "DEPARTURE" | null = null
+    ): T =>
+      place
+        ? { ...place, formattedAddress: asThisDeskSaysIt(place.formattedAddress, direction) }
+        : place;
+
+    const pickup = asWeSayIt(rawPickup, booking.flightDirection);
+    const dropoff = asWeSayIt(rawDropoff);
     const stops: (VerifiedAddress | null)[] = [];
     for (const stop of booking.stops) {
-      stops.push(await verifyAddress(stop.addressText));
+      stops.push(asWeSayIt(await verifyAddress(stop.addressText)));
     }
 
     // --- 3. How long does the drive actually take? -----------------------

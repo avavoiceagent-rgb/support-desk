@@ -445,6 +445,28 @@ export function withoutTheWrongDoor(
     .join(", ");
 }
 
+/**
+ * Google's string as this desk says it: the one place raw stops being raw.
+ *
+ * Everything downstream reads the same words — the draft's pickup line, the
+ * reservation, the offer a partner is sent, the confirmation email — so the
+ * correction belongs where the address enters the system rather than at each
+ * of them. Or, as it turned out, at only one of them: `tidyAddress` was being
+ * applied to the draft and nowhere else, so the trip kept Google's original
+ * and both the offer to Metro and the confirmation to the customer went out
+ * reading "245 Park Avenue, 245 Park Ave, New York, NY 10167, USA" — the exact
+ * repetition `tidyAddress` exists to remove, quoted in its own comment.
+ *
+ * Only the words change. Coordinates, place id and state are what the desk
+ * navigates and reasons by, and none of them are touched.
+ */
+export function asThisDeskSaysIt(
+  formatted: string,
+  flightDirection: "ARRIVAL" | "DEPARTURE" | null | undefined = null
+): string {
+  return tidyAddress(withoutTheWrongDoor(formatted, flightDirection));
+}
+
 export function tidyAddress(formatted: string): string {
   const withoutCountry = formatted.replace(/,\s*(?:USA|United States)\s*$/i, "").trim();
   const parts = withoutCountry.split(",").map((p) => p.trim()).filter(Boolean);
