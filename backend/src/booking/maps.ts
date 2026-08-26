@@ -310,10 +310,50 @@ export function resolveServiceArea(
   points: (VerifiedAddress | null)[],
   serviceAreaStates: string[]
 ): "INTERNAL" | "EXTERNAL" | null {
-  const known = points.filter((p): p is VerifiedAddress => p !== null && p.state !== null);
-  // Every leg has to be accounted for; one unverified address could be anywhere.
-  if (known.length === 0 || known.length !== points.length) return null;
-  return known.every((p) => serviceAreaStates.includes(p.state as string)) ? "INTERNAL" : "EXTERNAL";
+  return serviceAreaFromStates(
+    points.map((p) => p?.state ?? null),
+    serviceAreaStates
+  );
+}
+
+/**
+ * The same question asked of state codes rather than of geocoded addresses.
+ *
+ * A booking that has already been made carries `pickupState` and
+ * `dropoffState` and no longer has the `VerifiedAddress` objects it was built
+ * from, so the dispatch side could not call the function above and grew its
+ * own copy of the rule instead: a private `HOME_STATES = ["NY", "NJ"]` list
+ * that read the drop-off alone. A **Philadelphia pickup returning to
+ * Manhattan** has `dropoffState: "NY"`, so it read as ordinary local work and
+ * the desk offered one of our own drivers a ninety-five mile run into
+ * Pennsylvania and back.
+ *
+ * Two rules for one question is how they disagree, so this is the rule and
+ * `resolveServiceArea` is now a way of spelling it.
+ *
+ * The two halves are deliberately not symmetrical:
+ *
+ *  - **Outside** needs one leg. A journey with a foot in Pennsylvania leaves
+ *    the area whatever the rest of it does, and whether or not every other
+ *    address could be verified.
+ *  - **Inside** needs all of them. An address we could not place could be
+ *    anywhere, and "all the ones we could read are local" is not the same
+ *    claim.
+ *
+ * Null is "not enough to say", left for the caller to break: the draft leaves
+ * the label to a person, dispatch shows our drivers anyway. Neither guesses.
+ */
+export function serviceAreaFromStates(
+  states: (string | null | undefined)[],
+  serviceAreaStates: string[]
+): "INTERNAL" | "EXTERNAL" | null {
+  if (states.length === 0) return null;
+
+  const known = states.filter((s): s is string => Boolean(s && s.trim()));
+  if (known.some((s) => !serviceAreaStates.includes(s))) return "EXTERNAL";
+  if (known.length !== states.length) return null;
+
+  return "INTERNAL";
 }
 
 /**

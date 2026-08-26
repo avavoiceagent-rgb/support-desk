@@ -150,6 +150,49 @@ describe("candidatesForTrip", () => {
     expect(result.partners[0].reason).toBe("COVERS_AREA");
   });
 
+  it("goes to partners for a trip that comes back INTO the area", async () => {
+    // The one that was wrong. A Philadelphia pickup returning to Manhattan has
+    // dropoffState "NY", and the drop-off was the only end being read — so a
+    // ninety-five mile run into Pennsylvania and back read as ordinary local
+    // work and the screen offered one of our own drivers.
+    await makeDriverFree("Marco Rinaldi");
+    const [a] = await db.insert(affiliates).values({
+      company: "Liberty Bell Executive", phone: "+1 215 555 0142",
+      email: "dispatch@libertybell.example", baseAddress: "Philadelphia, PA",
+      baseLat: 39.9526, baseLng: -75.1652, coverageStates: ["PA", "DE"], preference: 1,
+    }).returning();
+    await db.insert(affiliateZones).values({
+      affiliateId: a.id, label: "Regional", fromMiles: 40, toMiles: 100,
+      minimumHours: 4, rateCents: { SEDAN: 10_000 },
+    });
+
+    const result = await candidatesForTrip(
+      await makeTrip({
+        pickupAddress: "Sheraton Philadelphia Downtown, 201 N 17th St, Philadelphia, PA 19103",
+        pickupState: "PA",
+        pickupLat: 39.9526,
+        pickupLng: -75.1652,
+        dropoffAddress: "245 Park Avenue, New York, NY 10167",
+        dropoffState: "NY",
+      })
+    );
+
+    expect(result.drivers).toEqual([]);
+    expect(result.fallbackReason).toBe("OUT_OF_AREA");
+  });
+
+  it("is out of area on one known leg, even with the other end unrecorded", async () => {
+    // A foot in Pennsylvania settles it. Waiting for the other end to be
+    // verified would offer our drivers a job we already know is not ours.
+    await makeDriverFree("Marco Rinaldi");
+    const result = await candidatesForTrip(
+      await makeTrip({ pickupState: "PA", dropoffState: null })
+    );
+
+    expect(result.drivers).toEqual([]);
+    expect(result.fallbackReason).toBe("OUT_OF_AREA");
+  });
+
   it("treats an unknown destination as ordinary work, not as out of area", async () => {
     // Trips created before the states were stored have none. Farming those
     // out on missing information would be a decision made from a blank.

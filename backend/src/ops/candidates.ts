@@ -16,6 +16,8 @@ import { describeOffer, lastSpokeTo } from "./dispatch";
 import { listTripEvents } from "./trip-events";
 import { quoteTripForAffiliate, type TripQuote } from "./pricing";
 import type { TripRecord } from "./lookup";
+import { serviceAreaFromStates } from "../booking/maps";
+import { SERVICE_AREA_STATES } from "../types";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { affiliates } from "../db/schema";
@@ -90,17 +92,27 @@ export interface TripCandidates {
 /**
  * The trip leaves NY/NJ, and so needs a partner however free our drivers are.
  *
- * Read from the stored state rather than re-decided here: it is the same code
- * that decided INTERNAL or EXTERNAL when the email arrived, and two places
- * deciding it separately would eventually disagree in front of a customer.
+ * Both ends, through the one rule. This used to read the drop-off alone,
+ * against a private copy of the state list, under a comment claiming it read
+ * the stored decision — which it did not, and there is no stored decision for
+ * it to have read. A **Philadelphia pickup coming back to Manhattan** has
+ * `dropoffState: "NY"`, so it came out as ordinary local work and the screen
+ * offered one of our own drivers a ninety-five mile run into Pennsylvania and
+ * back, with nothing anywhere to say why that was wrong.
+ *
+ * Stops are not consulted because a trip does not keep their states — only
+ * their text. A stop that leaves the area would have made the booking EXTERNAL
+ * when the draft was written, which is where that is caught.
+ *
+ * Unknown is still not "outside": a trip with no states recorded gets the
+ * ordinary treatment rather than being farmed out on missing information.
+ * Showing a driver who turns out to be wrong is recoverable; hiding every
+ * driver on a job that was ours all along is a dead end on the screen.
  */
-const HOME_STATES = ["NY", "NJ"];
-
 function leavesTheArea(trip: TripRecord): boolean {
-  // Unknown is not "outside". A trip with no state recorded gets the ordinary
-  // treatment rather than being farmed out on missing information.
-  if (!trip.dropoffState) return false;
-  return !HOME_STATES.includes(trip.dropoffState);
+  return (
+    serviceAreaFromStates([trip.pickupState, trip.dropoffState], SERVICE_AREA_STATES) === "EXTERNAL"
+  );
 }
 
 /**

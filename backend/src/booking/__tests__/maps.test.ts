@@ -9,6 +9,7 @@ import {
   tidyAddress,
   expandKnownPlace,
   withoutTheWrongDoor,
+  serviceAreaFromStates,
 } from "../maps";
 import type { VerifiedAddress } from "../maps";
 
@@ -436,5 +437,41 @@ describe("a terminal door that contradicts the flight", () => {
     // Only a trailing qualifier goes. "Arrivals Road" is a road.
     const address = "12 Arrivals Road, Jamaica, NY 11430";
     expect(withoutTheWrongDoor(address, "DEPARTURE")).toBe(address);
+  });
+});
+
+describe("serviceAreaFromStates", () => {
+  // The rule itself, which `resolveServiceArea` is now a way of spelling and
+  // which dispatch used to keep a second, wronger copy of.
+  const area = ["NY", "NJ"];
+
+  it("is outside on one leg, whichever leg it is", async () => {
+    expect(serviceAreaFromStates(["NY", "PA"], area)).toBe("EXTERNAL");
+    // The one dispatch got wrong: a Philadelphia pickup coming back to
+    // Manhattan, read from the drop-off alone, was ordinary local work.
+    expect(serviceAreaFromStates(["PA", "NY"], area)).toBe("EXTERNAL");
+  });
+
+  it("is inside only when every leg is", async () => {
+    expect(serviceAreaFromStates(["NY", "NJ"], area)).toBe("INTERNAL");
+    expect(serviceAreaFromStates(["NY", "NY", "NJ"], area)).toBe("INTERNAL");
+  });
+
+  it("settles outside without waiting for the other end to be verified", async () => {
+    // A foot in Pennsylvania leaves the area whatever the rest turns out to be.
+    expect(serviceAreaFromStates(["PA", null], area)).toBe("EXTERNAL");
+    expect(serviceAreaFromStates([null, "MA"], area)).toBe("EXTERNAL");
+  });
+
+  it("will not call it inside on a partial reading", async () => {
+    // "All the ones we could read are local" is a different claim, and an
+    // address nobody could place could be anywhere.
+    expect(serviceAreaFromStates(["NY", null], area)).toBeNull();
+    expect(serviceAreaFromStates(["NY", "  "], area)).toBeNull();
+  });
+
+  it("has nothing to say about nothing", async () => {
+    expect(serviceAreaFromStates([], area)).toBeNull();
+    expect(serviceAreaFromStates([null, null], area)).toBeNull();
   });
 });
