@@ -13,6 +13,8 @@
 
 import { DateTime } from "luxon";
 import { OPERATING_TIME_ZONE } from "./pickup-time";
+import { serviceAreaFromStates } from "./maps";
+import { SERVICE_AREA_STATES } from "../types";
 import type { FieldChange } from "../ops/trip-events";
 import { money } from "../ops/margin";
 
@@ -141,6 +143,61 @@ function whoIsDriving(trip: ConfirmableTrip): string {
 
 const CHECK_IT =
   "<p>Please have a read through and let us know straight away if anything here is not right.</p>";
+
+/** Everything the gate below needs, which is less than a whole trip. */
+export interface CoverageCheck {
+  reference: string;
+  status: string;
+  driverId: string | null;
+  affiliateId: string | null;
+  pickupState?: string | null;
+  dropoffState?: string | null;
+}
+
+/**
+ * Why this booking cannot be confirmed to a customer yet, or null.
+ *
+ * "Your booking is confirmed" is a promise that a car will turn up, and on
+ * T-10319 it went out while the reservation panel two inches away was saying
+ * **"Nobody assigned yet"** and **"They are not on the job until they
+ * confirm."** Metro had quoted $800 and been offered the job; being asked and
+ * saying yes are different things. Had they come back no, a customer would
+ * have been holding a written confirmation, at $1,000, for a car that was
+ * never booked.
+ *
+ * The gate is only over jobs that leave the service area, and the distinction
+ * is who owns the car:
+ *
+ *  - **Ours.** A booking inside NY/NJ with nobody assigned yet is a booking
+ *    dispatch will cover from our own fleet. Confirming it promises something
+ *    we can actually deliver, and holding the email hostage to an assignment
+ *    would stop the desk answering a customer for hours.
+ *  - **Somebody else's.** Outside the area we have no car at all. Until a
+ *    partner has accepted, there is nothing to promise and no one to promise
+ *    it on behalf of.
+ *
+ * Deliberately reads `affiliateId` rather than "an offer was sent". An offer
+ * is a question. The partner lands on the trip when they accept, through the
+ * same `updateTrip` a driver goes through, and that is the fact worth trusting.
+ */
+export function whyNotConfirmable(trip: CoverageCheck): string | null {
+  if (trip.status === "CANCELLED") {
+    return `${trip.reference} is cancelled, so there is nothing to confirm.`;
+  }
+  if (trip.driverId || trip.affiliateId) return null;
+
+  const area = serviceAreaFromStates(
+    [trip.pickupState, trip.dropoffState],
+    SERVICE_AREA_STATES
+  );
+  if (area !== "EXTERNAL") return null;
+
+  return (
+    `${trip.reference} leaves the service area, so it needs a partner — and none has accepted it yet. ` +
+    `Asking a partner and being told yes are different things: until one confirms, there is no car to promise. ` +
+    `Their answer comes back in Operations → Messages.`
+  );
+}
 
 /** A brand-new reservation. */
 export function confirmationEmail(trip: ConfirmableTrip): string {

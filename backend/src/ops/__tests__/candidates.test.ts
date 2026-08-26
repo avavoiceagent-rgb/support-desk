@@ -279,6 +279,62 @@ describe("a booking that moves under the driver holding it", () => {
     expect(result.assignment?.toldOfLatest).toBe(false);
   });
 
+  it("is not settled by the driver accepting an offer they were sent before it moved", async () => {
+    // The one Claude Code found by reading. The booking moves, the driver has
+    // not been told, and then they tap Accept on the offer that was already
+    // sitting on their phone from before the change. That acceptance answers
+    // the OLD offer — it is evidence they read that, not the new time — and
+    // it used to mark them as up to date and turn the screen green.
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    const actor = await actorFor(undefined);
+
+    const stale = await sendOffer({
+      contact: { kind: "DRIVER", id: driver.id },
+      tripId: trip.id,
+      actor,
+    });
+
+    await updateTrip(trip.id, { pickupAt: new Date(PICKUP.getTime() + 3_600_000) }, actor);
+
+    // Answering the offer from before the change.
+    await respondToOffer({ offerId: stale.id, accept: true, actor });
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.name).toBe("Marco Rinaldi");
+    expect(result.assignment?.toldOfLatest).toBe(false);
+  });
+
+  it("does not treat a driver's own assignment as news to that driver", async () => {
+    // The other side of the same coin. Accepting writes "Driver: Unassigned →
+    // Marco Rinaldi" into the trip's history, and once we stopped counting
+    // inbound messages as having-been-told, every freshly accepted booking
+    // read as out of date on the strength of the acceptance itself.
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assign(trip.id, driver.id);
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.toldOfLatest).toBe(true);
+  });
+
+  it("still counts a real change that lands alongside an assignment", async () => {
+    // Skipping assignment-only events must not swallow the ones that carry
+    // something else with them.
+    const driver = await makeDriverFree("Marco Rinaldi");
+    const trip = await makeTrip();
+    await assign(trip.id, driver.id);
+
+    await updateTrip(
+      trip.id,
+      { passengerPhone: "+1 646 555 0188" },
+      await actorFor(undefined)
+    );
+
+    const result = await candidatesForTrip((await findTripById(trip.id))!);
+    expect(result.assignment?.toldOfLatest).toBe(false);
+  });
+
   it("is settled again once they have been told", async () => {
     const driver = await makeDriverFree("Marco Rinaldi");
     const trip = await makeTrip();

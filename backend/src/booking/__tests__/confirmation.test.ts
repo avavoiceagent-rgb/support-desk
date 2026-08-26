@@ -5,6 +5,7 @@ import {
   changeConfirmationEmail,
   changesWorthTelling,
   detailLines,
+  whyNotConfirmable,
   type ConfirmableTrip,
 } from "../confirmation";
 import { OPERATING_TIME_ZONE } from "../pickup-time";
@@ -138,5 +139,60 @@ describe("which form a caller gets", () => {
     expect(
       changesWorthTelling([{ field: "Partner", from: "None", to: "Liberty Bell Executive" }])
     ).toEqual([]);
+  });
+});
+
+describe("whether there is anything to confirm yet", () => {
+  // T-10319, on the live desk: "Your booking is confirmed … Price: $1,000.00"
+  // went to a customer while the panel two inches away read "Nobody assigned
+  // yet" and "They are not on the job until they confirm". Metro had quoted
+  // $800 and been offered the job. Being asked and saying yes are different
+  // things; had they come back no, the customer was holding a written
+  // confirmation for a car nobody had booked.
+
+  const job = (over = {}) => ({
+    reference: "T-10319",
+    status: "SCHEDULED",
+    driverId: null,
+    affiliateId: null,
+    pickupState: "PA",
+    dropoffState: "NY",
+    ...over,
+  });
+
+  it("refuses an out-of-area job no partner has accepted", async () => {
+    const why = whyNotConfirmable(job());
+    expect(why).toMatch(/leaves the service area/);
+    expect(why).toMatch(/none has accepted it yet/);
+  });
+
+  it("allows it the moment a partner is actually on it", async () => {
+    // The partner lands on the trip by accepting, through the same updateTrip
+    // a driver goes through. That is the fact worth trusting — not that an
+    // offer was sent.
+    expect(whyNotConfirmable(job({ affiliateId: "aff_1" }))).toBeNull();
+  });
+
+  it("leaves a job inside the area alone, assigned or not", async () => {
+    // The fleet is ours. Holding the email until dispatch has picked a driver
+    // would stop the desk answering a customer for hours, and promises
+    // nothing we cannot deliver.
+    expect(whyNotConfirmable(job({ pickupState: "NY", dropoffState: "NJ" }))).toBeNull();
+  });
+
+  it("allows an out-of-area job one of our own drivers took", async () => {
+    expect(whyNotConfirmable(job({ driverId: "drv_1" }))).toBeNull();
+  });
+
+  it("will not confirm a cancelled booking to anybody", async () => {
+    expect(whyNotConfirmable(job({ status: "CANCELLED", affiliateId: "aff_1" }))).toMatch(
+      /cancelled/
+    );
+  });
+
+  it("says nothing when the states were never recorded", async () => {
+    // Unknown is not "outside". Older bookings have no states, and refusing to
+    // confirm those would break the ordinary case on missing information.
+    expect(whyNotConfirmable(job({ pickupState: null, dropoffState: null }))).toBeNull();
   });
 });

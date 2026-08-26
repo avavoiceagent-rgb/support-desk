@@ -425,7 +425,21 @@ export async function lastSpokeTo(tripId: string, contact: Contact): Promise<Dat
   const [row] = await db
     .select({ at: dispatchMessages.createdAt })
     .from(dispatchMessages)
-    .where(and(eq(dispatchMessages.tripId, tripId), contactFilter(contact)))
+    .where(
+      and(
+        eq(dispatchMessages.tripId, tripId),
+        contactFilter(contact),
+        // What WE said, not what they said back.
+        //
+        // Without this the newest message of any kind counted, so a driver
+        // tapping Accept on the offer already sitting on their phone marked
+        // them as told about a change they had never seen — and the
+        // Reservations screen went green on the strength of it. An acceptance
+        // is evidence they answered the old message, not evidence they read
+        // the new one.
+        eq(dispatchMessages.direction, "OUT")
+      )
+    )
     .orderBy(desc(dispatchMessages.createdAt))
     .limit(1);
   return row?.at ?? null;

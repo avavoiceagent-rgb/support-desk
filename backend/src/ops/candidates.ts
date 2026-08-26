@@ -13,7 +13,7 @@
 
 import { findAvailableDrivers, suggestAffiliates, type AvailableDriver } from "./availability";
 import { describeOffer, lastSpokeTo } from "./dispatch";
-import { listTripEvents } from "./trip-events";
+import { listTripEvents, type FieldChange } from "./trip-events";
 import { quoteTripForAffiliate, type TripQuote } from "./pricing";
 import type { TripRecord } from "./lookup";
 import { serviceAreaFromStates } from "../booking/maps";
@@ -131,6 +131,14 @@ async function driverStillFits(trip: TripRecord, driverId: string): Promise<bool
   return free.some((d) => d.driverId === driverId);
 }
 
+/**
+ * The fields that say who is on the job rather than what the job is.
+ *
+ * Spelled as the labels `diffTrip` writes, because that is what an event
+ * actually stores. They travel together: a driver takes their car with them.
+ */
+const WHO_HAS_IT = new Set(["Driver", "Car", "Partner"]);
+
 async function assignmentFor(trip: TripRecord): Promise<AssignmentState | null> {
   const contact = trip.driver
     ? { kind: "DRIVER" as const, id: trip.driver.id, name: trip.driver.name }
@@ -141,14 +149,32 @@ async function assignmentFor(trip: TripRecord): Promise<AssignmentState | null> 
 
   const spokeAt = await lastSpokeTo(trip.id, { kind: contact.kind, id: contact.id });
 
-  // When the booking last changed in a way anybody would call a change.
+  // When the booking last changed in a way THIS CONTACT would call a change.
   //
   // Not `updatedAt`, which moves on every write — tidying the notes counted
   // as something the driver needed telling about. The events are the audit
   // trail, and they are only written when a field somebody cares about
-  // actually moved, which is the same question being asked here.
+  // actually moved, which is nearly the same question being asked here.
+  //
+  // Nearly, because of one event: accepting an offer assigns the driver, and
+  // that assignment is itself written down as "Driver: Unassigned → Marco
+  // Rinaldi". Marco does not need telling that Marco took the job. Once
+  // `lastSpokeTo` counted only what we had actually sent — which is the fix
+  // this sits next to — every freshly accepted booking started reading as
+  // "not told of the latest", on the strength of the acceptance itself.
+  //
+  // So an event whose every change is about who is on the job is skipped.
+  // Anything else — the time, the flight, the phone number, a note — still
+  // counts, including when it arrives in the same breath as an assignment.
   const events = await listTripEvents(trip.id);
-  const lastChange = events.length ? events[events.length - 1].createdAt : trip.createdAt;
+  const worthTelling = events.filter(
+    (e) =>
+      e.kind !== "UPDATED" ||
+      (e.changes as FieldChange[]).some((c) => !WHO_HAS_IT.has(c.field))
+  );
+  const lastChange = worthTelling.length
+    ? worthTelling[worthTelling.length - 1].createdAt
+    : trip.createdAt;
 
   return {
     kind: contact.kind,

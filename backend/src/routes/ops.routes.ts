@@ -39,6 +39,7 @@ import { actorFor, listTripEvents } from "../ops/trip-events";
 import {
   confirmationEmail,
   changeConfirmationEmail,
+  whyNotConfirmable,
   changesWorthTelling,
 } from "../booking/confirmation";
 import {
@@ -440,6 +441,15 @@ opsRouter.get("/trips/:id/confirmation", async (req, res) => {
       });
     }
   }
+
+  // Nothing to confirm until there is a car. See `whyNotConfirmable`: on
+  // T-10319 this email went to a customer, priced, while the panel beside it
+  // read "Nobody assigned yet" and the partner had been asked but had not
+  // answered. 409 rather than a silent empty result, because the panel shows
+  // the message on a deliberate press and stays quiet on the automatic one
+  // after a Create — which is exactly the right behaviour for each.
+  const notYet = whyNotConfirmable(trip);
+  if (notYet) return res.status(409).json({ error: notYet });
 
   const events = await listTripEvents(trip.id);
   const latest = events[events.length - 1];
