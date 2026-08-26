@@ -39,23 +39,54 @@ composing replies and rate lookups.
 
 ## Where things are
 
-    backend/src/mail/          Gmail provider, polling, ingest, threading
-    backend/src/ai/classifier  Queue + reservation-type triage
-    backend/src/booking/
-      extract.ts               Reads booking facts out of an email (Haiku)
-      maps.ts                  Geocoding + Routes wrappers; never throws
-      pickup-time.ts           Airport lead times, stops, DST-safe (pure TS)
-      questions.ts             The business rules: what to confirm vs ask
-      rates.ts                 Web-search market rates, heavily validated
-      compose.ts               Turns the above into an email (Sonnet)
+    backend/src/mail/
+      poller.ts, ingest.ts      Fetching mail and turning it into tickets
+      threading.ts, address.ts  Matching replies to tickets; parsing headers
+      quoted.ts                 Cutting our own email back out of a reply
+      body-text.ts              The body as a MODEL should see it — lines kept
+    backend/src/ai/classifier   Queue + reservation-type triage. `toPlainText`
+                                lives here and flattens newlines: right for
+                                triage, wrong for anything reading facts.
+
+    backend/src/booking/        Everything about drafting one reply
+      extract.ts                Reads booking facts out of an email (Haiku)
+      facts.ts                  Merging a re-read onto what we already knew
+      maps.ts                   Geocoding + Routes; service area; never throws
+      pickup-time.ts            Airport lead times, stops, DST-safe (pure TS)
+      questions.ts              The business rules: what to confirm vs ask
+      rates.ts                  Web-search market rates, heavily validated
+      compose.ts                Turns the above into an email (Sonnet)
+      confirmation.ts           The confirmation email, and whether to send one
+      plausible.ts              Refusing to draft nonsense
+      late-change.ts            Whether a change still leaves time for the flight
+      booking-update.ts         Applying a reply to a booking already made
+      vehicles.ts               Class from passengers and bags
+
+    backend/src/ops/            The operational side: who drives, who pays
+      lookup.ts                 Finding a trip or invoice, and whose it is
+      availability.ts           Which drivers are free; shifts minus trips
+      candidates.ts             Who can take THIS trip, ready to act on
+      dispatch.ts               Offers, quotes, acceptances — the whole thread
+      trips.ts, reservations.ts Creating and changing a booking
+      trip-events.ts            The audit trail; `diffTrip` names the fields
+      pricing.ts, margin.ts     Partner rate cards; what we charge on top
+      zones.ts, directory.ts    Rate bands; drivers, vehicles, partners
+      schedule.ts, references.ts
+
     backend/src/services/draft.service.ts   Orchestrates the draft
-    frontend/src/components/DraftCard.tsx   The suggested reply in the timeline
+    backend/src/db/seed-ops.ts              Dummy world; --reset DELETES trips
+    backend/src/db/extend-roster.ts         Additive top-up; safe to re-run
+    frontend/src/components/DraftCard.tsx        The suggested reply
+    frontend/src/components/ReservationPanel.tsx The booking, beside the ticket
 
 Business rules worth knowing: domestic flights need 2h at the airport,
 international 3h, plus 15 minutes for any stop with no stated duration; pickup
-is rounded down to 5 minutes. A sedan takes 3 passengers and 3 bags, an SUV 6
-and 6. Trips staying inside NY/NJ are INTERNAL; anything crossing out is
-EXTERNAL and gets farmed out to a partner, so the draft must not promise a car.
+is rounded down to 5 minutes. An arrival is different — the car meets the
+plane, so the pickup IS the landing time and no drive-time arithmetic applies.
+A sedan takes 3 passengers and 3 bags, an SUV 6 and 6. Trips staying inside
+NY/NJ are INTERNAL; anything with a leg outside is EXTERNAL, gets farmed out to
+a partner, and must not be promised a car — or confirmed at all until a partner
+has accepted.
 
 ## Commands
 

@@ -33,10 +33,11 @@ is connected, so you can read and write it there.
 
 1. `C:\Users\Amir\support-desk\CLAUDE.md` — the rules, the stack, and where
    things are. The rules in it are not negotiable.
-2. `C:\Users\Amir\support-desk\docs\HANDOFF.md` — read the section
-   **"Where things stand — 25 August"** and everything after it. That is the
-   most recent state. Earlier sections are history and some of it is stale;
-   the 25 August section lists the corrections.
+2. `C:\Users\Amir\support-desk\docs\HANDOFF.md` — find the **last**
+   `## Where things stand` heading in the file and read from there to the end.
+   There is one per working session, newest last, and only the newest is
+   current. Everything above it is history: useful for why a thing is the way
+   it is, and stale in places about what is still broken.
 
 **How we work together:**
 
@@ -85,10 +86,11 @@ what will visibly happen, not how the code is shaped.
 
 1. `CLAUDE.md` — the rules, the stack, and where things are. The rules in it are
    not negotiable.
-2. `docs/HANDOFF.md` — read the section **"Where things stand — 25 August"** and
-   everything after it. That is the current state. Earlier sections are the
-   history of this project and some of it is now wrong; the 25 August section
-   says which parts.
+2. `docs/HANDOFF.md` — find the **last** `## Where things stand` heading in the
+   file and read from there to the end. There is one per working session,
+   newest last, and only the newest is current. Everything above it is the
+   history of this project: useful for why a thing is the way it is, and wrong
+   in places about what is still broken.
 
 **Things about this machine that will otherwise waste your time:**
 

@@ -906,8 +906,131 @@ about anything you did not write.
 
 ## Reply — 25 August
 
-_(Claude Code: replace this with what you actually did, including anything you
-disagreed with, could not verify, or deliberately left alone.)_
+Claude Code did this one and its diagnosis beat the task's. The task said
+extraction must have missed the sign-off. It had not: `toPlainText` collapses
+**every** run of whitespace, newlines included, which breaks two things at
+once. A sign-off stops looking like a sign-off, and `stripQuotedReply` splits
+on newlines — so flattened text is a single line with nothing to strip, and the
+extractor was handed our own quoted draft, greeting and guessed name included,
+as though the customer had written it. New `mail/body-text.ts` keeps the lines;
+both fact-reading call sites use it; `facts.bookerName` no longer falls back to
+the mailbox name. It left the greeting's fallback alone, as the task argued.
+
+It crashed while printing, after the edits landed. The Cowork session ran the
+suite it cannot run, and wrote the tests it did not get to.
+
+---
+
+## Where things stand — 26 August, small hours
+
+Everything below is deployed and was checked on the live desk, not reasoned
+about. 708 tests, typecheck clean, frontend builds.
+
+### The booker name, finished
+
+The body-text fix was necessary and **not sufficient**, which only showed up
+because Amar replied to a real ticket after deploying. The quote is stripped
+correctly now — but the reply was "my number is 9978615599" and nothing else.
+The extractor is told to fall back to the mailbox display name when a message
+carries no sign-off, which is right for a first email and wrong for every reply
+after it, so it named the mailbox owner and `mergeFacts` wrote Amar Pant over
+Priya Raman again.
+
+`bookerNameFromReply` in `booking/facts.ts`: **a re-read may fill a booker name
+in; it may not replace one.** Only `bookerName` needs it — `passengerName` is
+never derived from the envelope, so it was never exposed. Confirmed live: the
+note now lists the phone number and says nothing about the booker.
+
+### Four wrong facts, found by reading ticket #86
+
+- **`Terminal 4 Departures` on an arrival.** Google's place for "JFK Terminal
+  4" is the departures hall — the comment on `expandKnownPlace` claiming it
+  "already resolves correctly" is true only for departures. The terminal is
+  kept (it is where the driver goes) and the contradicting door dropped, rather
+  than swapping in an "Arrivals" nobody has looked up and cannot point a car at.
+- **"(domestic)" on an email that never said so.** On a departure the flight
+  kind decides the pickup; on an arrival it decides nothing.
+- **"waiting for you"** four lines above asking whether the reader was
+  travelling. `BookingReview` now carries `knowsWhoTravels` as a typed answer.
+- An internal note reading "the market range is As a rough guide, published
+  market rates…" — `describeRate` returns a sentence, dropped where a phrase
+  belonged. `rateRange` is the figure alone.
+
+### The two findings the last session confirmed — both fixed
+
+- **`leavesTheArea`** read the drop-off alone against a *private copy* of the
+  state list, under a comment claiming it read a stored decision that does not
+  exist. The rule now lives once as `serviceAreaFromStates` and
+  `resolveServiceArea` is a way of spelling it. The halves are deliberately
+  asymmetrical: **outside needs one leg** (a foot in Pennsylvania settles it),
+  **inside needs all of them** (an address nobody could place could be
+  anywhere). That also fixed a smaller thing on the draft side — one verified
+  leg in another state used to come back "not enough to say" when it plainly
+  was.
+- **`lastSpokeTo`** counted messages in either direction, so a driver tapping
+  Accept on the offer already on their phone marked them as told about a change
+  they never saw. Outbound only now.
+
+  **That alone over-corrected**, and the existing tests caught it: accepting
+  writes "Driver: Unassigned → Marco Rinaldi" into the trip's history, so every
+  freshly accepted booking read as out of date on the strength of the
+  acceptance itself. An event whose every change is about *who is on the job*
+  is skipped; anything travelling alongside one still counts. `WHO_HAS_IT` in
+  `ops/candidates.ts`.
+
+### Two more the live test turned up
+
+- **A confirmation went to a customer for a car nobody had agreed to bring.**
+  On T-10319: "Your booking is confirmed … Price: $1,000.00", while the panel
+  two inches away read "Nobody assigned yet" and "They are not on the job until
+  they confirm". Metro had quoted $800 and been *offered* the job.
+
+  `whyNotConfirmable` gates on **who owns the car**, not on assignment
+  generally. Inside NY/NJ the fleet is ours, so an unassigned booking still
+  promises something we can deliver and blocking the email would stop the desk
+  answering for hours. Outside it we have no car at all until a partner
+  accepts. It reads `affiliateId` rather than "an offer was sent": an offer is
+  a question. 409, which the panel already handles correctly — it shows the
+  message on a deliberate press and stays quiet on the automatic one after a
+  Create. No frontend change. Both halves confirmed live.
+
+- **`245 Park Avenue, 245 Park Ave, New York, NY 10167, USA`** in that same
+  confirmation and in the offer to Metro. That repetition is the example
+  `tidyAddress` quotes in its own comment. It was called by the draft and
+  nowhere else, so the trip kept Google's original and everything reading the
+  trip read the raw one. `asThisDeskSaysIt` is now the one place raw stops
+  being raw. Existing bookings keep the string they were created with.
+
+### Still open
+
+- **The 24 August list above is stale in places and nothing says which.** Three
+  items were checked against current code tonight and are already fixed, with
+  the fixes quoting the findings back in their comments: the dispatch
+  permission split (`requireAdmin` is on `/offers/:id/response` and
+  `/quotes/:id/award`), a trip holding a driver and a partner at once
+  (`updateTrip` refuses both and clears the other side), and `describeOffer`
+  saying "0 bags". **Somebody should walk items 4–14 and mark what is done** —
+  a session chasing a fixed bug is the cost of leaving it.
+- **Nobody tells the partners who lost.** Garden State is still holding a quote
+  request for a job Metro won. There is no "tell the others" action anywhere.
+- **Rotate the Google Maps API key.** Amar only.
+- **Railway credit: $4.16 / 7 days**, for the whole project. When it runs out
+  the desk stops. The only item here with a real deadline.
+
+### Worth keeping in mind
+
+Three fixes tonight were **wrong or incomplete on the first attempt**, and in
+every case the live desk is what said so — not the tests, which passed
+throughout.
+
+The booker name took three deploys. `leavesTheArea` looked like a one-line
+change and turned out to be two rules for one question. `lastSpokeTo` needed a
+second half nobody predicted. Each was caught by sending a real email through
+the desk and reading what came out.
+
+The pattern worth repeating: fix it, deploy it, then *use it as a customer
+would* before believing it. A passing suite meant "no regression", never "the
+thing works".
 
 ---
 
@@ -929,6 +1052,20 @@ disagreed with, could not verify, or deliberately left alone.)_
 - **Amar pushes.** The Cowork session writes files onto his disk through the
   desktop bridge and he commits them in GitHub Desktop. It has no push rights
   to the repo and never has.
+- **Do not run git through the desktop bridge.** Every `git status` a Cowork
+  session runs against the mounted folder creates `.git/index.lock`, and the
+  bridge is not allowed to delete files — so the lock stays, and the next
+  thing Amar does in GitHub Desktop fails with *"A lock file already exists in
+  the repository"*. Twice on 25 August, by two different sessions, and the
+  second one reported it as "I can't reach GitHub from the bridge" without
+  realising it had just broken his commit. Clearing it means asking Amar to
+  delete a file by hand, at whatever hour it is.
+
+  Read the repo with `ls`, `cat` and `grep`, which are harmless. To know what
+  is uncommitted, ask him — or read it out of `git status` in a session that
+  has its own clone, never his. If a lock does get left, the file to delete is
+  `C:\Users\Amir\support-desk\.git\index.lock` — **not** `index` beside it,
+  which is Git's real staging file.
 - **Line endings — and do not just "ignore it".** His working copy is CRLF and
   the repo is LF, so `git status` from a Linux view shows a wall of modified
   files that are not modified at all. The advice here used to end at "ignore
