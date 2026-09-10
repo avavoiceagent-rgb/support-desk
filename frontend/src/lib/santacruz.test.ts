@@ -51,3 +51,45 @@ describe("reading a SantaCruz export", () => {
     expect(problems).toEqual([]);
   });
 });
+
+describe("however the export reached the clipboard", () => {
+  // A .csv opened in Excel and copied out arrives tab separated. That is how
+  // most people will get an export onto the clipboard, and reading it as
+  // commas produced one column named after every heading at once.
+  it("reads a file copied out of a spreadsheet, which is tab separated", () => {
+    const { rows, problems } = parseCsv(
+      "RES_ID\tPU_ADDR\tPAX_CNT\nSC-1\t245 Park Ave, New York, NY\t3"
+    );
+    expect(problems).toEqual([]);
+    expect(rows[0]).toEqual({
+      RES_ID: "SC-1",
+      PU_ADDR: "245 Park Ave, New York, NY",
+      PAX_CNT: "3",
+    });
+  });
+
+  it("does not let a comma inside an address outvote the tabs", () => {
+    // The address alone has two commas in it and there are only two tabs, so
+    // counting commas anywhere would pick the wrong separator.
+    const { rows } = parseCsv("A\tB\tC\n1\t2, 3, 4\t5");
+    expect(rows[0].B).toBe("2, 3, 4");
+    expect(rows[0].C).toBe("5");
+  });
+
+  it("reads semicolons, which is what European Excel writes", () => {
+    const { rows, problems } = parseCsv("RES_ID;PAX_NAME\nSC-1;Ana Costa");
+    expect(problems).toEqual([]);
+    expect(rows[0]).toEqual({ RES_ID: "SC-1", PAX_NAME: "Ana Costa" });
+  });
+
+  it("still reads an ordinary comma file", () => {
+    const { rows, problems } = parseCsv("RES_ID,PAX_NAME\nSC-1,Ana Costa");
+    expect(problems).toEqual([]);
+    expect(rows[0]).toEqual({ RES_ID: "SC-1", PAX_NAME: "Ana Costa" });
+  });
+
+  it("says something useful when it can find no columns at all", () => {
+    const { problems } = parseCsv("RES_ID PAX_NAME\nSC-1 Ana Costa");
+    expect(problems.join(" ")).toContain("Only one column");
+  });
+});

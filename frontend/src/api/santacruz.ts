@@ -112,7 +112,33 @@ export const santacruzApi = {
 };
 
 /**
- * Read a pasted CSV into rows, without inventing anything.
+ * Work out what is separating the columns.
+ *
+ * A `.csv` opened in Excel and copied out again arrives TAB separated, which
+ * is how most people will get an export onto the clipboard. Reading that as
+ * commas gives one enormous column named after every heading at once, and an
+ * error about the file that says nothing about the real problem. European
+ * Excel uses semicolons for the same reason.
+ *
+ * Decided on the header line alone, and on the count rather than the presence:
+ * a heading row that genuinely contains a comma inside a quoted name should
+ * not outvote nine tabs.
+ */
+function delimiterOf(headerLine: string): string {
+  const outsideQuotes = headerLine.replace(/"[^"]*"/g, "");
+  const counts: [string, number][] = [
+    ["\t", (outsideQuotes.match(/\t/g) ?? []).length],
+    [",", (outsideQuotes.match(/,/g) ?? []).length],
+    [";", (outsideQuotes.match(/;/g) ?? []).length],
+  ];
+  counts.sort((a, b) => b[1] - a[1]);
+  // Nothing found at all: treat it as commas so the message a person gets is
+  // about their file rather than about a delimiter nobody chose.
+  return counts[0][1] === 0 ? "," : counts[0][0];
+}
+
+/**
+ * Read a pasted export into rows, without inventing anything.
  *
  * Quoted fields and embedded commas are handled because a pickup address has
  * commas in it and getting that wrong would shift every column along by one —
@@ -122,10 +148,19 @@ export const santacruzApi = {
  */
 export function parseCsv(text: string): { rows: Record<string, string>[]; problems: string[] } {
   const problems: string[] = [];
-  const lines = splitRows(text.replace(/\r\n?/g, "\n").trim());
+  const cleaned = text.replace(/\r\n?/g, "\n").trim();
+  if (cleaned === "") return { rows: [], problems: ["That file had nothing in it."] };
+
+  const delimiter = delimiterOf(cleaned.split("\n")[0]);
+  const lines = splitRows(cleaned, delimiter);
   if (lines.length === 0) return { rows: [], problems: ["That file had nothing in it."] };
 
   const header = lines[0];
+  if (header.length === 1) {
+    problems.push(
+      "Only one column was found in the first row, so the columns are probably separated by something this cannot read. Copying from Notepad rather than a spreadsheet usually fixes it."
+    );
+  }
   if (header.some((h) => h.trim() === "")) {
     problems.push("One of the columns in the first row has no name.");
   }
@@ -149,8 +184,8 @@ export function parseCsv(text: string): { rows: Record<string, string>[]; proble
   return { rows, problems };
 }
 
-/** Split CSV text into rows of cells, respecting quotes and newlines inside them. */
-function splitRows(text: string): string[][] {
+/** Split the text into rows of cells, respecting quotes and newlines inside them. */
+function splitRows(text: string, delimiter: string): string[][] {
   const rows: string[][] = [];
   let cells: string[] = [];
   let cell = "";
@@ -168,7 +203,7 @@ function splitRows(text: string): string[][] {
       continue;
     }
     if (ch === '"') quoted = true;
-    else if (ch === ",") {
+    else if (ch === delimiter) {
       cells.push(cell);
       cell = "";
     } else if (ch === "\n") {
