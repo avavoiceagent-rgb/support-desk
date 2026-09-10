@@ -1034,8 +1034,189 @@ thing works".
 
 ---
 
+## Where things stand — 10 September
+
+Six things shipped and deployed today, each one checked on the live desk
+rather than assumed. **783 backend tests**, 69 frontend, both typechecks clean.
+The suite went from 708 to 783 and caught none of the six faults below — every
+one was found by putting a real email through the desk.
+
+Written by the Cowork session, which today could run the full database suite
+for the first time (see **Notes that still apply**).
+
+### SantaCruz — the reservation system the company is moving to
+
+A new **SantaCruz tab** on Operations and a **SantaCruz page** for the
+connection. Additive: five new tables, migration 0021, and not one existing
+table touched. The desk's own reservations, dispatch board and rate cards
+behave exactly as before.
+
+Amar's decision, which the whole design follows from: **SantaCruz owns the
+booking, Adam owns the conversation.** Adam mirrors their reservations and
+never writes one back. When the two disagree, theirs wins, because ours is a
+copy of their record rather than a second opinion about it.
+
+**Their column names appear nowhere in the code**, deliberately. The real
+schema is not known and will change, so the import is shape-agnostic: any set
+of columns, every row kept exactly as it arrived in `raw`, and a mapping edited
+on screen saying which of their columns feeds which of our eighteen fields.
+When GroundWidgets supply the names, somebody types them in. No migration.
+
+**A row that cannot be read is refused, kept whole, and listed with the
+reason** — the "never invent a fact" rule at table scale. Verified live on a
+seven-row export: 3 in, 4 refused. A missing bag count stays blank rather than
+becoming nought; "about two hundred" is not $200; and `2026-11-01 01:30` is
+refused outright because that hour happens twice in New York and which one is
+meant is not in the file.
+
+Both directions exist. `/api/external/santacruz/bookings/:reference` is
+key-guarded, read-only, mounted on its own path so a route added later cannot
+inherit the wrong protection, and returns what Adam knows about the
+*conversation* — never a copy of their booking fields. Two separate secrets, in
+Railway only; the screen reports whether each is set and has nowhere to type
+one.
+
+Also: the CSV reader now works out its own separator. A `.csv` opened in Excel
+and copied out arrives tab-separated, which is how most people will get an
+export onto the clipboard, and reading it as commas gave one column named after
+every heading at once.
+
+### Adam now answers change requests
+
+Drafting used to require `queue = RESERVATION` **and** `reservationType = NEW`,
+so a ticket asking to move a booking got nothing at all. `draftChangeReplyForTicket`
+in `services/draft.service.ts` now handles CHANGE, with `booking/change-reply.ts`
+doing the writing.
+
+Two dangers, both **designed out rather than instructed against**:
+
+- **The brief contains no booking data.** Not the pickup time, address, driver
+  or price — only the reference strings the customer themselves wrote. The
+  model cannot restate a fact it was never given, which is stronger than
+  telling it not to. Most of the tests assert exactly that.
+- **Nothing can be confirmed**, because nothing has been changed. The internal
+  note on every one of these says so: *"a colleague will confirm, and that
+  colleague is you."*
+
+One rule worth keeping: a quoted reference fails to place for two reasons — it
+does not exist, or it is somebody else's — and `theirBooking` reports both
+identically on purpose. The draft never learns which, so it cannot say. Three
+tests hold that line.
+
+### Three faults the live desk found that the tests did not
+
+**A ticket that missed triage was stranded for ever.** Triage ran only for
+tickets the poll had just created, so a deploy mid-flight left a ticket with no
+queue, no draft and nothing on screen saying it had been missed — visually
+identical to one that arrived and was ignored. Found by deploying while a test
+email was in the air, which is the ordinary consequence of shipping during
+working hours and would have done the same to a real customer. `triageWhatWasMissed`
+in `mail/poller.ts` now sorts anything from the last two hours with no queue,
+25 at a time. Ticket #119 repaired itself on the first poll after the deploy.
+The window is bounded so it can never reach back and overrule a person who
+deliberately left an older ticket in no queue.
+
+**An email address became a phone number.** On ticket #121 the customer replied
+"all good" and nothing else; the extractor read the quoted thread beneath it,
+found the sender's address, and `passengerPhone` became `amarpant30@gmail.com`
+— which reached booking T-10322, where a driver looking for a number to ring
+finds one he cannot ring. Every previous defence against this confusion was on
+the *writing* side and there had already been three attempts there.
+`phoneOrNothing` in `booking/facts.ts` is the reading side, in code: no `@`, at
+least four digits, and deliberately nothing stricter, because refusing a real
+but unusual number is worse than storing it. The reservation form refuses and
+says why; an unattended re-read just declines the value.
+
+**The change draft greeted the wrong person, and repeated itself.** First live
+run said "Hello," to a customer who had signed "Daniel Weiss", because the name
+came from the mailbox rather than the sign-off — the same shape as the bug that
+took three deploys in August, rebuilt in a new file by somebody who had read
+the fixed version. Now the field is called `mailboxName`, labelled a fallback,
+and the sign-off wins. It also asked about three unplaceable references in three
+near-identical sentences; now one.
+
+### Two live rows still wrong
+
+The code is fixed; these rows are not, and neither can be repaired from the
+Cowork session.
+
+- **T-10322** — passenger phone is an email address, Amrit Singh assigned.
+- **T-10314** — drop-off "John F. Kennedy, Oklahoma City", pickup 19 October
+  for a 20 October flight, farmed out to a partner it never needed. The geocode
+  that caused it was fixed on 25 August (`expandKnownPlace` and the viewport
+  bias in `buildGeocodeUrl`); the booking predates the fix.
+- Three practice SantaCruz bookings, SC-90001 to SC-90003.
+
+### Corrections to what is written above in this file
+
+- **The 24 August list is stale in several places.** `leavesTheArea`,
+  `lastSpokeTo`, the dispatch permission split, driver-and-partner, and
+  `describeOffer` saying "0 bags" are all fixed. A full review of what is
+  genuinely open is in the session's review document; the short version is
+  eight items still broken and two partly done.
+- **The database is NOT on Railway.** `docs/DEPLOY_RAILWAY.md` says the project
+  holds a Postgres service and tells the reader to bind `DATABASE_URL` to it.
+  Checked in the dashboard today: one service per project, no database. It is
+  Neon, as `CLAUDE.md` says, on a separate account with its own limits that
+  paying Railway does nothing to protect.
+- **The Railway panic was a misreading.** "$4.17 / 7 days" was the free trial
+  counting down, not a burn rate. The trial expired around 3 September, which
+  is what took the desk offline for a week. On the Hobby plan the real usage is
+  about **$0.87/month** for support-desk against $5 included. `ava-ears-gateway`
+  (a second project, ~$0.38/month) now sleeps when idle. **Do not do the same
+  to support-desk** — the mail poller runs inside the server process, so a
+  sleeping container stops collecting mail and looks exactly like the outage.
+- **`CLAUDE.md` says nine mail-tester scenarios; there are eleven.**
+- **The `on-file` scenario is stale.** It quotes T-10005 and INV-10032 and
+  expects both to match. This database's references run T-10310 upwards, so
+  every reference lands in the "matches nothing on file" line — correct
+  behaviour, but the scenario cannot demonstrate what it exists for. It should
+  read real references out of the database when it sends.
+- **`tools/mail-tester/send.mjs` reports every send failure as a credentials
+  problem.** A network fault sends the reader off to regenerate a Gmail app
+  password that was never broken.
+- **The real app URL** is in three mail-tester files;
+  `docs/DEPLOY_RAILWAY.md` still has `xxxx` where it should be.
+
+### Two traps in the migration machinery
+
+Both bit today and both will bite again.
+
+- **The journal timestamps are dated into the future.** Drizzle applies a
+  migration only when its `when` is later than the last applied one, so a
+  newly generated migration looks *older* and is **silently skipped** — it
+  reports success and creates nothing. Corrected for 0021 by hand; the next
+  one needs the same check.
+- **`drizzle-kit generate` re-emits changes that hand-written migrations
+  already applied.** 0021 came out wanting to re-add the `dispatch_kind`
+  values and three `trips` columns from 0019 and 0020. Running those a second
+  time fails, and a failed migration takes the release with it. Trim by hand
+  and keep the generated snapshot.
+
+### Worth carrying forward
+
+Three separate times today something looked broken and the cause was elsewhere:
+the 404s that were a trial expiry, a geocode "bug" already fixed a fortnight
+ago, and a missing draft that was actually a missed triage. Twice the session
+reported a fixed bug as open because it read code or data from before the fix
+without checking the history.
+
+**Check `git log -S` on the thing you are about to fix before fixing it.** The
+cost of not doing it is a session spent rebuilding something that already
+works, and a handoff that makes the next session repeat it.
+
+---
+
 ## Notes that still apply
 
+- **The Cowork session can now run the full suite.** As of 10 September it
+  works from a clone in its own cloud workspace with Postgres installed there,
+  rather than through the desktop bridge — all 783 backend tests including the
+  database ones. Files still come back to Amar's disk exactly as before.
+- **Do not run git through the desktop bridge.** Every `git status` leaves a
+  `.git/index.lock` the session cannot delete, and Amar's next commit in GitHub
+  Desktop fails. Read the repo with `ls`, `cat` and `grep`; ask him what is
+  uncommitted.
 - **The database tests can't run on the Claude Code machine.** They need
   Postgres on localhost:5432. `docker compose up -d` in the repo root would
   start exactly the right one, if Docker were installed. Until then the Cowork
