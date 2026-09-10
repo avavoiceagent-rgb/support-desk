@@ -25,6 +25,8 @@ import { planPickup } from "../booking/pickup-time";
 import { reviewBooking } from "../booking/questions";
 import { lookupIndicativeRate, describeRate, rateRange } from "../booking/rates";
 import { composeReply } from "../booking/compose";
+import { composeChangeReply, splitReferences } from "../booking/change-reply";
+import { getOpsContext } from "./ops-context.service";
 import { toPlainText } from "../ai/classifier";
 import { SERVICE_AREA_STATES } from "../types";
 import { DateTime } from "luxon";
@@ -615,5 +617,105 @@ export async function carryOntoBooking(
     await addDeskNote(ticketId, lines.join("\n"));
   } catch (err) {
     console.error("[draft] could not carry the reply onto the booking:", err);
+  }
+}
+
+/**
+ * Draft a reply to somebody asking to change a booking they already have.
+ *
+ * A separate function from `draftReplyForTicket` rather than a branch inside
+ * it, because almost nothing is shared. That path establishes facts — verifies
+ * addresses against a map, works out a pickup time, decides what to confirm and
+ * what to ask. This one deliberately establishes nothing: a change request is
+ * answered by acknowledging it and passing it to a person, and the moment this
+ * function starts working out answers it becomes capable of confirming a change
+ * nobody has made.
+ *
+ * The only facts it gathers are which of the references the customer quoted we
+ * can actually see. That comes from `getOpsContext`, which already applies the
+ * ownership guard — a reference belonging to somebody else is reported as one
+ * we could not find, and the draft never learns the difference.
+ */
+export async function draftChangeReplyForTicket(ticketId: string): Promise<boolean> {
+  if (!isClassificationEnabled()) return false;
+
+  try {
+    const ticket = await db.query.tickets.findFirst({ where: eq(tickets.id, ticketId) });
+    if (!ticket) return false;
+    if (ticket.isBulk) return false;
+    if (ticket.queue !== "RESERVATION" || ticket.reservationType !== "CHANGE") return false;
+
+    const existing = await db.query.ticketDrafts.findFirst({
+      where: eq(ticketDrafts.ticketId, ticketId),
+    });
+    if (existing) return false;
+
+    const conversation = await db
+      .select({
+        direction: messages.direction,
+        subject: messages.subject,
+        bodyHtml: messages.bodyHtml,
+        bodyText: messages.bodyText,
+        fromAddress: messages.fromAddress,
+        sentAt: messages.sentAt,
+      })
+      .from(messages)
+      .where(eq(messages.ticketId, ticketId))
+      .orderBy(asc(messages.sentAt));
+
+    // Somebody has already answered; leave it to them.
+    if (conversation.some((m) => m.direction === "OUTBOUND")) return false;
+
+    const first = conversation[0];
+    if (!first) return false;
+
+    const context = await getOpsContext(ticketId);
+    const quoted = context
+      ? [...context.quotedReferences.trips, ...context.quotedReferences.invoices]
+      : [];
+    const { placed, unplaced } = splitReferences(quoted, context?.unresolvedReferences ?? []);
+
+    const composed = await composeChangeReply({
+      // Lines intact: a sign-off only looks like one while it still has a line
+      // to itself, and the greeting is read from it.
+      customerEmail: toModelText(first.bodyHtml, first.bodyText),
+      placedReferences: placed,
+      unplacedReferences: unplaced,
+      customerName: ticket.requesterName ?? nameFromAddress(first.fromAddress),
+      agentName: AGENT_NAME_PLACEHOLDER,
+    });
+    if (!composed) return false;
+
+    await db.insert(ticketDrafts).values({
+      ticketId,
+      bodyHtml: composed.bodyHtml,
+      // Nothing was confirmed and nothing was asked as a business rule — the
+      // draft asks in prose. Empty rather than invented, so the panel shows
+      // what actually happened.
+      confirmations: [],
+      questions: [],
+      internalNotes: [
+        "This is a change to an existing booking. Nothing has been changed — the draft says a colleague will confirm, and that colleague is you.",
+        ...(unplaced.length > 0
+          ? [
+              `Adam asked the customer to check ${unplaced.join(", ")}, which matched nothing of theirs on file. He was not told whether those references exist, so the reply does not say.`,
+            ]
+          : []),
+        ...(composed.strayEmails?.length
+          ? [
+              `Adam wrote ${composed.strayEmails.join(", ")} into the reply, and that address was not in anything he was given. Read that line before sending.`,
+            ]
+          : []),
+      ],
+      rate: null,
+      // No stored facts: this path establishes none, and a reservation form
+      // pre-filled from a change request would be filled from nothing.
+      facts: null,
+    });
+
+    return true;
+  } catch (err) {
+    console.error("[draft] change reply failed", err);
+    return false;
   }
 }

@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SantaCruz Mirror</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+  :root {
+    --ground: #f6f7f9;
+    --surface: #ffffff;
+    --surface-sunk: #eef0f4;
+    --ink: #15181f;
+    --ink-soft: #545c6b;
+    --ink-faint: #7d8595;
+    --line: #dfe3ea;
+    --line-strong: #c4cad6;
+    --accent: #4338ca;
+    --accent-soft: #eceafb;
+    --good: #04704f;
+    --good-soft: #e2f3ec;
+    --bad: #a51d1d;
+    --bad-soft: #fbe9e9;
+    --warn: #96570a;
+    --warn-soft: #fcf0dd;
+    --shadow: 0 1px 2px rgba(21, 24, 31, .06), 0 8px 24px -16px rgba(21, 24, 31, .28);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #101319;
+      --surface: #171b23;
+      --surface-sunk: #1e232c;
+      --ink: #e8ebf1;
+      --ink-soft: #a3abbb;
+      --ink-faint: #7d8595;
+      --line: #2a303b;
+      --line-strong: #3a4250;
+      --accent: #a5a0f5;
+      --accent-soft: #232338;
+      --good: #5fcfa5;
+      --good-soft: #16281f;
+      --bad: #f08a8a;
+      --bad-soft: #2b1a1a;
+      --warn: #e0ac60;
+      --warn-soft: #2a2013;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #101319;
+    --surface: #171b23;
+    --surface-sunk: #1e232c;
+    --ink: #e8ebf1;
+    --ink-soft: #a3abbb;
+    --ink-faint: #7d8595;
+    --line: #2a303b;
+    --line-strong: #3a4250;
+    --accent: #a5a0f5;
+    --accent-soft: #232338;
+    --good: #5fcfa5;
+    --good-soft: #16281f;
+    --bad: #f08a8a;
+    --bad-soft: #2b1a1a;
+    --warn: #e0ac60;
+    --warn-soft: #2a2013;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -16px rgba(0, 0, 0, .8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 860px;
+    margin: 0 auto;
+    padding-inline: 24px;
+    padding-block: 56px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 52px;
+  }
+
+  h1, h2, h3, .ui { font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+
+  h1 {
+    font-size: clamp(30px, 5vw, 41px);
+    line-height: 1.12;
+    font-weight: 600;
+    letter-spacing: -.022em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h2 {
+    font-size: 23px;
+    line-height: 1.25;
+    font-weight: 600;
+    letter-spacing: -.014em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -.005em;
+    margin: 0;
+  }
+  p { margin: 0; }
+  strong { font-weight: 600; }
+
+  .eyebrow {
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* ---------- masthead ---------- */
+  header { display: flex; flex-direction: column; gap: 18px; }
+  .kicker {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 12.5px; color: var(--ink-faint);
+  }
+  .kicker .dot { color: var(--line-strong); }
+  .standfirst {
+    font-size: 19px; line-height: 1.55; color: var(--ink-soft);
+    max-width: 60ch; font-style: italic;
+  }
+
+  .notice {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--warn);
+    background: var(--warn-soft);
+    border-radius: 3px;
+    padding: 14px 18px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .notice .t {
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 13px; font-weight: 600; color: var(--warn);
+  }
+  .notice p { font-size: 15px; color: var(--ink-soft); }
+
+  /* ---------- sections ---------- */
+  section { display: flex; flex-direction: column; gap: 18px; }
+  .sec-head { display: flex; flex-direction: column; gap: 7px; }
+  .prose { display: flex; flex-direction: column; gap: 14px; max-width: 68ch; }
+  .prose p { color: var(--ink-soft); }
+  .prose p.lead { color: var(--ink); }
+
+  /* ---------- panels ---------- */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .panel-head {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 10px;
+    align-items: baseline; justify-content: space-between;
+    background: var(--surface-sunk);
+  }
+  .panel-head h3 { font-size: 14px; }
+  .panel-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+
+  /* ---------- tables ---------- */
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  thead th {
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-faint);
+    text-align: left; padding: 9px 18px; white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-sunk);
+  }
+  tbody td {
+    padding: 9px 18px; border-bottom: 1px solid var(--line);
+    vertical-align: top; color: var(--ink-soft);
+    font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 13.5px;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.k { color: var(--ink); font-weight: 500; white-space: nowrap; }
+  td .mono, code { font-size: 12.5px; }
+  code {
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--ink);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- refusal list ---------- */
+  .refusals { display: flex; flex-direction: column; gap: 0; }
+  .refusal {
+    display: grid; grid-template-columns: 74px 1fr; gap: 16px;
+    padding: 13px 18px; border-bottom: 1px solid var(--line);
+    align-items: start;
+  }
+  .refusal:last-child { border-bottom: none; }
+  .refusal .row {
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 11px; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--bad);
+    padding-top: 2px;
+  }
+  .refusal .msg {
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px;
+    line-height: 1.6; color: var(--ink);
+  }
+  .refusal .why {
+    font-size: 14px; color: var(--ink-faint); margin-top: 5px;
+    font-family: "IBM Plex Serif", Georgia, serif;
+  }
+
+  /* ---------- status chips ---------- */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase;
+    padding: 3px 9px; border-radius: 2px; white-space: nowrap;
+  }
+  .chip.built { color: var(--good); background: var(--good-soft); }
+  .chip.open { color: var(--warn); background: var(--warn-soft); }
+  .chip.none { color: var(--bad); background: var(--bad-soft); }
+
+  /* ---------- figure ---------- */
+  figure { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  figcaption {
+    font-size: 13.5px; color: var(--ink-faint);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    max-width: 68ch;
+  }
+  .fig-frame {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 4px; padding: 22px 18px; overflow-x: auto;
+  }
+  svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+
+  /* ---------- questions ---------- */
+  ol.q { list-style: none; counter-reset: q; margin: 0; padding: 0;
+         display: flex; flex-direction: column; gap: 0; }
+  ol.q > li {
+    counter-increment: q;
+    display: grid; grid-template-columns: 32px 1fr; gap: 16px;
+    padding: 16px 18px; border-bottom: 1px solid var(--line);
+  }
+  ol.q > li:last-child { border-bottom: none; }
+  ol.q > li::before {
+    content: counter(q);
+    font-family: "IBM Plex Mono", monospace; font-size: 13px;
+    color: var(--accent); font-weight: 500; padding-top: 1px;
+  }
+  .q-body { display: flex; flex-direction: column; gap: 5px; }
+  .q-body h3 { font-size: 15px; }
+  .q-body p { font-size: 14.5px; color: var(--ink-soft); }
+
+  /* ---------- stats ---------- */
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    border-top: 1px solid var(--line);
+  }
+  .stat {
+    padding: 14px 18px; border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .stat:last-child { border-right: none; }
+  .stat .v {
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 22px; font-weight: 600; color: var(--ink);
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+  }
+  .stat .l {
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 11.5px; color: var(--ink-faint);
+  }
+
+  .endpoint {
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px;
+    background: var(--surface-sunk); border: 1px solid var(--line);
+    border-radius: 3px; padding: 11px 14px; overflow-x: auto;
+    white-space: nowrap; color: var(--ink);
+  }
+
+  footer {
+    border-top: 1px solid var(--line); padding-top: 20px;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 13px; color: var(--ink-faint);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
+  a { color: var(--accent); text-underline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  @media (max-width: 560px) {
+    .wrap { padding-block: 36px 64px; gap: 40px; }
+    .refusal { grid-template-columns: 1fr; gap: 6px; }
+    ol.q > li { grid-template-columns: 1fr; gap: 6px; }
+  }
+</style>
+
+
+
+<style>
+@page { size: A4; margin: 14mm 13mm; }
+@media print {
+  :root { --shadow: none; }
+  body { background: #ffffff; font-size: 10.5pt; }
+  .wrap { max-width: none; padding-block: 0; gap: 26px; }
+  section, figure, .panel { break-inside: avoid; }
+  h2 { break-after: avoid; }
+  .sec-head { break-after: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>
+
+</head>
+<body style="margin:0">
+<div class="wrap">
+
+  <header>
+    <div class="kicker">
+      <span class="eyebrow">Support Desk</span>
+      <span class="dot">/</span>
+      <span>Integration design, for review</span>
+      <span class="dot">/</span>
+      <span>10 September 2026</span>
+    </div>
+    <h1>Connecting SantaCruz to Adam</h1>
+    <p class="standfirst">
+      What has been built, the one decision everything else follows from, and the four
+      questions that need answering before this touches a real booking.
+    </p>
+    <div class="notice">
+      <span class="t">Test data only</span>
+      <p>
+        Adam is in a testing and training phase. Every name, address, phone number and price
+        on this page and in the screens it describes is invented. No real customer data has
+        been through this system.
+      </p>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Context</span>
+      <h2>What Adam is, and what changes</h2>
+    </div>
+    <div class="prose">
+      <p class="lead">
+        Support Desk turns email into tickets. Mail arrives at a Gmail inbox, becomes a ticket,
+        gets sorted, and an agent called Adam drafts a reply that a person reviews before
+        anything is sent. It runs as one service with a Postgres database behind it.
+      </p>
+      <p>
+        Its Operations screen — rosters, partners, reservations, dispatch — currently runs on
+        invented data. The company is moving to <strong>SantaCruz</strong>, GroundWidgets'
+        reservation, dispatch and accounting system. That makes SantaCruz the system of record
+        for real bookings, and raises the question this document answers: how do the two systems
+        share a booking without ending up with two versions of it?
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">The governing decision</span>
+      <h2>SantaCruz owns the booking. Adam owns the conversation.</h2>
+    </div>
+    <div class="prose">
+      <p class="lead">
+        Everything below follows from this. SantaCruz is the truth for anything a driver or an
+        invoice depends on — pickup time, addresses, who is travelling, the money. Adam owns
+        what SantaCruz has no place for: the email ticket, the drafted reply, the quote thread
+        with partners.
+      </p>
+      <p>
+        The practical consequence is that <strong>Adam never writes a booking back to
+        SantaCruz</strong>. It holds a copy for display, and when the two disagree, theirs wins
+        — because ours is a copy of their record rather than a second opinion about it. Two
+        systems both able to edit the same pickup time is how a customer ends up with two cars
+        at one kerb, and across a company boundary neither side can see or undo the other's
+        change.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-frame">
+        <svg viewBox="0 0 680 260" width="680" height="260" role="img"
+             aria-label="Bookings flow from SantaCruz into Adam's mirror and onto the SantaCruz tab. A separate read-only endpoint lets SantaCruz ask Adam about the conversation. Nothing flows from Adam back into SantaCruz's bookings.">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)"></path>
+            </marker>
+            <marker id="arq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-faint)"></path>
+            </marker>
+          </defs>
+
+          <!-- lane labels -->
+          <text x="86" y="20" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="10.5" font-weight="600" letter-spacing="1.4">THEIRS</text>
+          <text x="520" y="20" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="10.5" font-weight="600" letter-spacing="1.4">OURS</text>
+
+          <!-- boundary -->
+          <line x1="245" y1="30" x2="245" y2="240" stroke="var(--line-strong)" stroke-width="1" stroke-dasharray="3 5"></line>
+          <text x="245" y="252" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="10">ownership boundary</text>
+
+          <!-- SantaCruz box -->
+          <rect x="16" y="34" width="140" height="72" rx="3" fill="var(--surface-sunk)" stroke="var(--line-strong)"></rect>
+          <text x="86" y="63" text-anchor="middle" fill="var(--ink)" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600">SantaCruz</text>
+          <text x="86" y="81" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="11">the booking</text>
+          <text x="86" y="96" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="11">time · address · money</text>
+
+          <!-- import arrow -->
+          <line x1="160" y1="70" x2="322" y2="70" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ar)"></line>
+          <text x="241" y="60" text-anchor="middle" fill="var(--accent)" font-family="IBM Plex Sans, sans-serif" font-size="11" font-weight="600">import</text>
+
+          <!-- mirror box -->
+          <rect x="328" y="34" width="152" height="72" rx="3" fill="var(--surface)" stroke="var(--accent)"></rect>
+          <text x="404" y="63" text-anchor="middle" fill="var(--ink)" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600">Mirror</text>
+          <text x="404" y="81" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="11">read-only copy</text>
+          <text x="404" y="96" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="11">+ every row kept whole</text>
+
+          <!-- tab arrow -->
+          <line x1="484" y1="70" x2="556" y2="70" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#ar)"></line>
+          <rect x="562" y="42" width="104" height="56" rx="3" fill="var(--surface-sunk)" stroke="var(--line-strong)"></rect>
+          <text x="614" y="66" text-anchor="middle" fill="var(--ink)" font-family="IBM Plex Sans, sans-serif" font-size="12" font-weight="600">SantaCruz tab</text>
+          <text x="614" y="82" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="10.5">beside Reservations</text>
+
+          <!-- Adam conversation box -->
+          <rect x="328" y="150" width="338" height="72" rx="3" fill="var(--surface)" stroke="var(--line-strong)"></rect>
+          <text x="497" y="179" text-anchor="middle" fill="var(--ink)" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600">Adam — the conversation</text>
+          <text x="497" y="197" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="11">ticket · draft reply · partner quote thread</text>
+          <text x="497" y="212" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="11">never a copy of their booking fields</text>
+
+          <!-- query arrow back -->
+          <path d="M 328 186 L 200 186 L 200 106" fill="none" stroke="var(--ink-faint)" stroke-width="1.5" marker-end="url(#arq)"></path>
+          <text x="264" y="203" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="11">they ask, we answer</text>
+          <text x="264" y="217" text-anchor="middle" fill="var(--ink-faint)" font-family="IBM Plex Sans, sans-serif" font-size="10.5">key-guarded, read only</text>
+        </svg>
+      </div>
+      <figcaption>
+        Bookings travel one way. The only thing crossing back is an answer to a question
+        SantaCruz asked, about the conversation rather than about the booking — so there is
+        never a second copy of a pickup time in circulation.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Design</span>
+      <h2>Their column names appear nowhere in the code</h2>
+    </div>
+    <div class="prose">
+      <p class="lead">
+        SantaCruz's real schema is not known yet and will change. Rather than guess it, the
+        import is shape-agnostic: it accepts any set of columns, keeps every row exactly as it
+        arrived, and a mapping edited on screen says which of their columns feeds which of our
+        fields.
+      </p>
+      <p>
+        When GroundWidgets supply the real names, someone types them into a table. No migration,
+        no deploy. A column nothing is mapped to is not discarded — it is stored with the row and
+        reported after each import, so a field that turns out to matter in six months is already
+        there.
+      </p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h3>The mapping, as configured for a test export</h3>
+        <span class="chip built">Working</span>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Adam's field</th><th>Their column</th><th>Required</th><th>Read as</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="k">externalId</td><td><span class="mono">RES_ID</span></td><td>yes</td><td>text — the idempotency key</td></tr>
+            <tr><td class="k">reference</td><td><span class="mono">RES_NO</span></td><td>—</td><td>text</td></tr>
+            <tr><td class="k">pickupAt</td><td><span class="mono">PU_DATETIME</span></td><td>yes</td><td>timestamp, in a configured zone</td></tr>
+            <tr><td class="k">pickupAddress</td><td><span class="mono">PU_ADDR</span></td><td>yes</td><td>text</td></tr>
+            <tr><td class="k">dropoffAddress</td><td><span class="mono">DO_ADDR</span></td><td>—</td><td>text</td></tr>
+            <tr><td class="k">passengerCount</td><td><span class="mono">PAX_CNT</span></td><td>—</td><td>whole number, ≥ 0</td></tr>
+            <tr><td class="k">luggageCount</td><td><span class="mono">BAG_CNT</span></td><td>—</td><td>whole number — blank stays blank</td></tr>
+            <tr><td class="k">priceCents</td><td><span class="mono">TOTAL</span></td><td>—</td><td>money, stored in whole cents</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-body" style="border-top:1px solid var(--line);">
+        <p style="font-size:14px;color:var(--ink-soft);">
+          Eighteen fields are offered in total. A mapping pointing at a field Adam does not have
+          is refused rather than saved — a mapping that looks configured and quietly does nothing
+          is worse than none.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">The rule</span>
+      <h2>A row that cannot be read is refused, never approximated</h2>
+    </div>
+    <div class="prose">
+      <p class="lead">
+        The project's founding rule is that nothing is invented for a customer. At one email a
+        time that means the agent asks instead of assuming. At table scale it means a bad value
+        stops the row rather than becoming a plausible-looking default on every booking.
+      </p>
+      <p>
+        A refused row is kept whole and listed with its reason, so nothing has to be
+        re-exported. These four are verbatim from a live run of a seven-row test export.
+      </p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Live run — 3 rows in, 4 refused</h3>
+        <span class="chip none">Refused</span>
+      </div>
+      <div class="refusals">
+        <div class="refusal">
+          <span class="row">Row 4</span>
+          <div>
+            <p class="msg">pickupAt: "next Tuesday" is not a date and time we can read. Expected something like 2026-03-14 15:30.</p>
+          </div>
+        </div>
+        <div class="refusal">
+          <span class="row">Row 5</span>
+          <div>
+            <p class="msg">pickupAddress is required and "PU_ADDR" was empty</p>
+          </div>
+        </div>
+        <div class="refusal">
+          <span class="row">Row 6</span>
+          <div>
+            <p class="msg">priceCents: "about two hundred" is not an amount we can bill for priceCents</p>
+          </div>
+        </div>
+        <div class="refusal">
+          <span class="row">Row 7</span>
+          <div>
+            <p class="msg">pickupAt: "2026-11-01 01:30" happens twice in America/New_York on the day the clocks go back, so which one is meant is not in the data.</p>
+            <p class="why">
+              The one worth arguing about. 01:30 on 1 November occurs twice in New York, and
+              which occurrence is meant is genuinely absent from the file. Most importers pick
+              one silently. An hour's error on an airport run misses the flight.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="prose">
+      <p>
+        A related case that passes rather than fails: an empty bag count is stored as
+        <em>unknown</em> and displayed as “not stated”, never as zero. A driver told
+        “3 passengers, 0 bags” brings a sedan and finds a boot's worth of luggage — that exact
+        fault has already reached a driver once in this system, from a different code path.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Interfaces</span>
+      <h2>Two directions, two secrets, one of them read-only</h2>
+    </div>
+    <div class="prose">
+      <p>
+        Inbound is a staff-facing API behind a login, with every write requiring an admin.
+        Outbound is a single endpoint SantaCruz calls with a shared secret and no login, mounted
+        on a separate path so that a route added later cannot inherit the wrong protection by
+        accident.
+      </p>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>What SantaCruz can call</h3><span class="chip built">Built</span></div>
+      <div class="panel-body">
+        <p class="endpoint">GET /api/external/santacruz/bookings/:reference &nbsp;&nbsp;x-api-key: &lt;shared secret&gt;</p>
+        <p style="font-size:14.5px;color:var(--ink-soft);">
+          Returns whether the desk knows the booking, when it first and last saw it, and the
+          linked ticket if there is one. Deliberately not their own booking fields: handing
+          those back would create the second copy this design exists to avoid.
+        </p>
+        <p style="font-size:14.5px;color:var(--ink-soft);">
+          Two separate secrets — one for calling them, one for them calling us — so that leaking
+          one does not hand over the other. Both live in the deployment's environment variables.
+          The settings screen reports whether each is set and has no field to type one into;
+          comparison is constant-time, and an unset secret refuses everybody rather than
+          admitting everybody.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Not built</span>
+      <h2>What is deliberately missing</h2>
+    </div>
+    <div class="panel">
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Capability</th><th>State</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="k">Live API pull</td>
+              <td><span class="chip open">Blocked</span></td>
+              <td>GroundWidgets have not published an integration surface. Import is by file until they do.</td>
+            </tr>
+            <tr>
+              <td class="k">Webhooks</td>
+              <td><span class="chip open">Blocked</span></td>
+              <td>Unknown whether SantaCruz can push. If not, polling cadence becomes a design question.</td>
+            </tr>
+            <tr>
+              <td class="k">Linking a booking to a ticket</td>
+              <td><span class="chip none">Not started</span></td>
+              <td>No reliable key exists yet. Guessing from a name or address would be exactly the invention this design refuses. See question 1.</td>
+            </tr>
+            <tr>
+              <td class="k">Learning about cancellations</td>
+              <td><span class="chip none">Not started</span></td>
+              <td>A booking deleted on their side stays in the mirror indefinitely. A real gap. See question 2.</td>
+            </tr>
+            <tr>
+              <td class="k">Vehicle class translation</td>
+              <td><span class="chip open">Open</span></td>
+              <td>Their words are stored as written and not mapped onto our sedan/SUV/van/sprinter rules.</td>
+            </tr>
+            <tr>
+              <td class="k">Writing to SantaCruz</td>
+              <td><span class="chip built">By design</span></td>
+              <td>Not a gap. Follows from the ownership decision above.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">For the development team</span>
+      <h2>Where input would change what gets built</h2>
+    </div>
+    <div class="panel">
+      <ol class="q">
+        <li>
+          <div class="q-body">
+            <h3>What links their booking to our ticket?</h3>
+            <p>
+              A customer emails; Adam handles the conversation; the same job exists in SantaCruz.
+              Nothing currently connects the two. Booker email is unreliable — assistants book for
+              clients, and the same address raises many bookings. Does SantaCruz carry a field we
+              could put our ticket number in, or one it would echo back?
+            </p>
+          </div>
+        </li>
+        <li>
+          <div class="q-body">
+            <h3>How do we learn a booking was cancelled or deleted?</h3>
+            <p>
+              A file export tells us what exists, never what stopped existing. A cancelled job
+              would sit in the mirror looking live. Options: a status column we treat as
+              authoritative, a full-replace import for a known window, or a deletions feed. This
+              needs deciding before the mirror is trusted operationally.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div class="q-body">
+            <h3>Is their reservation id stable across edits?</h3>
+            <p>
+              The whole import is idempotent on it — re-running a file corrects rather than
+              duplicates. If SantaCruz reissues an id when a booking is amended, that assumption
+              breaks and every amendment becomes a duplicate booking.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div class="q-body">
+            <h3>Does SantaCruz store local time or UTC?</h3>
+            <p>
+              We currently read bare timestamps as wall-clock in a zone chosen on the settings
+              screen, and refuse the two ambiguous hours a year outright. If they store UTC, or
+              tag the zone, that refusal is unnecessary and should be relaxed rather than kept as
+              a safeguard nobody needs.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div class="q-body">
+            <h3>Is refusing the right default at their volume?</h3>
+            <p>
+              On a seven-row test, four refusals are readable. On a nightly file of several
+              hundred, thirty refusals need a workflow — who reviews them, and by when — or the
+              rule quietly becomes “bookings go missing”. What volume should this be designed for?
+            </p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">For GroundWidgets</span>
+      <h2>The questions worth asking before signing</h2>
+    </div>
+    <div class="prose">
+      <p>
+        SantaCruz is not yet in use, which means integration capability is still a purchasing
+        question rather than a support ticket. In rough order of how much they change the build:
+        is there a read API for reservations, drivers, vehicles and affiliates, and is it
+        documented? Can it push a webhook on create and change, or must we poll? Is read-only
+        database access available, and to what — a replica, a reporting view, the live database?
+        Failing all of those, can it export on a schedule, to where, in what format? Is there a
+        write path at all? What does any of it cost, and is it a licence, a per-call charge or a
+        services engagement? And is there a sandbox, so this can be finished without touching
+        live bookings?
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">State</span>
+      <h2>Where it stands today</h2>
+    </div>
+    <div class="panel">
+      <div class="stats">
+        <div class="stat"><span class="v num">751</span><span class="l">backend tests passing</span></div>
+        <div class="stat"><span class="v num">69</span><span class="l">frontend tests passing</span></div>
+        <div class="stat"><span class="v num">5</span><span class="l">new tables, nothing altered</span></div>
+        <div class="stat"><span class="v num">0</span><span class="l">real bookings touched</span></div>
+      </div>
+      <div class="panel-body" style="border-top:1px solid var(--line);">
+        <p style="font-size:14.5px;color:var(--ink-soft);">
+          Deployed and exercised end to end against a test export. The existing Operations
+          screens are untouched — the mirror is a separate tab beside them, so nobody has to
+          guess which system a job came from while both are in use. What remains is a real
+          export and real column names, and both come from GroundWidgets.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Support Desk · SantaCruz integration · prepared for development team review.</p>
+    <p>All data shown is invented. Adam has not been run against real customer records.</p>
+  </footer>
+
+</div>
+
+</body>
+</html>
