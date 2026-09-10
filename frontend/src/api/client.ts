@@ -32,5 +32,10 @@ export const api = {
     request<T>(path, { method: "POST", body: data !== undefined ? JSON.stringify(data) : undefined }),
   patch: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: "PATCH", body: data !== undefined ? JSON.stringify(data) : undefined }),
+  // PUT, not PATCH: the SantaCruz mapping is saved whole because the rules that
+  // make one valid — one column per field, one field per column — are about the
+  // set and cannot be checked a row at a time.
+  put: <T>(path: string, data?: unknown) =>
+    request<T>(path, { method: "PUT", body: data !== undefined ? JSON.stringify(data) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };

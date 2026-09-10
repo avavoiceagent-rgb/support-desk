@@ -1,0 +1,8 @@
+RES_ID,RES_NO,PU_DATETIME,PU_ADDR,DO_ADDR,PAX_NAME,PAX_PHONE,PAX_CNT,BAG_CNT,CAR_TYPE,TOTAL,ACCOUNT_MGR
+SC-90001,10441,2026-10-01 09:00,"245 Park Ave, New York, NY 10167","JFK Terminal 4, Queens, NY",Ana Costa,+1 212 555 0177,3,2,Sedan,$185.00,K Shah
+SC-90002,10442,2026-10-01 14:30,"1 Kalisa Way, Paramus, NJ","Newark Liberty International Airport",Daniel Weiss,+1 201 555 0148,2,,SUV,$240.50,K Shah
+SC-90003,10443,2026-10-02 06:15,"50 Central Park S, New York, NY","LaGuardia Airport, East Elmhurst, NY",Priya Raman,,1,1,Sedan,$150.00,R Patel
+SC-90004,10444,next Tuesday,"230 Park Ave, New York, NY","JFK Terminal 8",Helen Brooks,,2,1,Sedan,$190.00,R Patel
+SC-90005,10445,2026-10-03 11:00,,"Philadelphia International Airport",Marco Bianchi,,4,3,SUV,$410.00,K Shah
+SC-90006,10446,2026-10-04 08:00,"11 Wall St, New York, NY","JFK Terminal 1",Sofia Muller,,2,2,Sedan,about two hundred,R Patel
+SC-90007,10447,2026-11-01 01:30,"90 Park Ave, New York, NY","LaGuardia Airport",Tom Fischer,,1,0,Sedan,$120.00,K Shah

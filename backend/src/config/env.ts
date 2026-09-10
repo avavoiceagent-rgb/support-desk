@@ -33,6 +33,21 @@ const envSchema = z.object({
   // percentage. One figure for every job, which is how Amar runs it. Change
   // it in Railway; nothing needs a deploy.
   PARTNER_MARGIN_PERCENT: z.string().default("25").transform(Number),
+  // --- SantaCruz, the reservation system the company is moving to ---
+  //
+  // Optional, and off until both a key and a base URL exist. Nothing about
+  // the desk changes while they are empty: the SantaCruz screens simply say
+  // they are not connected yet, and the mapping can still be built and tested
+  // against a file with no credentials at all.
+  //
+  // The key lives here and only here. It is never written to the database and
+  // never sent to a screen — the connection page reports whether one is set,
+  // never what it is.
+  SANTACRUZ_API_KEY: z.string().optional().default(""),
+  // The shared secret SantaCruz presents when it calls US, which is the
+  // opposite direction and a different secret on purpose: leaking one does
+  // not hand over the other.
+  SANTACRUZ_INBOUND_KEY: z.string().optional().default(""),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -54,3 +69,9 @@ export const isMapsConfigured = Boolean(env.GOOGLE_MAPS_API_KEY);
 export const isGmailConfigured = Boolean(
   env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REDIRECT_URI
 );
+
+/** Adam can call SantaCruz once it has somewhere to call and a key to call with. */
+export const isSantaCruzOutboundConfigured = Boolean(env.SANTACRUZ_API_KEY);
+
+/** SantaCruz can call Adam once a shared secret exists for it to present. */
+export const isSantaCruzInboundConfigured = Boolean(env.SANTACRUZ_INBOUND_KEY);

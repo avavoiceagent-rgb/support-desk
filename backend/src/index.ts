@@ -11,6 +11,7 @@ import { emailAccountsRouter } from "./routes/email-accounts.routes";
 import { bookingRouter } from "./routes/booking.routes";
 import { opsRouter } from "./routes/ops.routes";
 import { dispatchRouter } from "./routes/dispatch.routes";
+import { santacruzRouter, santacruzOutboundRouter } from "./routes/santacruz.routes";
 import { startMailPoller } from "./mail/poller";
 
 const app = express();
@@ -30,6 +31,12 @@ app.use("/api/email-accounts", emailAccountsRouter);
 app.use("/api/booking", bookingRouter);
 app.use("/api/ops", opsRouter);
 app.use("/api/dispatch", dispatchRouter);
+app.use("/api/santacruz", santacruzRouter);
+// SantaCruz calling us, not us calling SantaCruz. Mounted apart from
+// everything above because it is the one router with no login behind it — it
+// is guarded by a shared secret instead, and putting it under a different path
+// makes that visible rather than something you have to remember.
+app.use("/api/external/santacruz", santacruzOutboundRouter);
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 

@@ -16,15 +16,20 @@ import { ScheduleTab } from "../components/ops/ScheduleTab";
 import { AffiliatesTab } from "../components/ops/AffiliatesTab";
 import { ReservationsTab } from "../components/ops/ReservationsTab";
 import { MessagesTab } from "../components/ops/MessagesTab";
+import { SantaCruzTab } from "../components/ops/SantaCruzTab";
 import { ErrorNote, apiMessage } from "../components/ops/shared";
 
-type Tab = "schedule" | "affiliates" | "reservations" | "messages";
+type Tab = "schedule" | "affiliates" | "reservations" | "messages" | "santacruz";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "schedule", label: "Driver schedules" },
   { key: "affiliates", label: "Partners" },
   { key: "reservations", label: "Reservations" },
   { key: "messages", label: "Messages" },
+  // Their bookings, beside ours rather than mixed into Reservations. While the
+  // move is in progress these are two different systems and the screen should
+  // never leave anybody unsure which one a job came from.
+  { key: "santacruz", label: "SantaCruz" },
 ];
 
 export function OperationsPage() {
@@ -93,6 +98,7 @@ export function OperationsPage() {
             <AffiliatesTab affiliates={affiliates} isAdmin={isAdmin} onChanged={() => void load()} />
           )}
           {tab === "messages" && <MessagesTab drivers={drivers} affiliates={affiliates} />}
+          {tab === "santacruz" && <SantaCruzTab />}
           {tab === "reservations" && (
             <ReservationsTab
               drivers={drivers}

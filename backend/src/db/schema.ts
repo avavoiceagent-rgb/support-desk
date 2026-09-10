@@ -745,3 +745,189 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
 export const invoiceLinesRelations = relations(invoiceLines, ({ one }) => ({
   invoice: one(invoices, { fields: [invoiceLines.invoiceId], references: [invoices.id] }),
 }));
+
+// ---------------------------------------------------------------------------
+// SantaCruz — the reservation system the company is moving to.
+//
+// Nothing here touches the tables above. The existing Operations screen keeps
+// reading `trips` and its dummy data exactly as before; this is a separate
+// mirror alongside it, so the two can be compared before anything is switched
+// over.
+//
+// The shape of SantaCruz's own tables is NOT written down here, deliberately.
+// Their column names are not known yet and will change, and inventing them
+// would be the "never invent a fact" mistake at table scale. Instead every row
+// is kept exactly as it arrived in `raw`, and `santacruz_field_map` says which
+// of THEIR columns feeds which of OUR fields. When the real column names turn
+// up, the mapping is edited on a screen — no migration, no rebuild.
+// ---------------------------------------------------------------------------
+
+export const santacruzImportSourceEnum = pgEnum("santacruz_import_source", ["FILE", "API"]);
+
+/**
+ * The connection settings that are NOT secret.
+ *
+ * One row, id "singleton". No API key, password or token is ever stored here:
+ * secrets live in Railway environment variables and the screen only ever
+ * reports whether one is present, never its value.
+ */
+export const santacruzConnection = pgTable("santacruz_connection", {
+  id: text("id").primaryKey().default("singleton"),
+  /** Where their API lives, when there is one. Null until they tell us. */
+  baseUrl: text("base_url"),
+  /**
+   * The zone their timestamps are written in.
+   *
+   * A reservation system almost always sends local wall-clock time with no
+   * zone on it. Guessing UTC puts every New York pickup four or five hours
+   * out and the mistake looks like a data problem rather than a settings one,
+   * so this is explicit and has to be chosen by a person.
+   */
+  sourceTimeZone: text("source_time_zone").notNull().default("America/New_York"),
+  /** Off until somebody deliberately turns it on. */
+  enabled: boolean("enabled").notNull().default(false),
+  lastCheckedAt: timestamp("last_checked_at"),
+  lastCheckResult: text("last_check_result"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
+ * Their column, our field.
+ *
+ * `sourceColumn` is whatever SantaCruz calls it. `targetField` must be one of
+ * the names in `santacruz/fields.ts` — an unknown target is refused rather
+ * than stored, because a mapping nobody reads is worse than no mapping.
+ */
+export const santacruzFieldMap = pgTable(
+  "santacruz_field_map",
+  {
+    id: cuid(),
+    sourceColumn: text("source_column").notNull(),
+    targetField: text("target_field").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // One of ours can only be fed by one of theirs, and one of theirs can only
+    // feed one of ours. Two columns racing to fill `pickupAt` is a coin toss
+    // nobody would choose on purpose.
+    uniqueIndex("santacruz_map_target_key").on(t.targetField),
+    uniqueIndex("santacruz_map_source_key").on(t.sourceColumn),
+  ]
+);
+
+/** One row per import run, so "when did this last work" has an answer. */
+export const santacruzImports = pgTable("santacruz_imports", {
+  id: cuid(),
+  source: santacruzImportSourceEnum("source").notNull(),
+  /** What was imported from — a file name, or the endpoint that was polled. */
+  label: text("label"),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  finishedAt: timestamp("finished_at"),
+  rowsSeen: integer("rows_seen").notNull().default(0),
+  rowsImported: integer("rows_imported").notNull().default(0),
+  rowsRejected: integer("rows_rejected").notNull().default(0),
+  /** Set when the run itself failed, as opposed to individual rows. */
+  error: text("error"),
+  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: text("actor_name"),
+});
+
+/**
+ * Every row that did not come in, and why.
+ *
+ * The whole point of the design. A booking that cannot be read correctly is
+ * not read approximately — it is refused, kept whole in `raw`, and shown on
+ * the screen with the reason. Silence about a skipped booking is how a real
+ * job goes missing.
+ */
+export const santacruzRejections = pgTable(
+  "santacruz_rejections",
+  {
+    id: cuid(),
+    importId: text("import_id")
+      .notNull()
+      .references(() => santacruzImports.id, { onDelete: "cascade" }),
+    /** 1-based position in the file, so a person can find it again. */
+    rowNumber: integer("row_number").notNull(),
+    externalId: text("external_id"),
+    reasons: jsonb("reasons").$type<string[]>().notNull().default([]),
+    raw: jsonb("raw").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("santacruz_rejections_import_idx").on(t.importId, t.rowNumber)]
+);
+
+/**
+ * The mirror of a SantaCruz reservation.
+ *
+ * SantaCruz owns these: pickup time, addresses, who is travelling, the money.
+ * Adam owns the conversation — the ticket, the draft, the partner quote
+ * thread — which is why `ticketId` hangs off here rather than the other way
+ * round. When the two disagree, this row is the one that is right, because it
+ * is a copy of their record rather than a second opinion about it.
+ */
+export const santacruzBookings = pgTable(
+  "santacruz_bookings",
+  {
+    id: cuid(),
+    /** Their primary key. The only thing that makes an import repeatable. */
+    externalId: text("external_id").notNull(),
+    /** Their human-facing booking number, when it differs from the key. */
+    reference: text("reference"),
+
+    passengerName: text("passenger_name"),
+    passengerPhone: text("passenger_phone"),
+    bookerName: text("booker_name"),
+    bookerEmail: text("booker_email"),
+
+    pickupAddress: text("pickup_address"),
+    dropoffAddress: text("dropoff_address"),
+    pickupAt: timestamp("pickup_at"),
+    bookedHours: doublePrecision("booked_hours"),
+
+    vehicleClass: text("vehicle_class"),
+    passengerCount: integer("passenger_count"),
+    luggageCount: integer("luggage_count"),
+    flightNumber: text("flight_number"),
+
+    status: text("status"),
+    driverName: text("driver_name"),
+    priceCents: integer("price_cents"),
+    notes: text("notes"),
+
+    /**
+     * Exactly what arrived, untouched.
+     *
+     * Kept whether the mapping covered it or not. When a column turns out to
+     * matter six months from now, the history is already here and does not
+     * have to be re-imported.
+     */
+    raw: jsonb("raw").$type<Record<string, unknown>>().notNull(),
+
+    /** Adam's side of it, when this booking came from an email we handled. */
+    ticketId: text("ticket_id").references(() => tickets.id, { onDelete: "set null" }),
+
+    importId: text("import_id").references(() => santacruzImports.id, { onDelete: "set null" }),
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("santacruz_bookings_external_key").on(t.externalId),
+    index("santacruz_bookings_pickup_idx").on(t.pickupAt),
+    index("santacruz_bookings_reference_idx").on(t.reference),
+    index("santacruz_bookings_ticket_idx").on(t.ticketId),
+  ]
+);
+
+export const santacruzRejectionsRelations = relations(santacruzRejections, ({ one }) => ({
+  run: one(santacruzImports, {
+    fields: [santacruzRejections.importId],
+    references: [santacruzImports.id],
+  }),
+}));
+
+export const santacruzBookingsRelations = relations(santacruzBookings, ({ one }) => ({
+  ticket: one(tickets, { fields: [santacruzBookings.ticketId], references: [tickets.id] }),
+}));
