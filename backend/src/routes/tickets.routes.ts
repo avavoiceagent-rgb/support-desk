@@ -277,7 +277,14 @@ ticketsRouter.get("/:id/reservation", async (req, res) => {
 
 const reservationSchema = z.object({
   passengerName: z.string().min(1, "A reservation needs a passenger name."),
-  passengerPhone: z.string().nullable().optional(),
+  // Refused rather than cleaned: a reservation form is a person typing, and
+  // silently dropping what they typed is worse than telling them. The same
+  // confusion arrives unattended through `phoneOrNothing` in booking/facts.ts.
+  passengerPhone: z
+    .string()
+    .refine((v) => !v.includes("@"), "That looks like an email address, not a phone number.")
+    .nullable()
+    .optional(),
   bookerName: z.string().nullable().optional(),
   // Every other email field in this API is validated; this one was not, so a
   // raw From header could arrive here too.

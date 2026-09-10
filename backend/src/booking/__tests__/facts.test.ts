@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeFacts, describeFactChanges, bookerNameFromReply } from "../facts";
+import { mergeFacts, describeFactChanges, bookerNameFromReply, phoneOrNothing } from "../facts";
 import type { DraftFacts } from "../../db/schema";
 
 /** What the first email established on ticket #72. */
@@ -181,5 +181,59 @@ describe("mergeFacts leaves the booker alone when handed nothing", () => {
     expect(after.bookerName).toBe("Apurva");
     expect(after.passengerPhone).toBe("9978615599");
     expect(describeFactChanges(first, after)).toEqual(["Passenger phone: 9978615599"]);
+  });
+});
+
+describe("a phone number that is not one", () => {
+  // Ticket #121: the customer replied "all good" and nothing else. The
+  // extractor read the quoted thread beneath it, found the sender's address,
+  // and the booking ended up with an email address where a driver looks for a
+  // number to ring. Every previous defence against this confusion was on the
+  // writing side; this is the reading side.
+
+  it("refuses an email address", () => {
+    expect(phoneOrNothing("amarpant30@gmail.com")).toBeNull();
+    expect(phoneOrNothing("  Daniel <daniel@customer.example>  ")).toBeNull();
+  });
+
+  it("keeps a real number, however it is written", () => {
+    // Refusing an unusual but genuine number is worse than storing it, so the
+    // bar is deliberately low.
+    expect(phoneOrNothing("+1 917 555 0134")).toBe("+1 917 555 0134");
+    expect(phoneOrNothing("(917) 555-0134")).toBe("(917) 555-0134");
+    expect(phoneOrNothing("917.555.0134 ext 2")).toBe("917.555.0134 ext 2");
+    expect(phoneOrNothing("9978615599")).toBe("9978615599");
+  });
+
+  it("refuses something with no number in it at all", () => {
+    expect(phoneOrNothing("all good")).toBeNull();
+    expect(phoneOrNothing("call me")).toBeNull();
+  });
+
+  it("treats blank and missing as nothing", () => {
+    expect(phoneOrNothing("")).toBeNull();
+    expect(phoneOrNothing("   ")).toBeNull();
+    expect(phoneOrNothing(null)).toBeNull();
+    expect(phoneOrNothing(undefined)).toBeNull();
+  });
+
+  it("stops a re-read putting an address on the booking", () => {
+    // The whole failure, end to end: a reply establishes nothing, and the
+    // number that was already known must survive it untouched.
+    const known: DraftFacts = { ...first, passengerPhone: "+1 917 555 0134" };
+    const after = mergeFacts(known, { passengerPhone: "amarpant30@gmail.com" });
+    expect(after.passengerPhone).toBe("+1 917 555 0134");
+  });
+
+  it("does not erase a number when the reply has no usable one", () => {
+    const known: DraftFacts = { ...first, passengerPhone: "+1 917 555 0134" };
+    expect(mergeFacts(known, { passengerPhone: "all good" }).passengerPhone).toBe("+1 917 555 0134");
+  });
+
+  it("still accepts a genuine correction", () => {
+    const known: DraftFacts = { ...first, passengerPhone: "+1 917 555 0134" };
+    expect(mergeFacts(known, { passengerPhone: "+1 646 555 0180" }).passengerPhone).toBe(
+      "+1 646 555 0180"
+    );
   });
 });

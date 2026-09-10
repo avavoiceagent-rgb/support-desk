@@ -60,12 +60,47 @@ export function bookerNameFromReply(
   return fromReply?.trim() ? fromReply : null;
 }
 
+/**
+ * A phone number, or nothing.
+ *
+ * On ticket #121 the customer replied "all good" and nothing else. The
+ * extractor read the quoted thread beneath it, found the sender's address, and
+ * `passengerPhone` was set to an email address — which then went onto the
+ * booking, where a driver looking for a number to ring finds one he cannot
+ * ring.
+ *
+ * Every existing defence against this confusion is on the WRITING side: the
+ * compose prompt forbids putting an address in a reply, and the draft panel
+ * warns a person when it happens anyway. Three separate attempts have been
+ * made there. This is the reading side, where nothing was checking at all, and
+ * it is checked in code rather than asked of a model for the same reason the
+ * fourth attempt should not be another instruction.
+ *
+ * Deliberately not a full validation. Phone numbers arrive as "+1 917 555
+ * 0134", "(917) 555-0134" and "917.555.0134 ext 2", and refusing an unusual
+ * but real number is worse than storing it. The bar is only that it is not an
+ * address and that it contains enough digits to dial.
+ */
+export function phoneOrNothing(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const text = value.trim();
+  if (text === "") return null;
+  // An address is never a phone number, whatever else it might be.
+  if (text.includes("@")) return null;
+  // Four is low on purpose: it clears an extension or a house number without
+  // rejecting a short internal line somebody genuinely gave us.
+  const digits = (text.match(/\d/g) ?? []).length;
+  return digits >= 4 ? text : null;
+}
+
 export function mergeFacts(existing: DraftFacts, incoming: Partial<DraftFacts>): DraftFacts {
   const merged: DraftFacts = { ...existing };
 
   for (const key of Object.keys(incoming) as (keyof DraftFacts)[]) {
     if (key === "stops") continue;
-    const value = incoming[key];
+    // Read through the field's own rule where it has one, so a value that is
+    // not a phone number never becomes one by being merged.
+    const value = key === "passengerPhone" ? phoneOrNothing(incoming.passengerPhone) : incoming[key];
     if (stated(value)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (merged as any)[key] = value;

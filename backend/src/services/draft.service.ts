@@ -34,7 +34,12 @@ import { OPERATING_TIME_ZONE } from "../booking/pickup-time";
 import { emailFromHeader } from "../mail/address";
 import { stripQuotedReply } from "../mail/quoted";
 import { toModelText } from "../mail/body-text";
-import { mergeFacts, describeFactChanges, bookerNameFromReply } from "../booking/facts";
+import {
+  mergeFacts,
+  describeFactChanges,
+  bookerNameFromReply,
+  phoneOrNothing,
+} from "../booking/facts";
 import { implausible } from "../booking/plausible";
 import { bookingUpdateFrom } from "../booking/booking-update";
 import { reservationForTicket } from "../ops/reservations";
@@ -305,9 +310,12 @@ export async function draftReplyForTicket(ticketId: string): Promise<boolean> {
         facts: {
           passengerName:
             booking.passengerName ?? (booking.bookerIsPassenger ? booking.bookerName : null),
-          passengerPhone:
+          // Through the field's own rule: an address read out of a quoted
+          // thread must not become a number a driver tries to ring.
+          passengerPhone: phoneOrNothing(
             booking.passengerPhone ??
-            (booking.useBookerPhoneForPassenger ? booking.bookerPhone : null),
+              (booking.useBookerPhoneForPassenger ? booking.bookerPhone : null)
+          ),
           // Only a name somebody actually established. `requesterName` is the
           // mailbox display name, which is whoever owns the account rather
           // than whoever wrote the email — a test booking signed "Priya
@@ -493,7 +501,7 @@ export async function refreshFactsFromReply(ticketId: string): Promise<string[]>
     const before = draft.facts;
     const after = mergeFacts(before, {
       passengerName: booking.passengerName,
-      passengerPhone: booking.passengerPhone ?? booking.bookerPhone,
+      passengerPhone: phoneOrNothing(booking.passengerPhone ?? booking.bookerPhone),
       // Fills a blank, never replaces a name. See `bookerNameFromReply`.
       bookerName: bookerNameFromReply(before.bookerName, booking.bookerName),
       passengerCount: booking.passengerCount,
