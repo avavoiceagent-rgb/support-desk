@@ -10,7 +10,7 @@ const base: ChangeReplyInput = {
   customerEmail: "Could we move booking T-10312 an hour later?\n\nRegards,\nDaniel Weiss",
   placedReferences: ["T-10312"],
   unplacedReferences: [],
-  customerName: "Daniel Weiss",
+  mailboxName: "Ava Voice Agent",
   agentName: "{{AGENT_NAME}}",
 };
 
@@ -66,9 +66,19 @@ describe("what the model is told", () => {
     expect(brief).toContain("they did not quote one");
   });
 
-  it("copes with no name rather than inventing one", () => {
-    const brief = buildChangeBrief({ ...base, customerName: null });
+  it("copes with no name on the account rather than inventing one", () => {
+    const brief = buildChangeBrief({ ...base, mailboxName: null });
     expect(brief).toContain("greet them without a name");
+  });
+
+  it("offers the account name only as a fallback to the sign-off", () => {
+    // The bug this exists to avoid: a booker writes from a shared mailbox, and
+    // the reply greets the account holder rather than the person who wrote it.
+    // It cost three deploys on the new-booking path; it is not repeating here.
+    const brief = buildChangeBrief(base);
+    expect(brief).toContain("NAME ON THE ACCOUNT: Ava Voice Agent");
+    expect(brief).toContain("This is a fallback");
+    expect(brief).toContain("If they signed the email off with a name, use that one instead");
   });
 });
 

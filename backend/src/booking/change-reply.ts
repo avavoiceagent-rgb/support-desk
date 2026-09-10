@@ -43,7 +43,16 @@ export interface ChangeReplyInput {
    * References we could not place. Never say why — see the file header.
    */
   unplacedReferences: string[];
-  customerName: string | null;
+  /**
+   * The mailbox's display name, and a fallback ONLY.
+   *
+   * A booker routinely writes from a shared or company address, so this is
+   * often somebody other than the person who wrote the email. The name they
+   * signed off with wins, and the model reads that from the email itself —
+   * which is the same order of precedence the new-booking path spells out,
+   * and the bug that took three deploys to fix there.
+   */
+  mailboxName: string | null;
   /** The person who will review and send this. They sign it. */
   agentName: string;
 }
@@ -75,10 +84,10 @@ THE RULES, IN ORDER OF HOW MUCH THEY MATTER
 
 HOW IT SHOULD READ
 - Warm, direct, professional. British-neutral business English. No exclamation marks, no "we are delighted", no filler.
-- Greet the customer by the name you are given, exactly as given. Do NOT add Mr, Ms, Mrs, Dr or any other title.
+- Greet them by the name they SIGNED the email with. A booker often writes from a shared or company mailbox, so the name on the account is frequently somebody else — the sign-off wins. Use the fallback name only if they did not sign off, and no name at all if there is neither. NEVER use a name that does not appear in the email or in the fallback, and do NOT add Mr, Ms, Mrs, Dr or any other title.
 - Open by thanking them and showing you have understood what they are asking, briefly and in their terms.
 - Where they have asked for more than one thing, cover every one of them. A reply that answers part of an email and silently drops the rest is worse than no reply.
-- Ask about any reference you could not place.
+- Ask about any reference you could not place — and if there is more than one, ask about them TOGETHER in a single sentence. One near-identical sentence per reference reads like a machine, and this is going to a customer.
 - Say plainly that a colleague is picking this up and will come back to confirm.
 - Ask for anything genuinely needed to act — but only what is genuinely needed.
 - NEVER write an email address. Not to confirm one, not to ask about one, not as an example. If a phone number is needed, ask for it on its own, as a phone number.
@@ -129,7 +138,11 @@ export function splitReferences(
 export function buildChangeBrief(input: ChangeReplyInput): string {
   const lines: string[] = [];
 
-  lines.push(`CUSTOMER NAME: ${input.customerName ?? "not known — greet them without a name"}`);
+  lines.push(
+    input.mailboxName
+      ? `NAME ON THE ACCOUNT: ${input.mailboxName}. This is a fallback. If they signed the email off with a name, use that one instead — it is often a different person.`
+      : "NAME ON THE ACCOUNT: not known. Use the name they signed off with, or greet them without a name."
+  );
   lines.push("");
   lines.push("WHAT THEY WROTE:");
   lines.push(input.customerEmail.trim());

@@ -681,7 +681,10 @@ export async function draftChangeReplyForTicket(ticketId: string): Promise<boole
       customerEmail: toModelText(first.bodyHtml, first.bodyText),
       placedReferences: placed,
       unplacedReferences: unplaced,
-      customerName: ticket.requesterName ?? nameFromAddress(first.fromAddress),
+      // The display name only. Whoever signed the email beats it, and the
+      // model reads that from the email it has already been given — rather
+      // than a second extraction call to establish one name.
+      mailboxName: ticket.requesterName ?? nameFromAddress(first.fromAddress),
       agentName: AGENT_NAME_PLACEHOLDER,
     });
     if (!composed) return false;
